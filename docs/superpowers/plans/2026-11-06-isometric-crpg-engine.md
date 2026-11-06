@@ -1,4 +1,4 @@
-# Isometric 2.5D Browser cRPG Engine Implementation Plan
+# Ulf-cRPG-Engine Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or TDD execution to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

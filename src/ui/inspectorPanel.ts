@@ -61,7 +61,7 @@ export class InspectorPanel {
     if (this.collapsed) {
       this.root.innerHTML = `
         <button class="inspector-expand-btn" id="expand-inspector">
-          ⚙️ Inspektor Silnika 2.5D
+          ⚙️ Ulf-cRPG-Engine Inspector
         </button>
       `;
       this.root.querySelector('#expand-inspector')?.addEventListener('click', () => {
@@ -75,7 +75,7 @@ export class InspectorPanel {
       <aside class="inspector-card">
         <div class="inspector-header">
           <div>
-            <h2>Inspektor Silnika 2.5D</h2>
+            <h2>Ulf-cRPG-Engine Inspector</h2>
             <span class="inspector-sub">G-Buffer, Sortowanie DAG & Edytor Świata</span>
           </div>
           <button class="btn-icon" id="collapse-inspector" title="Zwiń panel">–</button>

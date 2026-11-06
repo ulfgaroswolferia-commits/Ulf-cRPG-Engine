@@ -131,7 +131,7 @@ export class HudOverlay {
         <div class="brand-block">
           <span class="brand-crest">❖</span>
           <div>
-            <div class="world-title">${this.game.map.name}</div>
+            <div class="world-title">Ulf-cRPG-Engine <span style="opacity:0.65;font-weight:500;">— ${this.game.map.name}</span></div>
             <div class="world-subtitle">${this.game.map.subtitle}</div>
           </div>
         </div>

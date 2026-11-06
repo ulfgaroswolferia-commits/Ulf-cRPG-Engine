@@ -1,5 +1,7 @@
 import { Filter, GlProgram } from 'pixi.js';
 
+export const ENGINE_NAME = 'Ulf-cRPG-Engine';
+
 export type RenderBufferMode =
   | 'final_pbr'
   | 'albedo_only'
@@ -146,7 +148,7 @@ export function createAtmosphericPostFilter(): Filter | null {
     const glProgram = GlProgram.from({
       vertex: VERTEX_GLSL,
       fragment: FRAGMENT_GLSL,
-      name: 'aethelgard-post-fx'
+      name: 'ulf-crpg-engine-post-fx'
     });
     return new Filter({
       glProgram,

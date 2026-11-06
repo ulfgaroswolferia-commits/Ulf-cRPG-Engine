@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateDeferredPbrLightAtPoint } from '../../src/renderer/deferredPipeline';
+import {
+  ENGINE_NAME,
+  evaluateDeferredPbrLightAtPoint
+} from '../../src/renderer/deferredPipeline';
 
-describe('deferredPipeline - Normal-Mapped 2.5D Point & Directional PBR Lighting', () => {
+describe('deferredPipeline - Ulf-cRPG-Engine Normal-Mapped 2.5D Point & Directional PBR Lighting', () => {
+  it('exposes official engine identifier Ulf-cRPG-Engine', () => {
+    expect(ENGINE_NAME).toBe('Ulf-cRPG-Engine');
+  });
+
   it('boosts illumination when surface normal faces the point light source vs facing away', () => {
     const light = {
       screenX: 100,

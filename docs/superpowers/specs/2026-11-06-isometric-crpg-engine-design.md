@@ -1,6 +1,7 @@
-# Isometric 2.5D Browser cRPG Engine — Design Specification
+# Ulf-cRPG-Engine — Isometric 2.5D Browser cRPG Engine Design Specification
 
 **Date:** 2026-11-06  
+**Engine Name:** `Ulf-cRPG-Engine`  
 **Project:** `RPG2` (`C:\Users\jgorski\Projekty\RPG2`)  
 **Tech Stack:** TypeScript 5, Vite, PixiJS v8 (WebGL2 Multi-Pass Deferred 2.5D Pipeline + Custom GLSL Shaders), Vitest  
 **References Incorporated:**
