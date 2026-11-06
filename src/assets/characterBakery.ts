@@ -72,12 +72,25 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-export function generateRandomCharacterRecipe(seed: number, customId?: string): CharacterVisualRecipe {
+export function generateRandomCharacterRecipe(
+  seed: number,
+  customId?: string
+): CharacterVisualRecipe {
   const rng = mulberry32(seed);
   const pick = <T>(arr: ReadonlyArray<T>): T => arr[Math.floor(rng() * arr.length)];
 
-  const torsos = ['torso_warden_brigandine', 'torso_aethel_plate', 'torso_archmage_robes', 'torso_linen_tunic'];
-  const heads: Array<string | null> = [null, 'helm_dread_plate', 'helm_shadow_hood', 'helm_arcane_circlet'];
+  const torsos = [
+    'torso_warden_brigandine',
+    'torso_aethel_plate',
+    'torso_archmage_robes',
+    'torso_linen_tunic'
+  ];
+  const heads: Array<string | null> = [
+    null,
+    'helm_dread_plate',
+    'helm_shadow_hood',
+    'helm_arcane_circlet'
+  ];
   const cloaks: Array<string | null> = [null, 'cloak_crimson_mantle', 'cloak_steel_pauldrons'];
   const legs = ['legs_steel_greaves', 'legs_leather_boots'];
   const weapons: Array<string | null> = [
@@ -189,7 +202,6 @@ function setPixelWithNormal(
   albedo[idx + 2] = Math.min(255, Math.max(0, Math.round(color.b * shade)));
   albedo[idx + 3] = 255;
 
-  // Encode tangent-space normal (-1..1 -> 0..255) + roughness + metallic
   normalMat[idx] = Math.min(255, Math.max(0, Math.round((nx * 0.5 + 0.5) * 255)));
   normalMat[idx + 1] = Math.min(255, Math.max(0, Math.round((ny * 0.5 + 0.5) * 255)));
   normalMat[idx + 2] = Math.min(255, Math.max(0, Math.round(roughness * 255)));
@@ -208,7 +220,8 @@ function drawShadedEllipse(
   color: RGBAColor,
   trimColor: RGBAColor | null,
   roughness: number,
-  metallic: number
+  metallic: number,
+  outlineDarken = true
 ): void {
   const minX = Math.floor(cx - rx);
   const maxX = Math.ceil(cx + rx);
@@ -221,11 +234,16 @@ function drawShadedEllipse(
       const dy = (y - cy) / Math.max(1, ry);
       const distSq = dx * dx + dy * dy;
       if (distSq <= 1.0) {
-        const isBorder = trimColor !== null && distSq > 0.72;
+        const isOuterEdge = outlineDarken && distSq > 0.84;
+        const isBorder = trimColor !== null && distSq > 0.68 && distSq <= 0.84;
         const activeColor = isBorder && trimColor ? trimColor : color;
         const nz = Math.sqrt(Math.max(0.05, 1.0 - distSq));
-        // Isometric rim & top-left zenith shading baked subtly into albedo + clean normal vector
-        const shade = 0.72 + 0.34 * nz - 0.12 * dy;
+        // Strong metallic specular rim & zenith shading
+        const specHighlight =
+          metallic > 0.5 && dx < -0.15 && dy < -0.15 ? (1.0 - distSq) * 0.42 : 0;
+        const baseShade = 0.68 + 0.38 * nz - 0.16 * dy - 0.1 * dx + specHighlight;
+        const shade = isOuterEdge ? baseShade * 0.42 : baseShade;
+
         setPixelWithNormal(
           albedo,
           normalMat,
@@ -245,7 +263,7 @@ function drawShadedEllipse(
   }
 }
 
-function drawShadedSegment(
+function drawTaperedLimb(
   albedo: Uint8ClampedArray,
   normalMat: Uint8ClampedArray,
   sheetW: number,
@@ -254,16 +272,20 @@ function drawShadedSegment(
   y0: number,
   x1: number,
   y1: number,
-  radius: number,
+  r0: number,
+  r1: number,
   color: RGBAColor,
+  trimColor: RGBAColor | null,
   roughness: number,
   metallic: number
 ): void {
-  const steps = Math.max(4, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5));
+  const steps = Math.max(6, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.8));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const px = x0 + (x1 - x0) * t;
     const py = y0 + (y1 - y0) * t;
+    const r = r0 * (1 - t) + r1 * t;
+    const useTrim = trimColor && Math.abs(t - 0.52) < 0.08;
     drawShadedEllipse(
       albedo,
       normalMat,
@@ -271,12 +293,13 @@ function drawShadedSegment(
       sheetH,
       px,
       py,
-      radius,
-      radius,
-      color,
+      r,
+      r,
+      useTrim && trimColor ? trimColor : color,
       null,
       roughness,
-      metallic
+      metallic,
+      true
     );
   }
 }
@@ -285,7 +308,7 @@ const bufferCache = new Map<string, BakedCharacterBuffers>();
 
 /**
  * Bakes a complete 8-directional x 4-animation-frame character sprite sheet
- * into both an Albedo RGBA buffer and a Normal+Material RGBA buffer.
+ * into both an Albedo RGBA buffer and a Normal+Material RGBA buffer with articulated heroic anatomy.
  */
 export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharacterBuffers {
   const hash = computeCharacterRecipeHash(recipe);
@@ -304,7 +327,6 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
   const normalMaterialRGBA = new Uint8ClampedArray(sheetWidth * sheetHeight * 4);
 
   for (let dir = 0; dir < directions; dir++) {
-    // Direction angle around character (0=N/Back-Right, 2=E, 4=S/Front, 6=W)
     const angle = (dir / 8) * Math.PI * 2;
     const facingX = Math.sin(angle);
     const facingY = Math.cos(angle); // +1 = facing camera (South), -1 = facing away (North)
@@ -313,76 +335,122 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
       const ox = frame * frameWidth;
       const oy = dir * frameHeight;
       const cx = ox + 32;
-      const groundY = oy + 82;
+      const groundY = oy + 84;
 
       const stridePhase = (frame / framesPerDirection) * Math.PI * 2;
-      const legSwing = frame === 0 ? 0 : Math.sin(stridePhase) * 4.5;
-      const bobY = frame === 0 ? 0 : Math.abs(Math.cos(stridePhase)) * 2.0;
+      const legSwing = frame === 0 ? 0 : Math.sin(stridePhase) * 5.0;
+      const bobY = frame === 0 ? 0 : Math.abs(Math.cos(stridePhase)) * 2.2;
 
-      const drawCloakFirst = facingY >= 0; // If facing camera, cloak is behind torso
+      const drawCloakFirst = facingY >= -0.15;
 
       const renderCloak = (): void => {
         if (!layers.cloakItem) return;
-        drawShadedEllipse(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          cx - facingX * 3,
-          groundY - 34 - bobY,
-          12,
-          20,
-          layers.cloakItem.primaryColor,
-          layers.cloakItem.trimColor,
-          layers.cloakItem.roughness,
-          layers.cloakItem.metallic
-        );
+        // Flowing pleated cape with tapered hem
+        for (let row = 0; row <= 28; row++) {
+          const t = row / 28;
+          const flare = 8 + t * 7.5;
+          const wave = Math.sin(t * 5 + frame * 1.4) * 1.2;
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx - facingX * 3.5 + wave,
+            groundY - 48 - bobY + row,
+            flare,
+            2.5,
+            layers.cloakItem.primaryColor,
+            row > 24 ? layers.cloakItem.trimColor : null,
+            layers.cloakItem.roughness,
+            layers.cloakItem.metallic
+          );
+        }
       };
 
       if (drawCloakFirst) renderCloak();
 
-      // Legs & Boots
-      const leftLegX = cx - 5 + facingX * 2;
-      const rightLegX = cx + 5 + facingX * 2;
-      drawShadedSegment(
+      // Articulated Legs, Knee-Cops & Boots
+      const leftHipX = cx - 5 + facingX * 1.8;
+      const rightHipX = cx + 5 + facingX * 1.8;
+      const leftFootX = leftHipX - legSwing * 0.45;
+      const leftFootY = groundY - 4 + legSwing * 0.55;
+      const rightFootX = rightHipX + legSwing * 0.45;
+      const rightFootY = groundY - 4 - legSwing * 0.55;
+
+      drawTaperedLimb(
         albedoRGBA,
         normalMaterialRGBA,
         sheetWidth,
         sheetHeight,
-        leftLegX,
-        groundY - 24 - bobY,
-        leftLegX - legSwing * 0.4,
-        groundY - 4 + legSwing * 0.5,
-        3.6,
+        leftHipX,
+        groundY - 27 - bobY,
+        leftFootX,
+        leftFootY,
+        4.4,
+        3.2,
         layers.legsItem.primaryColor,
+        layers.legsItem.trimColor,
         layers.legsItem.roughness,
         layers.legsItem.metallic
       );
-      drawShadedSegment(
+      drawTaperedLimb(
         albedoRGBA,
         normalMaterialRGBA,
         sheetWidth,
         sheetHeight,
-        rightLegX,
-        groundY - 24 - bobY,
-        rightLegX + legSwing * 0.4,
-        groundY - 4 - legSwing * 0.5,
-        3.6,
+        rightHipX,
+        groundY - 27 - bobY,
+        rightFootX,
+        rightFootY,
+        4.4,
+        3.2,
         layers.legsItem.primaryColor,
+        layers.legsItem.trimColor,
         layers.legsItem.roughness,
         layers.legsItem.metallic
       );
 
-      // Torso / Cuirass / Robes
-      const torsoHeight = layers.torsoItem.visualStyle === 'robes' ? 21 : 16;
+      // Boots Sabatons
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        leftFootX + facingX * 1.5,
+        leftFootY,
+        4.2,
+        2.8,
+        layers.legsItem.trimColor,
+        null,
+        layers.legsItem.roughness,
+        layers.legsItem.metallic
+      );
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        rightFootX + facingX * 1.5,
+        rightFootY,
+        4.2,
+        2.8,
+        layers.legsItem.trimColor,
+        null,
+        layers.legsItem.roughness,
+        layers.legsItem.metallic
+      );
+
+      // Sculpted Heroic Torso / Cuirass / Robes
+      const isRobes = layers.torsoItem.visualStyle === 'robes';
+      const torsoHeight = isRobes ? 23 : 17;
       drawShadedEllipse(
         albedoRGBA,
         normalMaterialRGBA,
         sheetWidth,
         sheetHeight,
         cx,
-        groundY - 35 - bobY,
-        10.5,
+        groundY - 37 - bobY,
+        11.2,
         torsoHeight,
         layers.torsoItem.primaryColor,
         layers.torsoItem.trimColor,
@@ -390,43 +458,88 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         layers.torsoItem.metallic
       );
 
-      // Shoulder Pauldrons
-      if (layers.cloakItem || layers.torsoItem.visualStyle === 'plate') {
-        const pauldronColor = layers.cloakItem?.trimColor ?? layers.torsoItem.trimColor;
+      // Waist Belt & Buckle + Chest Emblem
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        cx,
+        groundY - 27 - bobY,
+        10.6,
+        2.6,
+        { r: 54, g: 38, b: 26 },
+        layers.torsoItem.trimColor,
+        0.4,
+        0.75
+      );
+      if (facingY > -0.2) {
         drawShadedEllipse(
           albedoRGBA,
           normalMaterialRGBA,
           sheetWidth,
           sheetHeight,
-          cx - 10,
-          groundY - 46 - bobY,
-          5,
-          4.5,
-          pauldronColor,
+          cx + facingX * 2.5,
+          groundY - 41 - bobY,
+          3.8,
+          4.2,
+          layers.torsoItem.trimColor,
           null,
-          0.25,
-          0.85
-        );
-        drawShadedEllipse(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          cx + 10,
-          groundY - 46 - bobY,
-          5,
-          4.5,
-          pauldronColor,
-          null,
-          0.25,
-          0.85
+          0.18,
+          0.92,
+          false
         );
       }
 
+      // Layered Shoulder Pauldrons & Arms
+      const pauldronColor = layers.cloakItem?.trimColor ?? layers.torsoItem.trimColor;
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        cx - 11.5,
+        groundY - 47 - bobY,
+        5.5,
+        4.8,
+        pauldronColor,
+        layers.torsoItem.primaryColor,
+        0.24,
+        0.86
+      );
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        cx + 11.5,
+        groundY - 47 - bobY,
+        5.5,
+        4.8,
+        pauldronColor,
+        layers.torsoItem.primaryColor,
+        0.24,
+        0.86
+      );
+
       if (!drawCloakFirst) renderCloak();
 
-      // Head & Skin
-      const headY = groundY - 56 - bobY;
+      // Neck & Head
+      const headY = groundY - 58 - bobY;
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        cx,
+        headY + 7,
+        4.2,
+        3.5,
+        recipe.skinTone,
+        null,
+        0.7,
+        0.05
+      );
       drawShadedEllipse(
         albedoRGBA,
         normalMaterialRGBA,
@@ -434,36 +547,71 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         sheetHeight,
         cx,
         headY,
-        7.5,
-        8.5,
+        7.8,
+        8.8,
         recipe.skinTone,
         null,
-        0.65,
+        0.62,
         0.05
       );
 
-      // Hair layer (if not occluded by full helmet/hood)
+      // Facial Features (Eyes & Brow when facing forward/sideways)
+      if (facingY > 0.1 && layers.headItem?.visualStyle !== 'full_helm') {
+        const eyeOffsetX = facingX * 2.5;
+        setPixelWithNormal(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          cx + eyeOffsetX - 2.5,
+          headY - 1,
+          { r: 28, g: 34, b: 46 },
+          1.0,
+          0,
+          0,
+          0.2,
+          0.1
+        );
+        setPixelWithNormal(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          cx + eyeOffsetX + 2.5,
+          headY - 1,
+          { r: 28, g: 34, b: 46 },
+          1.0,
+          0,
+          0,
+          0.2,
+          0.1
+        );
+      }
+
+      // Hair Layer
       if (layers.showHair) {
+        const crestBoost = recipe.hairStyle === 'noble_crest' ? 2.5 : 0;
         drawShadedEllipse(
           albedoRGBA,
           normalMaterialRGBA,
           sheetWidth,
           sheetHeight,
           cx - facingX * 1.2,
-          headY - 2.5,
-          8.2,
-          7.0,
+          headY - 3.2 - crestBoost * 0.5,
+          8.5,
+          6.8 + crestBoost,
           recipe.hairColor,
           null,
-          0.75,
+          0.72,
           0.08
         );
       }
 
       // Helmet / Hood / Circlet
       if (layers.headItem) {
-        const helmRy = layers.headItem.visualStyle === 'circlet' ? 3.2 : 9.0;
-        const helmCy = layers.headItem.visualStyle === 'circlet' ? headY - 3.5 : headY - 1.0;
+        const isCirclet = layers.headItem.visualStyle === 'circlet';
+        const helmRy = isCirclet ? 3.0 : 9.4;
+        const helmCy = isCirclet ? headY - 3.8 : headY - 1.2;
         drawShadedEllipse(
           albedoRGBA,
           normalMaterialRGBA,
@@ -471,23 +619,62 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           sheetHeight,
           cx,
           helmCy,
-          8.6,
+          8.8,
           helmRy,
           layers.headItem.primaryColor,
           layers.headItem.trimColor,
           layers.headItem.roughness,
           layers.headItem.metallic
         );
+
+        // Dark T-visor slit on full plate helmet
+        if (layers.headItem.visualStyle === 'full_helm' && facingY > 0) {
+          for (let vx = -4; vx <= 4; vx++) {
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              cx + facingX * 2 + vx,
+              headY - 1,
+              { r: 16, g: 20, b: 28 },
+              1.0,
+              0,
+              0,
+              0.1,
+              0.9
+            );
+          }
+        }
       }
 
-      // Main Hand Weapon
+      // Main Hand Weapon (Sword with crossguard, Battleaxe with crescent blade, or Crystal Staff)
       if (layers.mainHandItem) {
-        const handX = cx + 12 * Math.cos(angle * 0.5) + 4;
+        const handX = cx + 13 + facingX * 2;
         const handY = groundY - 34 - bobY + legSwing * 0.25;
-        const tipX = handX + 8 + facingX * 5;
-        const tipY = handY - 22;
+        const tipX = handX + 7 + facingX * 4;
+        const tipY = handY - 26;
 
-        drawShadedSegment(
+        // Crossguard / Hilt
+        drawTaperedLimb(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          handX - 4,
+          handY - 2,
+          handX + 5,
+          handY + 2,
+          2.0,
+          2.0,
+          layers.mainHandItem.trimColor,
+          null,
+          0.2,
+          0.92
+        );
+
+        // Weapon Shaft / Blade
+        drawTaperedLimb(
           albedoRGBA,
           normalMaterialRGBA,
           sheetWidth,
@@ -496,49 +683,101 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           handY,
           tipX,
           tipY,
-          2.2,
+          2.5,
+          1.4,
           layers.mainHandItem.primaryColor,
+          layers.mainHandItem.trimColor,
           layers.mainHandItem.roughness,
           layers.mainHandItem.metallic
         );
 
-        // Glowing tip or crossguard
-        drawShadedEllipse(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          tipX,
-          tipY,
-          3.8,
-          3.8,
-          layers.mainHandItem.trimColor,
-          null,
-          0.15,
-          0.95
-        );
+        if (layers.mainHandItem.visualStyle === 'battleaxe') {
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            tipX + 2,
+            tipY + 5,
+            6.5,
+            5.0,
+            layers.mainHandItem.primaryColor,
+            layers.mainHandItem.trimColor,
+            0.2,
+            0.94
+          );
+        } else if (layers.mainHandItem.visualStyle === 'runestaff') {
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            tipX,
+            tipY,
+            4.8,
+            4.8,
+            layers.mainHandItem.trimColor,
+            { r: 220, g: 252, b: 255 },
+            0.08,
+            0.96
+          );
+        }
       }
 
-      // Off-Hand Shield / Torch / Tome
+      // Off-Hand Shield / Flaming Torch / Tome
       if (layers.offHandItem) {
-        const offX = cx - 12;
-        const offY = groundY - 33 - bobY - legSwing * 0.2;
-        const rx = layers.offHandItem.visualStyle === 'kiteshield' ? 6.5 : 4.2;
-        const ry = layers.offHandItem.visualStyle === 'kiteshield' ? 10.5 : 6.0;
-        drawShadedEllipse(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          offX,
-          offY,
-          rx,
-          ry,
-          layers.offHandItem.primaryColor,
-          layers.offHandItem.trimColor,
-          layers.offHandItem.roughness,
-          layers.offHandItem.metallic
-        );
+        const offX = cx - 13;
+        const offY = groundY - 34 - bobY - legSwing * 0.2;
+        if (layers.offHandItem.visualStyle === 'torch') {
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            offX,
+            offY + 4,
+            offX - 3,
+            offY - 14,
+            2.2,
+            2.8,
+            layers.offHandItem.primaryColor,
+            null,
+            0.7,
+            0.1
+          );
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            offX - 3,
+            offY - 18,
+            5.2,
+            7.0,
+            { r: 255, g: 192, b: 64 },
+            { r: 255, g: 98, b: 24 },
+            0.05,
+            0.95,
+            false
+          );
+        } else {
+          const rx = layers.offHandItem.visualStyle === 'kiteshield' ? 7.2 : 4.8;
+          const ry = layers.offHandItem.visualStyle === 'kiteshield' ? 11.5 : 6.5;
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            offX,
+            offY,
+            rx,
+            ry,
+            layers.offHandItem.primaryColor,
+            layers.offHandItem.trimColor,
+            layers.offHandItem.roughness,
+            layers.offHandItem.metallic
+          );
+        }
       }
     }
   }

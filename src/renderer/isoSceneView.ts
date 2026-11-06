@@ -1,6 +1,7 @@
 import {
   Application,
   Container,
+  Filter,
   Graphics,
   Rectangle,
   Sprite,
@@ -45,7 +46,8 @@ import {
   createAtmosphericPostFilter,
   evaluateDeferredPbrLightAtPoint,
   RenderBufferMode,
-  ScreenSpacePointLight
+  ScreenSpacePointLight,
+  updateAtmosphericFilterUniforms
 } from './deferredPipeline';
 
 export type InspectorToolMode =
@@ -123,6 +125,7 @@ export class IsoSceneView {
   private readonly propTextureCache = new Map<string, DualPbrTexturePair>();
   private readonly characterTextureCache = new Map<string, CharacterDualFrameTextures>();
   private readonly particles: FloatingParticle[] = [];
+  private postFilter: Filter | null = null;
 
   private elapsedSeconds = 0;
   private isDraggingCamera = false;
@@ -160,9 +163,9 @@ export class IsoSceneView {
     );
     this.app.stage.addChild(this.worldContainer);
 
-    const postFilter = createAtmosphericPostFilter();
-    if (postFilter) {
-      this.worldContainer.filters = [postFilter];
+    this.postFilter = createAtmosphericPostFilter();
+    if (this.postFilter) {
+      this.worldContainer.filters = [this.postFilter];
     }
 
     this.bindInputEvents(this.app.canvas);
@@ -634,6 +637,17 @@ export class IsoSceneView {
     const useNormalTex = this.bufferMode === 'normal_map';
     const screenLights = this.buildScreenSpaceLights();
 
+    updateAtmosphericFilterUniforms(
+      this.postFilter,
+      this.game.ambientLightIntensity,
+      this.elapsedSeconds,
+      this.bufferMode === 'final_pbr',
+      this.cameraOffsetX,
+      this.cameraOffsetY,
+      this.zoom,
+      screenLights
+    );
+
     // 1. Render Isometric Floor Tiles in Painter Order (rx + ry from 0 to rotW + rotH)
     for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
       for (let rx = 0; rx < rotW; rx++) {
@@ -805,6 +819,37 @@ export class IsoSceneView {
             fp.height
           );
           const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
+
+          // Render Dynamic Tree / Pillar Cast Shadow away from nearest firelight
+          if (
+            this.bufferMode === 'final_pbr' &&
+            (prop.kind === 'pine_tree' || prop.kind === 'ancient_oak' || prop.kind === 'pillar')
+          ) {
+            let sdx = -16;
+            let sdy = 8;
+            if (screenLights.length > 0) {
+              let nearest = screenLights[0];
+              let bestD = Infinity;
+              for (const l of screenLights) {
+                const d = Math.hypot(scr.x - l.screenX, scr.y - l.screenY);
+                if (d < bestD) {
+                  bestD = d;
+                  nearest = l;
+                }
+              }
+              const dx = scr.x - nearest.screenX;
+              const dy = scr.y - nearest.screenY;
+              const len = Math.max(1, Math.hypot(dx, dy));
+              sdx = (dx / len) * 26;
+              sdy = (dy / len) * 13;
+            }
+            const treeShadow = new Graphics();
+            treeShadow
+              .ellipse(scr.x + sdx * 0.55, scr.y + sdy * 0.55, 32, 16)
+              .fill({ color: 0x030508, alpha: 0.42 });
+            this.sortedObjectLayer.addChild(treeShadow);
+          }
+
           const sp = new Sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
           sp.anchor.set(texPair.anchorX, texPair.anchorY);
           sp.position.set(scr.x, scr.y);
@@ -846,6 +891,41 @@ export class IsoSceneView {
           }
 
           this.sortedObjectLayer.addChild(sp);
+
+          // Live animated roaring flame tongues on active campfire & torches
+          if (
+            this.bufferMode === 'final_pbr' &&
+            prop.isOpen &&
+            (prop.kind === 'campfire' || prop.kind === 'torch_sconce')
+          ) {
+            const isCampfire = prop.kind === 'campfire';
+            const flameBaseY = isCampfire ? scr.y - 12 : scr.y - 52;
+            const flameRadius = isCampfire ? 13 : 6.5;
+            const flicker1 = Math.sin(this.elapsedSeconds * 11 + prop.x) * 3.5;
+            const flicker2 = Math.cos(this.elapsedSeconds * 15 + prop.y) * 2.5;
+
+            const flameGfx = new Graphics();
+            flameGfx
+              .poly([
+                scr.x - flameRadius,
+                flameBaseY,
+                scr.x + flicker1,
+                flameBaseY - flameRadius * 2.3,
+                scr.x + flameRadius,
+                flameBaseY
+              ])
+              .fill({ color: 0xff6d00, alpha: 0.78 })
+              .poly([
+                scr.x - flameRadius * 0.6,
+                flameBaseY,
+                scr.x - flicker2,
+                flameBaseY - flameRadius * 1.7,
+                scr.x + flameRadius * 0.6,
+                flameBaseY
+              ])
+              .fill({ color: 0xfff176, alpha: 0.92 });
+            this.sortedObjectLayer.addChild(flameGfx);
+          }
 
           const isPropHovered =
             this.hoveredWorldTile &&
