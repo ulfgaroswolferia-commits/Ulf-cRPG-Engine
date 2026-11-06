@@ -1,4 +1,5 @@
 import { generateRandomCharacterRecipe } from '../assets/characterBakery';
+import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
 import { EQUIPMENT_CATALOG, HairStyle } from '../rpg/characterData';
 import { CrpgGameState } from '../rpg/gameLoop';
@@ -40,6 +41,7 @@ export class HudOverlay {
 
     const totalArmor = equippedItems.reduce((acc, it) => acc + (it?.armorBonus ?? 0), 0);
     const totalAttack = equippedItems.reduce((acc, it) => acc + (it?.attackBonus ?? 0), 0);
+    const hasRawSausage = this.game.inventory.includes('item_raw_sausage');
 
     const dialogueHtml = this.game.activeDialogue
       ? `
@@ -76,14 +78,14 @@ export class HudOverlay {
         <div class="panel-header">
           <div>
             <h3>Kuźnia Postaci & Ekwipunek (Paperdoll)</h3>
-            <span class="panel-sub">Modularne warstwy wypiekane w locie do tekstur Albedo + Normal (${charTex.bakeDurationMs} ms)</span>
+            <span class="panel-sub">Modularne warstwy wypiekane w locie (${charTex.bakeDurationMs} ms) + Przedmioty obozowe</span>
           </div>
           <button class="btn-icon" data-action="toggle-inventory" title="Zamknij panel">✕</button>
         </div>
 
         <div class="character-customizer-row">
           <label class="custom-select-label">
-            Fryzura bazowa:
+            Fryzura:
             <select id="hair-style-select" class="dark-select">
               ${HAIR_OPTIONS.map(
                 (h) =>
@@ -91,7 +93,7 @@ export class HudOverlay {
               ).join('')}
             </select>
           </label>
-          <button class="action-pill" data-action="randomize-hero">🎲 Losuj wygląd bohatera</button>
+          <button class="action-pill" data-action="randomize-hero">🎲 Losuj wygląd</button>
         </div>
 
         <div class="inventory-grid">
@@ -102,8 +104,18 @@ export class HudOverlay {
               const isEquipped = Object.values(eq).includes(itemId);
               const swatch = `rgb(${item.primaryColor.r}, ${item.primaryColor.g}, ${item.primaryColor.b})`;
               const trim = `rgb(${item.trimColor.r}, ${item.trimColor.g}, ${item.trimColor.b})`;
+
+              let actionLabel = isEquipped ? 'ZAŁOŻONO' : 'ZAŁÓŻ';
+              if (item.id === 'item_raw_sausage') {
+                actionLabel = '🔥 UPIECZ';
+              } else if (item.slot === 'consumable') {
+                actionLabel = '🍖 ZJEDZ / UŻYJ';
+              } else if (item.slot === 'relic') {
+                actionLabel = '✨ ZBADAJ';
+              }
+
               return `
-                <button class="item-card ${isEquipped ? 'equipped' : ''}" data-equip-id="${item.id}">
+                <button class="item-card ${isEquipped ? 'equipped' : ''}" data-equip-id="${item.id}" title="${item.description}">
                   <div class="item-swatch" style="background: linear-gradient(135deg, ${swatch} 60%, ${trim} 100%);">
                     <span class="slot-badge">${item.slot.toUpperCase()}</span>
                   </div>
@@ -113,10 +125,10 @@ export class HudOverlay {
                       ${item.armorBonus ? `🛡️ +${item.armorBonus} Pancerz ` : ''}
                       ${item.attackBonus ? `⚔️ +${item.attackBonus} Atak ` : ''}
                       ${item.loreBonus ? `✨ +${item.loreBonus} Wiedza ` : ''}
-                      <span class="pbr-tag">M:${Math.round(item.metallic * 100)}% R:${Math.round(item.roughness * 100)}%</span>
+                      ${item.consumableEffect ? `🍲 ${item.description.slice(0, 42)}...` : `<span class="pbr-tag">M:${Math.round(item.metallic * 100)}% R:${Math.round(item.roughness * 100)}%</span>`}
                     </div>
                   </div>
-                  <span class="equip-state">${isEquipped ? 'ZAŁOŻONO' : 'ZAŁÓŻ'}</span>
+                  <span class="equip-state">${actionLabel}</span>
                 </button>
               `;
             })
@@ -137,6 +149,13 @@ export class HudOverlay {
         </div>
 
         <div class="camera-compass-bar">
+          <button class="compass-angle-btn ${this.game.map.id === 'forest_clearing' ? 'active' : ''}" data-map-id="forest_clearing" title="Lokacja pokazowa 32x32: Polana Wilczego Ognia">
+            🌲 Polana (32×32)
+          </button>
+          <button class="compass-angle-btn ${this.game.map.id === 'sanctum_dungeon' ? 'active' : ''}" data-map-id="sanctum_dungeon" title="Lokacja lochów 20x20: Sanktuarium Korony">
+            🏰 Sanktuarium (20×20)
+          </button>
+          <span style="opacity:0.3;margin:0 4px;">|</span>
           <button class="compass-btn" data-action="rot-ccw" title="Obróć kamerę o -90° (Klawisz Q)">⟲ Q</button>
           ${(['N (0°)', 'E (90°)', 'S (180°)', 'W (270°)'] as const)
             .map(
@@ -178,13 +197,25 @@ export class HudOverlay {
             </div>
             <div class="quick-actions">
               <button class="hud-btn ${this.isInventoryOpen ? 'active' : ''}" data-action="toggle-inventory">
-                🎒 Ekwipunek & Wygląd (${this.game.inventory.length})
+                🎒 Ekwipunek (${this.game.inventory.length})
               </button>
+              ${
+                this.game.map.id === 'forest_clearing'
+                  ? `
+                <button class="hud-btn" data-action="use-campfire" title="Podejdź do ogniska na środku polany i upiecz kiełbasę">
+                  🔥 ${hasRawSausage ? 'Upiecz Kiełbasę!' : 'Ognisko'}
+                </button>
+                <button class="hud-btn" data-action="try-exit" title="Spróbuj opuścić polanę południową ścieżką">
+                  🚪 Ścieżka Wyjścia
+                </button>
+              `
+                  : ''
+              }
               <button class="hud-btn" data-action="spawn-npc">
-                ➕ Generuj Losowego NPC
+                ➕ Losowy NPC
               </button>
               <button class="hud-btn" data-action="center-camera">
-                🎯 Kamera na Bohatera
+                🎯 Kamera
               </button>
             </div>
           </div>
@@ -225,13 +256,33 @@ export class HudOverlay {
           this.game.player.recipe = rand;
           this.game.addLog(`Wylosowano nowy zestaw modularny bohatera (seed #${newSeed}).`);
           this.render();
+        } else if (action === 'use-campfire') {
+          const cf = this.game.map.props.find((p) => p.kind === 'campfire');
+          if (cf) {
+            this.game.commandInteractWithProp(cf.id);
+            this.render();
+          }
+        } else if (action === 'try-exit') {
+          const exitProp = this.game.map.props.find((p) => p.kind === 'exit_path');
+          if (exitProp) {
+            this.game.commandInteractWithProp(exitProp.id);
+            this.render();
+          }
         } else if (action === 'spawn-npc') {
           this.game.spawnRandomNpc();
           this.render();
         } else if (action === 'center-camera') {
-          this.scene.cameraOffsetX = this.scene.app.screen.width * 0.5;
-          this.scene.cameraOffsetY = 150;
+          this.scene.centerCameraOnPlayer();
         }
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>('[data-map-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mapId = btn.dataset.mapId as MapId;
+        this.game.loadMap(mapId);
+        this.scene.centerCameraOnPlayer();
+        this.render();
       });
     });
 

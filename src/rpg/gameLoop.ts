@@ -2,7 +2,13 @@ import { generateRandomCharacterRecipe } from '../assets/characterBakery';
 import { computeFieldOfView, FovGridState } from '../core/fov';
 import { Direction8, WorldGridPoint } from '../core/mapRotation';
 import { deltaToDirection8, findPathAStar3D, PathStepNode } from '../core/pathfinding';
-import { createSanctumWorldMap, IsometricWorldMap, WorldPropEntity } from '../core/worldMap';
+import {
+  createForestClearingMap,
+  createSanctumWorldMap,
+  IsometricWorldMap,
+  MapId,
+  WorldPropEntity
+} from '../core/worldMap';
 import {
   CharacterVisualRecipe,
   EQUIPMENT_CATALOG,
@@ -23,6 +29,8 @@ export interface ActorEntity {
   animFrame: number;
   animTimer: number;
   path: PathStepNode[];
+  speechBubbleText?: string | null;
+  speechBubbleTimer?: number;
   dialogueId?: string;
   patrolPoints?: WorldGridPoint[];
   patrolIndex?: number;
@@ -32,43 +40,28 @@ export interface ActorEntity {
 }
 
 export class CrpgGameState {
-  public readonly map: IsometricWorldMap;
-  public readonly fov: FovGridState;
-  public readonly player: ActorEntity;
+  public map!: IsometricWorldMap;
+  public fov!: FovGridState;
+  public player!: ActorEntity;
   public readonly npcs: ActorEntity[] = [];
   public readonly inventory: string[] = [
     'torso_warden_brigandine',
-    'torso_aethel_plate',
-    'torso_archmage_robes',
     'torso_linen_tunic',
-    'helm_dread_plate',
-    'helm_shadow_hood',
-    'helm_arcane_circlet',
-    'cloak_crimson_mantle',
-    'cloak_steel_pauldrons',
-    'legs_steel_greaves',
     'legs_leather_boots',
     'weapon_sunblade_longsword',
-    'weapon_Executioner_axe',
-    'weapon_astral_staff',
-    'offhand_heraldic_shield',
-    'offhand_torch',
-    'offhand_grimoire'
+    'offhand_torch'
   ];
   public readonly logs: string[] = [];
   public activeDialogue: { actorId: string; node: DialogueNode } | null = null;
   public fogOfWarEnabled = true;
   public wallCutawayEnabled = true;
-  public ambientLightIntensity = 0.42;
+  public ambientLightIntensity = 0.46;
 
-  constructor() {
-    this.map = createSanctumWorldMap();
-    this.fov = new FovGridState(this.map.width, this.map.height);
-
+  constructor(initialMapId: MapId = 'forest_clearing') {
     const playerRecipe: CharacterVisualRecipe = {
       id: 'player_hero',
       name: 'Kaelen Vane',
-      title: 'Wysłannik Żelaznej Korony',
+      title: 'Wędrowiec z Wilczego Szlaku',
       seed: 1001,
       skinTone: { r: 232, g: 194, b: 164 },
       hairColor: { r: 36, g: 28, b: 24 },
@@ -76,8 +69,8 @@ export class CrpgGameState {
       equipment: {
         head: null,
         torso: 'torso_warden_brigandine',
-        cloak: 'cloak_crimson_mantle',
-        legs: 'legs_steel_greaves',
+        cloak: null,
+        legs: 'legs_leather_boots',
         mainHand: 'weapon_sunblade_longsword',
         offHand: 'offhand_torch'
       },
@@ -90,31 +83,143 @@ export class CrpgGameState {
       }
     };
 
-    const startX = 4;
-    const startY = 4;
     this.player = {
       id: 'player_hero',
       recipe: playerRecipe,
-      x: startX + 0.5,
-      y: startY + 0.5,
-      z: this.map.tiles[startY][startX].z,
-      tileX: startX,
-      tileY: startY,
-      direction: 3, // SE
+      x: 15.5,
+      y: 17.5,
+      z: 0,
+      tileX: 15,
+      tileY: 17,
+      direction: 0,
       isMoving: false,
       animFrame: 0,
       animTimer: 0,
-      path: []
+      path: [],
+      speechBubbleText: null,
+      speechBubbleTimer: 0
     };
 
-    this.initStoryNpcs();
-    this.recomputeFov();
-    this.addLog('Witaj w Sanktuarium Zatopionej Korony. Kliknij LPM na kafel, aby się poruszyć, lub na obiekt/NPC, aby wejść w interakcję.');
-    this.addLog('Obracaj kamerę 2.5D o 90° klawiszami Q / E lub przyciskami na górnym pasku.');
+    this.loadMap(initialMapId);
   }
 
-  private initStoryNpcs(): void {
-    // 1. Captain Vaelen near the courtyard stairs
+  public loadMap(mapId: MapId): void {
+    this.map = mapId === 'forest_clearing' ? createForestClearingMap() : createSanctumWorldMap();
+    this.fov = new FovGridState(this.map.width, this.map.height);
+    this.npcs.length = 0;
+    this.activeDialogue = null;
+
+    const startX = mapId === 'forest_clearing' ? 15 : 4;
+    const startY = mapId === 'forest_clearing' ? 17 : 4;
+    this.player.tileX = startX;
+    this.player.tileY = startY;
+    this.player.x = startX + 0.5;
+    this.player.y = startY + 0.5;
+    this.player.z = this.map.tiles[startY][startX].z;
+    this.player.path = [];
+    this.player.isMoving = false;
+    this.player.speechBubbleText = null;
+    this.player.speechBubbleTimer = 0;
+
+    if (mapId === 'forest_clearing') {
+      this.initForestClearingNpcs();
+      this.addLog(
+        'Witaj na Polanie Wilczego Ognia (32×32). Podnieś porozrzucany ekwipunek oraz Surową Kiełbasę, upiecz ją na ognisku i spróbuj wyjść południową ścieżką!'
+      );
+    } else {
+      this.initSanctumNpcs();
+      this.addLog('Przeniesiono do lokacji: Sanktuarium Zatopionej Korony (20×20).');
+    }
+
+    this.recomputeFov();
+  }
+
+  private initForestClearingNpcs(): void {
+    // 1. Captain Vaelen resting by the campfire
+    const vaelenRecipe = generateRandomCharacterRecipe(202, 'npc_vaelen');
+    vaelenRecipe.name = 'Kapitan Vaelen';
+    vaelenRecipe.title = 'Zwiadowca Puszczy';
+    vaelenRecipe.equipment = {
+      head: 'helm_dread_plate',
+      torso: 'torso_aethel_plate',
+      cloak: 'cloak_steel_pauldrons',
+      legs: 'legs_steel_greaves',
+      mainHand: 'weapon_sunblade_longsword',
+      offHand: 'offhand_heraldic_shield'
+    };
+    this.npcs.push({
+      id: 'npc_vaelen',
+      recipe: vaelenRecipe,
+      x: 16.5,
+      y: 14.5,
+      z: this.map.tiles[14][16].z,
+      tileX: 16,
+      tileY: 14,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_vaelen'
+    });
+
+    // 2. Scholar Lyra examining the Ancient Druid Hill
+    const lyraRecipe = generateRandomCharacterRecipe(303, 'npc_lyra');
+    lyraRecipe.name = 'Uczona Lyra';
+    lyraRecipe.title = 'Badaczka Leśnych Run';
+    lyraRecipe.equipment = {
+      head: 'helm_arcane_circlet',
+      torso: 'torso_archmage_robes',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_astral_staff',
+      offHand: 'offhand_grimoire'
+    };
+    this.npcs.push({
+      id: 'npc_lyra',
+      recipe: lyraRecipe,
+      x: 9.5,
+      y: 8.5,
+      z: this.map.tiles[8][9].z,
+      tileX: 9,
+      tileY: 8,
+      direction: 5,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_lyra'
+    });
+
+    // 3. Patrolling Forest Ranger walking across the clearing & hill stairs
+    const patrolRecipe = generateRandomCharacterRecipe(408, 'npc_warden_patrol');
+    patrolRecipe.name = 'Tropiciell Aldric';
+    patrolRecipe.title = 'Strażnik Szlaku';
+    this.npcs.push({
+      id: 'npc_warden_patrol',
+      recipe: patrolRecipe,
+      x: 13.5,
+      y: 20.5,
+      z: this.map.tiles[20][13].z,
+      tileX: 13,
+      tileY: 20,
+      direction: 2,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      patrolPoints: [
+        { x: 13, y: 20 },
+        { x: 19, y: 18 },
+        { x: 16, y: 12 },
+        { x: 10, y: 9 }
+      ],
+      patrolIndex: 0,
+      patrolWaitTimer: 1.5
+    });
+  }
+
+  private initSanctumNpcs(): void {
     const vaelenRecipe = generateRandomCharacterRecipe(202, 'npc_vaelen');
     vaelenRecipe.name = 'Kapitan Vaelen';
     vaelenRecipe.title = 'Dowódca Straży Dziedzińca';
@@ -142,7 +247,6 @@ export class CrpgGameState {
       dialogueId: 'npc_vaelen'
     });
 
-    // 2. Scholar Lyra at the Central Arcane Plaza
     const lyraRecipe = generateRandomCharacterRecipe(303, 'npc_lyra');
     lyraRecipe.name = 'Uczona Lyra';
     lyraRecipe.title = 'Kronikarka Astralna';
@@ -169,32 +273,12 @@ export class CrpgGameState {
       path: [],
       dialogueId: 'npc_lyra'
     });
+  }
 
-    // 3. Patrolling Warden Guard
-    const patrolRecipe = generateRandomCharacterRecipe(408, 'npc_warden_patrol');
-    patrolRecipe.name = 'Strażnik Aldric';
-    patrolRecipe.title = 'Patrol Sanktuarium';
-    this.npcs.push({
-      id: 'npc_warden_patrol',
-      recipe: patrolRecipe,
-      x: 9.5,
-      y: 13.5,
-      z: this.map.tiles[13][9].z,
-      tileX: 9,
-      tileY: 13,
-      direction: 2,
-      isMoving: false,
-      animFrame: 0,
-      animTimer: 0,
-      path: [],
-      patrolPoints: [
-        { x: 9, y: 13 },
-        { x: 14, y: 14 },
-        { x: 11, y: 8 }
-      ],
-      patrolIndex: 0,
-      patrolWaitTimer: 1.5
-    });
+  public sayPlayerBark(text: string, durationSeconds = 4.5): void {
+    this.player.speechBubbleText = text;
+    this.player.speechBubbleTimer = durationSeconds;
+    this.addLog(`${this.player.recipe.name}: „${text}”`);
   }
 
   public addLog(message: string): void {
@@ -248,7 +332,7 @@ export class CrpgGameState {
       this.fov.revealAll();
       return;
     }
-    computeFieldOfView(this.fov, this.player.tileX, this.player.tileY, 8.5, (x, y) =>
+    computeFieldOfView(this.fov, this.player.tileX, this.player.tileY, 10.5, (x, y) =>
       this.isTileOpaque(x, y)
     );
   }
@@ -256,6 +340,15 @@ export class CrpgGameState {
   public commandPlayerMoveTo(targetX: number, targetY: number): boolean {
     this.player.pendingInteractionPropId = null;
     this.player.pendingDialogueActorId = null;
+
+    // Check if the player clicked beyond the exit barrier on the forest clearing path
+    if (this.map.id === 'forest_clearing' && targetY >= 29 && targetX >= 14 && targetX <= 17) {
+      const exitProp = this.map.props.find((p) => p.kind === 'exit_path');
+      if (exitProp) {
+        this.commandInteractWithProp(exitProp.id);
+        return true;
+      }
+    }
 
     const path = findPathAStar3D(
       {
@@ -304,7 +397,7 @@ export class CrpgGameState {
     if (!prop || !prop.interactive) return;
 
     const dist = Math.hypot(prop.x - this.player.tileX, prop.y - this.player.tileY);
-    if (dist <= 1.8) {
+    if (dist <= 1.85) {
       this.togglePropInteraction(prop.id);
       return;
     }
@@ -320,7 +413,7 @@ export class CrpgGameState {
     if (!npc) return;
 
     const dist = Math.hypot(npc.tileX - this.player.tileX, npc.tileY - this.player.tileY);
-    if (dist <= 1.8) {
+    if (dist <= 1.85) {
       this.startDialogueWithNpc(npc.id);
       return;
     }
@@ -335,6 +428,47 @@ export class CrpgGameState {
     const prop = this.map.props.find((p) => p.id === propId);
     if (!prop) return;
 
+    if (prop.kind === 'exit_path') {
+      this.player.isMoving = false;
+      this.player.path = [];
+      this.sayPlayerBark('Jeszcze nie czas iść dalej...', 5.0);
+      return;
+    }
+
+    if (prop.kind === 'campfire') {
+      const rawIdx = this.inventory.indexOf('item_raw_sausage');
+      if (rawIdx !== -1) {
+        if (!prop.isOpen) {
+          prop.isOpen = true;
+          if (prop.linkedLightId) {
+            const l = this.map.lights.find((lt) => lt.id === prop.linkedLightId);
+            if (l) l.enabled = true;
+          }
+        }
+        this.inventory.splice(rawIdx, 1);
+        if (!this.inventory.includes('item_roasted_sausage')) {
+          this.inventory.unshift('item_roasted_sausage');
+        }
+        this.sayPlayerBark('Kiełbasa pięknie się upiekła nad ogniskiem!', 4.5);
+        this.addLog(
+          '🔥 Upieczono Surową Kiełbasę Myśliwską na ognisku! Otrzymano: Upieczona Kiełbasa z Ogniska.'
+        );
+        return;
+      }
+
+      prop.isOpen = !prop.isOpen;
+      if (prop.linkedLightId) {
+        const light = this.map.lights.find((l) => l.id === prop.linkedLightId);
+        if (light) light.enabled = Boolean(prop.isOpen);
+      }
+      this.addLog(
+        prop.isOpen
+          ? 'Dorzucono drew do ogniska. Jeśli znajdziesz Surową Kiełbasę, kliknij ognisko, aby ją upiec!'
+          : 'Przygaszono ognisko obozowe.'
+      );
+      return;
+    }
+
     if (prop.kind === 'door') {
       prop.isOpen = !prop.isOpen;
       this.addLog(`${prop.name}: ${prop.isOpen ? 'otwarto' : 'zamknięto'}.`);
@@ -342,19 +476,20 @@ export class CrpgGameState {
       return;
     }
 
-    if (prop.kind === 'chest') {
+    if (prop.kind === 'chest' || prop.kind === 'ground_loot') {
       if (!prop.isOpen) {
         prop.isOpen = true;
         const loot = prop.lootItems ?? [];
         for (const itemId of loot) {
           if (!this.inventory.includes(itemId)) {
-            this.inventory.push(itemId);
+            this.inventory.unshift(itemId);
           }
         }
         const names = loot.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
-        this.addLog(`Otwarto ${prop.name}! Znaleziono: ${names || 'starożytne monety'}.`);
+        this.sayPlayerBark(`Znaleziono: ${names}`, 3.5);
+        this.addLog(`Podniesiono z „${prop.name}”: ${names}.`);
       } else {
-        this.addLog(`${prop.name} jest już opróżniona.`);
+        this.addLog(`${prop.name} — wszystko zostało już zabrane.`);
       }
       return;
     }
@@ -373,11 +508,13 @@ export class CrpgGameState {
       return;
     }
 
-    if (prop.kind === 'runic_altar' || prop.kind === 'sarcophagus') {
-      this.addLog(
-        `Zbadano ${prop.name}: starożytne płaskorzeźby opisują rytuał Zatopionej Korony (+1 Wiedza Tajemna).`
-      );
-      this.player.recipe.attributes.lore += 1;
+    if (
+      prop.kind === 'runic_altar' ||
+      prop.kind === 'sarcophagus' ||
+      prop.kind === 'ranger_tent' ||
+      prop.kind === 'fallen_log'
+    ) {
+      this.addLog(`Zbadano obiekt wielokaflowy: ${prop.name}.`);
     }
   }
 
@@ -385,13 +522,18 @@ export class CrpgGameState {
     const npc = this.npcs.find((n) => n.id === npcId);
     if (!npc) return;
 
-    // Face each other
-    this.player.direction = deltaToDirection8(npc.tileX - this.player.tileX, npc.tileY - this.player.tileY);
-    npc.direction = deltaToDirection8(this.player.tileX - npc.tileX, this.player.tileY - npc.tileY);
+    this.player.direction = deltaToDirection8(
+      npc.tileX - this.player.tileX,
+      npc.tileY - this.player.tileY
+    );
+    npc.direction = deltaToDirection8(
+      this.player.tileX - npc.tileX,
+      this.player.tileY - npc.tileY
+    );
 
     const tree = npc.dialogueId ? DIALOGUE_TREES[npc.dialogueId] : undefined;
     if (!tree) {
-      this.addLog(`${npc.recipe.name} (${npc.recipe.title}): „Czuwam nad bezpieczeństwem Sanktuarium.”`);
+      this.addLog(`${npc.recipe.name} (${npc.recipe.title}): „Czuwam nad bezpieczeństwem szlaku.”`);
       return;
     }
 
@@ -414,7 +556,7 @@ export class CrpgGameState {
 
     if (choice.grantsItemId) {
       if (!this.inventory.includes(choice.grantsItemId)) {
-        this.inventory.push(choice.grantsItemId);
+        this.inventory.unshift(choice.grantsItemId);
       }
       this.equipInventoryItem(choice.grantsItemId);
     }
@@ -442,10 +584,37 @@ export class CrpgGameState {
     const item = EQUIPMENT_CATALOG[itemId];
     if (!item) return false;
 
-    const slot: EquipmentSlot = item.slot;
+    // Handle consumables & campfire items
+    if (item.slot === 'consumable' || item.slot === 'relic') {
+      if (itemId === 'item_raw_sausage') {
+        const campfire = this.map.props.find((p) => p.kind === 'campfire');
+        if (campfire) {
+          this.commandInteractWithProp(campfire.id);
+        } else {
+          this.sayPlayerBark('Muszę najpierw znaleźć ognisko, żeby upiec surową kiełbasę!');
+        }
+        return true;
+      }
+
+      if (item.consumableEffect) {
+        const eff = item.consumableEffect;
+        if (eff.might) this.player.recipe.attributes.might += eff.might;
+        if (eff.resolve) this.player.recipe.attributes.resolve += eff.resolve;
+        if (eff.perception) this.player.recipe.attributes.perception += eff.perception;
+        if (eff.lore) this.player.recipe.attributes.lore += eff.lore;
+        this.sayPlayerBark(eff.barkText, 4.0);
+        if (item.slot === 'consumable') {
+          const idx = this.inventory.indexOf(itemId);
+          if (idx !== -1) this.inventory.splice(idx, 1);
+        }
+        return true;
+      }
+      return false;
+    }
+
+    const slot: Exclude<EquipmentSlot, 'consumable' | 'relic'> = item.slot;
     const nextEquipment = { ...this.player.recipe.equipment };
 
-    // Toggle off if optional slot and already equipped
     if (
       (slot === 'head' || slot === 'cloak' || slot === 'mainHand' || slot === 'offHand') &&
       nextEquipment[slot] === itemId
@@ -464,12 +633,12 @@ export class CrpgGameState {
 
   public spawnRandomNpc(seed = Math.floor(Math.random() * 90000) + 1000): ActorEntity | null {
     const recipe = generateRandomCharacterRecipe(seed);
-    // Find a walkable tile near the center plaza or courtyard
-    for (let radius = 1; radius < 10; radius++) {
+    const center = this.map.id === 'forest_clearing' ? 15 : 9;
+    for (let radius = 1; radius < 12; radius++) {
       for (let dy = -radius; dy <= radius; dy++) {
         for (let dx = -radius; dx <= radius; dx++) {
-          const tx = 9 + dx;
-          const ty = 10 + dy;
+          const tx = center + dx;
+          const ty = center + dy;
           if (
             this.isTileWalkable(tx, ty) &&
             (tx !== this.player.tileX || ty !== this.player.tileY)
@@ -501,7 +670,15 @@ export class CrpgGameState {
   }
 
   public update(dtSeconds: number): void {
-    this.updateActorMovement(this.player, dtSeconds, 3.8, true);
+    if (this.player.speechBubbleTimer && this.player.speechBubbleTimer > 0) {
+      this.player.speechBubbleTimer -= dtSeconds;
+      if (this.player.speechBubbleTimer <= 0) {
+        this.player.speechBubbleTimer = 0;
+        this.player.speechBubbleText = null;
+      }
+    }
+
+    this.updateActorMovement(this.player, dtSeconds, 4.2, true);
 
     for (const npc of this.npcs) {
       if (!npc.isMoving && npc.patrolPoints && npc.patrolPoints.length > 1) {
@@ -528,7 +705,7 @@ export class CrpgGameState {
           npc.patrolWaitTimer = 2.8;
         }
       }
-      this.updateActorMovement(npc, dtSeconds, 2.1, false);
+      this.updateActorMovement(npc, dtSeconds, 2.2, false);
     }
   }
 
@@ -567,6 +744,20 @@ export class CrpgGameState {
       actor.path.shift();
       if (isPlayer) {
         this.recomputeFov();
+        // If player stepped right up to the southern exit gate on the forest clearing path
+        if (
+          this.map.id === 'forest_clearing' &&
+          actor.tileY >= 28 &&
+          actor.tileX >= 14 &&
+          actor.tileX <= 17
+        ) {
+          actor.path = [];
+          actor.isMoving = false;
+          actor.animFrame = 0;
+          actor.pendingInteractionPropId = null;
+          this.sayPlayerBark('Jeszcze nie czas iść dalej...', 5.0);
+          return;
+        }
       }
 
       if (actor.path.length === 0) {

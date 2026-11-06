@@ -1,4 +1,12 @@
-export type EquipmentSlot = 'head' | 'torso' | 'cloak' | 'legs' | 'mainHand' | 'offHand';
+export type EquipmentSlot =
+  | 'head'
+  | 'torso'
+  | 'cloak'
+  | 'legs'
+  | 'mainHand'
+  | 'offHand'
+  | 'consumable'
+  | 'relic';
 
 export type HairStyle = 'none' | 'short_crop' | 'long_braids' | 'noble_crest' | 'tonsure';
 
@@ -22,6 +30,13 @@ export interface EquipmentItemDef {
   armorBonus?: number;
   attackBonus?: number;
   loreBonus?: number;
+  consumableEffect?: {
+    might?: number;
+    resolve?: number;
+    perception?: number;
+    lore?: number;
+    barkText: string;
+  };
   visualStyle:
     | 'plate'
     | 'brigandine'
@@ -39,7 +54,9 @@ export interface EquipmentItemDef {
     | 'runestaff'
     | 'torch'
     | 'kiteshield'
-    | 'tome';
+    | 'tome'
+    | 'food'
+    | 'relic_item';
 }
 
 export interface CharacterEquipmentLoadout {
@@ -88,6 +105,82 @@ export const HAIR_COLORS: ReadonlyArray<RGBAColor> = [
 ];
 
 export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
+  // Consumables & Campfire Items
+  item_raw_sausage: {
+    id: 'item_raw_sausage',
+    name: 'Surowa Kiełbasa Myśliwska',
+    slot: 'consumable',
+    description: 'Dobrze przyprawiona surowa kiełbasa z dziczyzny. Kliknij na Ognisko Obozowe na środku polany, aby ją upiec!',
+    primaryColor: { r: 178, g: 72, b: 68 },
+    trimColor: { r: 224, g: 168, b: 132 },
+    roughness: 0.65,
+    metallic: 0.05,
+    visualStyle: 'food'
+  },
+  item_roasted_sausage: {
+    id: 'item_roasted_sausage',
+    name: 'Upieczona Kiełbasa z Ogniska',
+    slot: 'consumable',
+    description: 'Skwiercząca, złocista kiełbasa pachnąca dymem olchowym i jałowcem. Kliknij, aby zjeść (+2 Siła, +2 Determinacja).',
+    primaryColor: { r: 156, g: 76, b: 32 },
+    trimColor: { r: 255, g: 184, b: 68 },
+    roughness: 0.35,
+    metallic: 0.15,
+    consumableEffect: {
+      might: 2,
+      resolve: 2,
+      barkText: 'Wyśmienita! Ciepła kiełbasa z ogniska dodaje sił.'
+    },
+    visualStyle: 'food'
+  },
+  item_old_mead: {
+    id: 'item_old_mead',
+    name: 'Bukłak Starego Miodu',
+    slot: 'consumable',
+    description: 'Rozgrzewający trójniak z leśnej pasieki (+1 Determinacja po wypiciu).',
+    primaryColor: { r: 196, g: 134, b: 42 },
+    trimColor: { r: 112, g: 74, b: 38 },
+    roughness: 0.4,
+    metallic: 0.2,
+    consumableEffect: {
+      resolve: 1,
+      barkText: 'Przedni miód pitny! Od razu cieplej na duchu.'
+    },
+    visualStyle: 'food'
+  },
+  item_moon_herbs: {
+    id: 'item_moon_herbs',
+    name: 'Zioła Księżycowe',
+    slot: 'consumable',
+    description: 'Świetliste liście rosnące nad leśnym potokiem (+1 Percepcja, +1 Wiedza).',
+    primaryColor: { r: 64, g: 198, b: 156 },
+    trimColor: { r: 134, g: 242, b: 255 },
+    roughness: 0.55,
+    metallic: 0.15,
+    consumableEffect: {
+      perception: 1,
+      lore: 1,
+      barkText: 'Zmysły wyostrzają się od księżycowego naparu.'
+    },
+    visualStyle: 'food'
+  },
+  item_runic_compass: {
+    id: 'item_runic_compass',
+    name: 'Starożytny Kompas Runiczny',
+    slot: 'relic',
+    description: 'Mosiężny artefakt wskazujący anomalie eteryczne na polanie (+2 Wiedza Tajemna).',
+    primaryColor: { r: 212, g: 172, b: 78 },
+    trimColor: { r: 72, g: 224, b: 255 },
+    roughness: 0.22,
+    metallic: 0.88,
+    loreBonus: 2,
+    consumableEffect: {
+      lore: 2,
+      barkText: 'Igła kompasu wiruje, wskazując leśny ołtarz na wzgórzu!'
+    },
+    visualStyle: 'relic_item'
+  },
+
   // Torso
   torso_warden_brigandine: {
     id: 'torso_warden_brigandine',
@@ -105,7 +198,7 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     id: 'torso_aethel_plate',
     name: 'Kirys Płytowy z Czarnego Żelaza',
     slot: 'torso',
-    description: 'Ciężka kuta zbroja płytowa odbijająca blask pochodni i zaklęć.',
+    description: 'Ciężka kuta zbroja płytowa odbijająca blask ogniska i zaklęć.',
     primaryColor: { r: 118, g: 128, b: 144 },
     trimColor: { r: 212, g: 174, b: 92 },
     roughness: 0.22,
@@ -130,7 +223,7 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     id: 'torso_linen_tunic',
     name: 'Pikowany Dublet Podróżny',
     slot: 'torso',
-    description: 'Wygodny przeszywany dublet noszony przez najemników.',
+    description: 'Wygodny przeszywany dublet noszony przez zwiadowców.',
     primaryColor: { r: 88, g: 94, b: 74 },
     trimColor: { r: 142, g: 116, b: 78 },
     roughness: 0.85,
@@ -287,9 +380,9 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
   },
   offhand_torch: {
     id: 'offhand_torch',
-    name: 'Smolna Pochodnia Lochowa',
+    name: 'Smolna Pochodnia Obozowa',
     slot: 'offHand',
-    description: 'Rozprasza mrok podziemi ciepłym, ruchomym światłem.',
+    description: 'Rozprasza mrok nocy ciepłym, ruchomym światłem.',
     primaryColor: { r: 108, g: 72, b: 44 },
     trimColor: { r: 255, g: 168, b: 56 },
     roughness: 0.6,

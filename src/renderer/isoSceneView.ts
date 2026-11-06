@@ -149,8 +149,7 @@ export class IsoSceneView {
     containerEl.innerHTML = '';
     containerEl.appendChild(this.app.canvas);
 
-    this.cameraOffsetX = this.app.screen.width * 0.5;
-    this.cameraOffsetY = 150;
+    this.centerCameraOnPlayer();
 
     this.worldContainer.addChild(
       this.floorLayer,
@@ -181,6 +180,7 @@ export class IsoSceneView {
 
   public rotateCamera(deltaSteps: 1 | -1): void {
     this.rotation = (((this.rotation + deltaSteps) % 4 + 4) % 4) as CameraRotation;
+    this.centerCameraOnPlayer();
     this.game.addLog(
       `Obrócono kamerę izometryczną 2.5D do kąta ${this.rotation * 90}° (${['N', 'E', 'S', 'W'][this.rotation]}).`
     );
@@ -189,7 +189,24 @@ export class IsoSceneView {
 
   public setRotation(rot: CameraRotation): void {
     this.rotation = rot;
+    this.centerCameraOnPlayer();
     this.onUiStateChange?.();
+  }
+
+  public centerCameraOnPlayer(): void {
+    const { width: mapW, height: mapH } = this.game.map;
+    const pRot = toRotatedContinuous(
+      this.game.player.x,
+      this.game.player.y,
+      mapW,
+      mapH,
+      this.rotation
+    );
+    const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
+    const screenW = this.app.screen?.width || window.innerWidth || 1280;
+    const screenH = this.app.screen?.height || window.innerHeight || 720;
+    this.cameraOffsetX = screenW * 0.5 - pScr.x * this.zoom;
+    this.cameraOffsetY = screenH * 0.46 - pScr.y * this.zoom;
   }
 
   public getCharacterTextures(actor: ActorEntity): CharacterDualFrameTextures {
@@ -830,6 +847,40 @@ export class IsoSceneView {
 
           this.sortedObjectLayer.addChild(sp);
 
+          const isPropHovered =
+            this.hoveredWorldTile &&
+            this.hoveredWorldTile.x >= prop.x &&
+            this.hoveredWorldTile.x < prop.x + prop.sizeX &&
+            this.hoveredWorldTile.y >= prop.y &&
+            this.hoveredWorldTile.y < prop.y + prop.sizeY;
+
+          const showInteractiveHint =
+            isPropHovered ||
+            prop.kind === 'campfire' ||
+            prop.kind === 'exit_path' ||
+            (prop.kind === 'ground_loot' && !prop.isOpen);
+
+          if (showInteractiveHint && this.bufferMode !== 'depth_dag') {
+            const label = new Text({
+              text: prop.name,
+              style: new TextStyle({
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 11,
+                fontWeight: '600',
+                fill:
+                  prop.kind === 'campfire'
+                    ? 0xffb74d
+                    : prop.kind === 'exit_path'
+                      ? 0xff7043
+                      : 0xffe082,
+                stroke: { color: 0x06080c, width: 3.2 }
+              })
+            });
+            label.anchor.set(0.5, 1);
+            label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+            this.debugOverlayContainer.addChild(label);
+          }
+
           if (this.bufferMode === 'depth_dag') {
             const badge = new Text({
               text: `#${orderIndex}`,
@@ -957,6 +1008,36 @@ export class IsoSceneView {
             nameTag.anchor.set(0.5, 1);
             nameTag.position.set(scr.x, scr.y - 74);
             this.debugOverlayContainer.addChild(nameTag);
+          }
+
+          // Render Floating cRPG Speech Bubble (e.g. "Jeszcze nie czas iść dalej...")
+          if (actor.speechBubbleText) {
+            const bubbleText = new Text({
+              text: `„${actor.speechBubbleText}”`,
+              style: new TextStyle({
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 13,
+                fontWeight: '700',
+                fill: 0xfff6d6,
+                stroke: { color: 0x080a0f, width: 4 }
+              })
+            });
+            bubbleText.anchor.set(0.5, 1);
+            const bx = scr.x;
+            const by = scr.y - 96;
+            const padX = 12;
+            const padY = 7;
+            const bw = bubbleText.width + padX * 2;
+            const bh = bubbleText.height + padY * 2;
+
+            const bubbleBg = new Graphics();
+            bubbleBg
+              .roundRect(bx - bw * 0.5, by - bh + 4, bw, bh, 7)
+              .fill({ color: 0x101520, alpha: 0.92 })
+              .stroke({ color: 0xe5bd68, width: 1.8, alpha: 0.95 });
+            bubbleText.position.set(bx, by - padY + 4);
+
+            this.debugOverlayContainer.addChild(bubbleBg, bubbleText);
           }
         }
       });

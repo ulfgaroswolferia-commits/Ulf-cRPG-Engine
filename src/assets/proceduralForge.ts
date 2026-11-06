@@ -104,10 +104,25 @@ export function generateTilePbrBuffers(
     roughness = 0.65;
     metallic = 0.12;
   } else if (terrain === 'abyss_water') {
-    baseColor = { r: 22, g: 48, b: 68 };
+    baseColor = { r: 24, g: 64, b: 92 };
     roughness = 0.12;
-    metallic = 0.65;
+    metallic = 0.68;
+  } else if (terrain === 'forest_grass') {
+    baseColor = { r: 54, g: 88, b: 46 };
+    roughness = 0.84;
+    metallic = 0.04;
+  } else if (terrain === 'dirt_path') {
+    baseColor = { r: 102, g: 78, b: 54 };
+    roughness = 0.78;
+    metallic = 0.06;
+  } else if (terrain === 'forest_soil') {
+    baseColor = { r: 44, g: 62, b: 38 };
+    roughness = 0.88;
+    metallic = 0.03;
   }
+
+  const isNatural =
+    terrain === 'forest_grass' || terrain === 'dirt_path' || terrain === 'forest_soil';
 
   // 1. Render Top Diamond Face
   for (let y = 0; y < TILE_HEIGHT; y++) {
@@ -115,7 +130,6 @@ export function generateTilePbrBuffers(
       const dx = Math.abs(x - halfW) / halfW;
       const dy = Math.abs(y - halfH) / halfH;
       if (dx + dy <= 1.0) {
-        // Compute isometric UV coordinates u, v in [0..1]
         const u = ((x - halfW) / halfW + (y - halfH) / halfH) * 0.5 + 0.5;
         const v = ((y - halfH) / halfH - (x - halfW) / halfW) * 0.5 + 0.5;
 
@@ -126,24 +140,37 @@ export function generateTilePbrBuffers(
         const hDown = valueNoise(x * 0.16, (y + 1) * 0.16);
 
         let nx = (hCenter - hRight) * 1.9;
-        let ny = (hCenter - hDown) * 1.9 - 0.18; // Tilted slightly toward viewer/zenith
-        let shade = 0.86 + (hCenter - 0.5) * 0.24;
+        let ny = (hCenter - hDown) * 1.9 - 0.18;
+        let shade = 0.86 + (hCenter - 0.5) * 0.28;
         let pixelColor = baseColor;
 
-        // Stone block joints & bevel border
         const edgeDist = 1.0 - (dx + dy);
-        if (edgeDist < 0.065) {
-          shade *= 0.68;
-          ny += 0.35;
+        if (edgeDist < 0.055) {
+          shade *= isNatural ? 0.88 : 0.68;
+          ny += 0.25;
         }
 
-        // Masonry grid grooves
-        const gridU = (u * 2) % 1;
-        const gridV = (v * 2) % 1;
-        if (terrain !== 'abyss_water' && (gridU < 0.05 || gridV < 0.05)) {
-          shade *= 0.64;
-          nx += gridU < 0.05 ? 0.45 : 0;
-          ny += gridV < 0.05 ? 0.45 : 0;
+        // Masonry grid grooves for stone tiles
+        if (!isNatural && terrain !== 'abyss_water') {
+          const gridU = (u * 2) % 1;
+          const gridV = (v * 2) % 1;
+          if (gridU < 0.05 || gridV < 0.05) {
+            shade *= 0.64;
+            nx += gridU < 0.05 ? 0.45 : 0;
+            ny += gridV < 0.05 ? 0.45 : 0;
+          }
+        }
+
+        // Grass blades & wildflowers on forest_grass
+        if (terrain === 'forest_grass' && n2 > 0.36) {
+          pixelColor = { r: 68, g: 112, b: 52 };
+          ny -= 0.15;
+        }
+
+        // Pebbles on dirt_path
+        if (terrain === 'dirt_path' && n2 > 0.41) {
+          pixelColor = { r: 122, g: 102, b: 78 };
+          shade *= 1.08;
         }
 
         // Gold/Cyan runic inlay circle for arcane_inlay
@@ -182,6 +209,7 @@ export function generateTilePbrBuffers(
   }
 
   // 2. Render Extruded Left & Right Vertical Cliff Walls below the front edges of the diamond
+  const cliffColor = isNatural ? { r: 68, g: 56, b: 44 } : baseColor;
   for (let x = 0; x < width; x++) {
     const bottomDiamondY = Math.round(TILE_HEIGHT - Math.abs(x - halfW) * 0.5);
     const isLeftFace = x < halfW;
@@ -191,8 +219,11 @@ export function generateTilePbrBuffers(
       if (py >= height) continue;
 
       const brickNoise = valueNoise(x * 0.18, sy * 0.22);
-      const mortarRow = sy % 12 === 0;
-      const faceShade = (isLeftFace ? 0.66 : 0.46) * (0.85 + brickNoise * 0.25) * (mortarRow ? 0.65 : 1.0);
+      const mortarRow = !isNatural && sy % 12 === 0;
+      const faceShade =
+        (isLeftFace ? 0.66 : 0.46) *
+        (0.85 + brickNoise * 0.25) *
+        (mortarRow ? 0.65 : 1.0);
       const nx = isLeftFace ? -0.68 : 0.68;
       const ny = 0.38;
 
@@ -203,7 +234,7 @@ export function generateTilePbrBuffers(
         height,
         x,
         py,
-        baseColor,
+        cliffColor,
         faceShade,
         nx,
         ny,
@@ -230,7 +261,8 @@ const propCache = new Map<string, SynthesizedPbrBufferPair>();
 
 /**
  * Generates isometric 2.5D Prop sprites (walls, pillars, doors, chests, torches, crystals,
- * and 2x1 / 1x2 multi-tile altars & sarcophagi) with matching Normal+Material maps.
+ * trees, campfire, ground loot, exit signpost, and 2x1 / 1x2 multi-tile props)
+ * with matching Normal+Material maps.
  */
 export function generatePropPbrBuffers(
   kind: PropKind,
@@ -244,11 +276,10 @@ export function generatePropPbrBuffers(
 
   const isMulti = rotatedSizeX > 1 || rotatedSizeY > 1;
   const width = isMulti ? 192 : 128;
-  const height = isMulti ? 160 : 160;
+  const height = 160;
   const albedoRGBA = new Uint8ClampedArray(width * height * 4);
   const normalMaterialRGBA = new Uint8ClampedArray(width * height * 4);
 
-  // Anchor is positioned at the center of the back-most tile (rx, ry)
   let anchorX = 0.5;
   let anchorY = 124 / height;
 
@@ -263,6 +294,44 @@ export function generatePropPbrBuffers(
   const baseAnchorPxX = Math.round(width * anchorX);
   const baseAnchorPxY = Math.round(height * anchorY);
 
+  const renderSphereFoliage = (
+    cx: number,
+    cy: number,
+    rx: number,
+    ry: number,
+    color: RGBAColor,
+    roughness: number,
+    metallic: number
+  ): void => {
+    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
+      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+        const dx = (x - cx) / rx;
+        const dy = (y - cy) / ry;
+        const dSq = dx * dx + dy * dy;
+        if (dSq <= 1.0) {
+          const leafNoise = valueNoise(x * 0.28, y * 0.28);
+          if (dSq > 0.78 && leafNoise < 0.35) continue;
+          const nz = Math.sqrt(Math.max(0.05, 1.0 - dSq));
+          const shade = 0.65 + 0.42 * nz - 0.18 * dy + (leafNoise - 0.5) * 0.22;
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            x,
+            y,
+            color,
+            shade,
+            dx * 0.85,
+            dy * 0.85,
+            roughness,
+            metallic
+          );
+        }
+      }
+    }
+  };
+
   const renderIsoPrism = (
     cx: number,
     cy: number,
@@ -275,7 +344,6 @@ export function generatePropPbrBuffers(
     metallic: number
   ): void => {
     const topCenterY = cy - prismHeight;
-    // Top diamond
     for (let y = Math.floor(topCenterY - halfH); y <= Math.ceil(topCenterY + halfH); y++) {
       for (let x = Math.floor(cx - halfW); x <= Math.ceil(cx + halfW); x++) {
         const dx = Math.abs(x - cx) / halfW;
@@ -292,7 +360,7 @@ export function generatePropPbrBuffers(
             y,
             topColor,
             border,
-            (x - cx) / halfW * 0.2,
+            ((x - cx) / halfW) * 0.2,
             -0.45,
             roughness,
             metallic
@@ -301,7 +369,6 @@ export function generatePropPbrBuffers(
       }
     }
 
-    // Left and right extruded vertical faces
     for (let x = Math.floor(cx - halfW); x <= Math.ceil(cx + halfW); x++) {
       const frontEdgeY = Math.round(topCenterY + halfH - Math.abs(x - cx) * (halfH / halfW));
       const isLeft = x < cx;
@@ -366,7 +433,6 @@ export function generatePropPbrBuffers(
         0.42
       );
     } else {
-      // Open doorway pillars on the left & right corners
       renderIsoPrism(
         baseAnchorPxX - 34,
         baseAnchorPxY - 12,
@@ -403,6 +469,161 @@ export function generatePropPbrBuffers(
       0.35,
       0.65
     );
+  } else if (kind === 'ground_loot') {
+    if (!isOpen) {
+      // Leather pack + gleaming brass/food bundle on the ground
+      renderSphereFoliage(
+        baseAnchorPxX - 4,
+        baseAnchorPxY - 10,
+        17,
+        12,
+        { r: 158, g: 96, b: 48 },
+        0.5,
+        0.25
+      );
+      renderSphereFoliage(
+        baseAnchorPxX + 6,
+        baseAnchorPxY - 14,
+        10,
+        7,
+        { r: 238, g: 194, b: 78 },
+        0.2,
+        0.85
+      );
+    } else {
+      // Opened cloth remnant
+      renderSphereFoliage(
+        baseAnchorPxX,
+        baseAnchorPxY - 4,
+        12,
+        6,
+        { r: 88, g: 74, b: 58 },
+        0.8,
+        0.05
+      );
+    }
+  } else if (kind === 'campfire') {
+    // Ring of stones + crossed logs
+    renderSphereFoliage(
+      baseAnchorPxX,
+      baseAnchorPxY - 4,
+      28,
+      14,
+      { r: 82, g: 78, b: 74 },
+      0.75,
+      0.1
+    );
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 2,
+      20,
+      10,
+      10,
+      { r: 96, g: 58, b: 32 },
+      { r: 68, g: 40, b: 22 },
+      0.7,
+      0.08
+    );
+    if (isOpen) {
+      // Multi-layered roaring campfire flame
+      renderSphereFoliage(
+        baseAnchorPxX,
+        baseAnchorPxY - 22,
+        18,
+        24,
+        { r: 255, g: 128, b: 32 },
+        0.1,
+        0.9
+      );
+      renderSphereFoliage(
+        baseAnchorPxX,
+        baseAnchorPxY - 20,
+        10,
+        16,
+        { r: 255, g: 224, b: 96 },
+        0.05,
+        0.95
+      );
+    }
+  } else if (kind === 'pine_tree') {
+    // Tall trunk + 3 tiered conifer tiers
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY,
+      10,
+      5,
+      36,
+      { r: 86, g: 58, b: 36 },
+      { r: 68, g: 44, b: 26 },
+      0.8,
+      0.05
+    );
+    renderSphereFoliage(
+      baseAnchorPxX,
+      baseAnchorPxY - 44,
+      34,
+      24,
+      { r: 34, g: 72, b: 42 },
+      0.78,
+      0.05
+    );
+    renderSphereFoliage(
+      baseAnchorPxX,
+      baseAnchorPxY - 68,
+      26,
+      22,
+      { r: 44, g: 88, b: 50 },
+      0.76,
+      0.06
+    );
+    renderSphereFoliage(
+      baseAnchorPxX,
+      baseAnchorPxY - 90,
+      17,
+      18,
+      { r: 56, g: 106, b: 58 },
+      0.74,
+      0.08
+    );
+  } else if (kind === 'ancient_oak') {
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY,
+      14,
+      7,
+      42,
+      { r: 78, g: 54, b: 34 },
+      { r: 62, g: 42, b: 26 },
+      0.82,
+      0.05
+    );
+    renderSphereFoliage(
+      baseAnchorPxX - 14,
+      baseAnchorPxY - 62,
+      26,
+      22,
+      { r: 46, g: 84, b: 38 },
+      0.78,
+      0.05
+    );
+    renderSphereFoliage(
+      baseAnchorPxX + 14,
+      baseAnchorPxY - 60,
+      26,
+      22,
+      { r: 42, g: 78, b: 36 },
+      0.78,
+      0.05
+    );
+    renderSphereFoliage(
+      baseAnchorPxX,
+      baseAnchorPxY - 78,
+      32,
+      26,
+      { r: 62, g: 104, b: 46 },
+      0.75,
+      0.06
+    );
   } else if (kind === 'torch_sconce') {
     renderIsoPrism(
       baseAnchorPxX,
@@ -416,28 +637,15 @@ export function generatePropPbrBuffers(
       0.65
     );
     if (isOpen) {
-      // Glowing ember crown
-      for (let y = -12; y <= 6; y++) {
-        for (let x = -9; x <= 9; x++) {
-          const d = Math.hypot(x / 8, y / 11);
-          if (d <= 1.0) {
-            writePbrPixel(
-              albedoRGBA,
-              normalMaterialRGBA,
-              width,
-              height,
-              baseAnchorPxX + x,
-              baseAnchorPxY - 50 + y,
-              { r: 255, g: 196, b: 78 },
-              1.35 - d * 0.4,
-              0,
-              -0.8,
-              0.1,
-              0.9
-            );
-          }
-        }
-      }
+      renderSphereFoliage(
+        baseAnchorPxX,
+        baseAnchorPxY - 50,
+        9,
+        12,
+        { r: 255, g: 196, b: 78 },
+        0.1,
+        0.9
+      );
     }
   } else if (kind === 'arcane_crystal') {
     const cColor = isOpen ? { r: 68, g: 228, b: 255 } : { r: 62, g: 84, b: 102 };
@@ -452,36 +660,115 @@ export function generatePropPbrBuffers(
       0.15,
       0.88
     );
-  } else if (kind === 'runic_altar' || kind === 'sarcophagus') {
+  } else if (
+    kind === 'runic_altar' ||
+    kind === 'sarcophagus' ||
+    kind === 'ranger_tent' ||
+    kind === 'fallen_log' ||
+    kind === 'exit_path'
+  ) {
     const stepDx = rotatedSizeX > 1 ? 32 : -32;
     const stepDy = 16;
-    const topCol =
-      kind === 'runic_altar' ? { r: 84, g: 196, b: 224 } : { r: 146, g: 138, b: 118 };
-    const sideCol =
-      kind === 'runic_altar' ? { r: 64, g: 76, b: 98 } : { r: 104, g: 98, b: 86 };
 
-    renderIsoPrism(
-      baseAnchorPxX,
-      baseAnchorPxY,
-      44,
-      22,
-      36,
-      topCol,
-      sideCol,
-      0.28,
-      0.55
-    );
-    renderIsoPrism(
-      baseAnchorPxX + stepDx,
-      baseAnchorPxY + stepDy,
-      44,
-      22,
-      36,
-      topCol,
-      sideCol,
-      0.28,
-      0.55
-    );
+    if (kind === 'ranger_tent') {
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY,
+        46,
+        23,
+        46,
+        { r: 142, g: 112, b: 76 },
+        { r: 108, g: 82, b: 54 },
+        0.78,
+        0.08
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy,
+        46,
+        23,
+        46,
+        { r: 142, g: 112, b: 76 },
+        { r: 108, g: 82, b: 54 },
+        0.78,
+        0.08
+      );
+    } else if (kind === 'fallen_log') {
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY,
+        32,
+        16,
+        18,
+        { r: 104, g: 72, b: 44 },
+        { r: 78, g: 52, b: 32 },
+        0.82,
+        0.05
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy,
+        32,
+        16,
+        18,
+        { r: 104, g: 72, b: 44 },
+        { r: 78, g: 52, b: 32 },
+        0.82,
+        0.05
+      );
+    } else if (kind === 'exit_path') {
+      // Wooden frontier signpost & lantern arch marking the single exit path
+      renderIsoPrism(
+        baseAnchorPxX - 18,
+        baseAnchorPxY,
+        14,
+        7,
+        52,
+        { r: 132, g: 94, b: 52 },
+        { r: 94, g: 64, b: 36 },
+        0.65,
+        0.2
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx + 14,
+        baseAnchorPxY + stepDy,
+        14,
+        7,
+        52,
+        { r: 132, g: 94, b: 52 },
+        { r: 94, g: 64, b: 36 },
+        0.65,
+        0.2
+      );
+    } else {
+      const topCol =
+        kind === 'runic_altar' ? { r: 84, g: 196, b: 224 } : { r: 146, g: 138, b: 118 };
+      const sideCol =
+        kind === 'runic_altar' ? { r: 64, g: 76, b: 98 } : { r: 104, g: 98, b: 86 };
+
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY,
+        44,
+        22,
+        36,
+        topCol,
+        sideCol,
+        0.28,
+        0.55
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy,
+        44,
+        22,
+        36,
+        topCol,
+        sideCol,
+        0.28,
+        0.55
+      );
+    }
   }
 
   const pair: SynthesizedPbrBufferPair = {
