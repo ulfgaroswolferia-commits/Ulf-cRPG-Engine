@@ -182,20 +182,18 @@ vec3 evalPointLight(vec4 posRad, vec4 colInt, vec2 fragPx, vec3 N, vec3 albedo) 
     if (dist >= posRad.w) return vec3(0.0);
 
     float normD = dist / posRad.w;
-    float atten = pow(max(0.0, 1.0 - normD * normD), 2.15) * colInt.w;
+    float atten = pow(max(0.0, 1.0 - normD * normD), 2.4) * min(colInt.w, 1.25);
 
     vec3 L = normalize(vec3(delta, posRad.z));
     float nDotL = max(0.0, dot(N, L));
 
     vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
     float nDotH = max(0.0, dot(N, H));
-    float spec = pow(nDotH, 24.0) * 0.42 * atten;
+    float spec = pow(nDotH, 32.0) * 0.14 * atten;
 
-    vec3 diffuse = albedo * colInt.rgb * (0.28 + 0.82 * nDotL) * atten;
+    vec3 diffuse = albedo * colInt.rgb * (0.12 + 0.34 * nDotL) * atten;
     vec3 specular = colInt.rgb * spec;
-    // Soft volumetric glow corona near light center
-    float corona = exp(-normD * 4.2) * 0.22 * colInt.w;
-    return diffuse + specular + colInt.rgb * corona;
+    return diffuse + specular;
 }
 
 void main(void) {
@@ -206,7 +204,7 @@ void main(void) {
     }
 
     // Reconstruct micro-surface normal from neighborhood relief gradients
-    vec2 texel = uInputSize.zw * 1.35;
+    vec2 texel = uInputSize.zw * 1.25;
     vec3 cL = texture(uTexture, vTextureCoord - vec2(texel.x, 0.0)).rgb;
     vec3 cR = texture(uTexture, vTextureCoord + vec2(texel.x, 0.0)).rgb;
     vec3 cU = texture(uTexture, vTextureCoord - vec2(0.0, texel.y)).rgb;
@@ -217,16 +215,16 @@ void main(void) {
     float hU = dot(cU, vec3(0.299, 0.587, 0.114));
     float hD = dot(cD, vec3(0.299, 0.587, 0.114));
 
-    vec3 N = normalize(vec3((hL - hR) * 2.8, (hU - hD) * 2.8, 1.0));
+    vec3 N = normalize(vec3((hL - hR) * 2.4, (hU - hD) * 2.4, 1.0));
 
-    // Local Bloom / Glare from neighboring bright emissive pixels (flames, crystals, runes)
+    // Subtle Bloom only for very bright flame cores (> 0.82)
     vec3 avgNeighbor = (cL + cR + cU + cD) * 0.25;
-    float neighborLuma = dot(avgNeighbor, vec3(0.299, 0.587, 0.114));
-    vec3 bloom = max(vec3(0.0), avgNeighbor - vec3(0.55)) * 0.65;
+    vec3 bloom = max(vec3(0.0), avgNeighbor - vec3(0.82)) * 0.16;
 
-    // Cool moonlight zenith ambient + per-pixel normal-mapped point lights
-    float zenith = 0.85 + 0.15 * max(0.0, dot(N, normalize(vec3(-0.35, -0.55, 0.75))));
-    vec3 ambientCol = base.rgb * vec3(0.76, 0.85, 1.08) * (uAmbient * 1.35 * zenith);
+    // Natural ambient illumination preserving dark fantasy contrast & texture details
+    float zenith = 0.90 + 0.10 * max(0.0, dot(N, normalize(vec3(-0.35, -0.55, 0.75))));
+    float ambFactor = mix(0.48, 0.92, clamp(uAmbient, 0.1, 1.0));
+    vec3 ambientCol = base.rgb * vec3(0.92, 0.95, 1.04) * (ambFactor * zenith);
 
     vec3 dynamicLights = vec3(0.0);
     dynamicLights += evalPointLight(uLight0PosRad, uLight0ColInt, vScreenPx, N, base.rgb);
@@ -236,21 +234,24 @@ void main(void) {
     dynamicLights += evalPointLight(uLight4PosRad, uLight4ColInt, vScreenPx, N, base.rgb);
     dynamicLights += evalPointLight(uLight5PosRad, uLight5ColInt, vScreenPx, N, base.rgb);
 
-    // Animated drifting woodland mist illuminated by local light
+    // Energy-conserving soft-knee compression so overlapping lights never blind or wash out textures
+    dynamicLights = dynamicLights / (vec3(1.0) + dynamicLights * 1.35);
+
+    // Subtle drifting woodland mist
     vec2 worldCoord = (vScreenPx - uCameraOffset) / max(0.2, uZoom);
-    float mist = fbmMist(worldCoord * 0.0045 + vec2(uTime * 0.045, -uTime * 0.025));
-    float mistMask = smoothstep(0.46, 0.78, mist) * 0.11;
-    vec3 mistCol = (vec3(0.14, 0.22, 0.32) + dynamicLights * 0.45) * mistMask;
+    float mist = fbmMist(worldCoord * 0.0045 + vec2(uTime * 0.04, -uTime * 0.02));
+    float mistMask = smoothstep(0.55, 0.85, mist) * 0.045;
+    vec3 mistCol = (vec3(0.10, 0.15, 0.22) + dynamicLights * 0.25) * mistMask;
 
-    vec3 hdr = ambientCol + dynamicLights + bloom + mistCol;
+    vec3 col = ambientCol + dynamicLights + bloom + mistCol;
 
-    // Subtle atmospheric vignette & ACES Filmic Tone Mapping
+    // Gentle vignette & soft shoulder roll-off without over-brightening midtones
     vec2 centered = vTextureCoord * 2.0 - 1.0;
-    float vig = clamp(1.0 - dot(centered, centered) * 0.18, 0.64, 1.0);
-    hdr *= vig;
+    float vig = clamp(1.0 - dot(centered, centered) * 0.16, 0.68, 1.0);
+    col *= vig;
+    col = col / (vec3(1.0) + max(vec3(0.0), col - vec3(0.75)) * 0.65);
 
-    vec3 mapped = (hdr * (2.51 * hdr + 0.03)) / (hdr * (2.43 * hdr + 0.59) + 0.14);
-    finalColor = vec4(clamp(mapped, 0.0, 1.0), base.a);
+    finalColor = vec4(clamp(col, 0.0, 1.0), base.a);
 }
 `;
 

@@ -616,9 +616,11 @@ export class IsoSceneView {
       this.game.ambientLightIntensity
     );
 
-    const r = Math.min(255, Math.max(12, Math.round(lit.r * fovFactor * 215)));
-    const g = Math.min(255, Math.max(14, Math.round(lit.g * fovFactor * 215)));
-    const b = Math.min(255, Math.max(20, Math.round(lit.b * fovFactor * 225)));
+    // Softly compress tint into [0..240] so sprites never blow out when combined with the GLSL shader
+    const compress = (v: number): number => v / (1.0 + v * 0.55);
+    const r = Math.min(242, Math.max(18, Math.round(compress(lit.r) * fovFactor * 245)));
+    const g = Math.min(242, Math.max(20, Math.round(compress(lit.g) * fovFactor * 245)));
+    const b = Math.min(246, Math.max(26, Math.round(compress(lit.b) * fovFactor * 250)));
     return (r << 16) | (g << 8) | b;
   }
 
@@ -1128,25 +1130,12 @@ export class IsoSceneView {
       sortedNodes[i].render(i, sortedNodes.length, playerDepthBox);
     }
 
-    // 4. Render Volumetric Point Light Glow Halos & Atmospheric Particles in Final PBR Mode
+    // 4. Render Subtle Atmospheric Ember & Firefly Particles in Final PBR Mode (no blinding giant halos)
     if (this.bufferMode === 'final_pbr') {
-      for (const l of screenLights) {
-        const haloColor =
-          (Math.round(l.r * 255) << 16) |
-          (Math.round(l.g * 255) << 8) |
-          Math.round(l.b * 255);
-
-        this.lightingOverlayGraphics
-          .circle(l.screenX, l.screenY - 28, l.radiusPx * 0.48)
-          .fill({ color: haloColor, alpha: 0.08 * l.intensity })
-          .circle(l.screenX, l.screenY - 28, l.radiusPx * 0.18)
-          .fill({ color: haloColor, alpha: 0.16 * l.intensity });
-      }
-
       for (const p of this.particles) {
         const rotP = toRotatedContinuous(p.x, p.y, mapW, mapH, this.rotation);
         const scrP = gridToScreen(rotP.rx, rotP.ry, p.z);
-        const alpha = Math.sin((p.life / p.maxLife) * Math.PI) * 0.85;
+        const alpha = Math.sin((p.life / p.maxLife) * Math.PI) * 0.65;
         this.lightingOverlayGraphics
           .circle(scrP.x, scrP.y, p.size)
           .fill({ color: p.color, alpha });
