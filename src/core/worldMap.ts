@@ -24,6 +24,9 @@ export type PropKind =
   | 'sarcophagus' // 1x2 multi-tile prop
   | 'pine_tree'
   | 'ancient_oak'
+  | 'tree_stump'
+  | 'berry_bush'
+  | 'wildflower_patch'
   | 'campfire'
   | 'ground_loot'
   | 'exit_path'
@@ -54,6 +57,7 @@ export interface WorldPropEntity {
   id: string;
   name: string;
   kind: PropKind;
+  variant?: number;
   x: number;
   y: number;
   z: number;
@@ -500,14 +504,82 @@ export function createForestClearingMap(): IsometricWorldMap {
     isOpen: false
   });
 
-  // 7. Surrounding Dense Forest Perimeter (Pine Trees & Ancient Oaks enclosing the clearing, leaving only the southern exit path!)
-  const occupied = new Set<string>();
+  // 7. Surrounding Dense Forest Perimeter (9 Glionox Tree Variants + Stumps + Berry Bushes + Wildflowers)
+  const occupied = new Set<string>([
+    '15,16', // Player spawn
+    '16,14', // NPC Torvin
+    '13,15', // NPC Lyra
+    '22,9'   // NPC Vaelen
+  ]);
   for (const p of props) {
     for (let dy = 0; dy < p.sizeY; dy++) {
       for (let dx = 0; dx < p.sizeX; dx++) {
         occupied.add(`${p.x + dx},${p.y + dy}`);
       }
     }
+  }
+
+  // 7A. Scenic Glionox Tree Stumps (`forest_stumps.png` variants 0..8)
+  const stumpLocations = [
+    { x: 11, y: 15, v: 0 },
+    { x: 19, y: 14, v: 1 },
+    { x: 10, y: 18, v: 2 },
+    { x: 17, y: 20, v: 3 },
+    { x: 13, y: 11, v: 4 },
+    { x: 8, y: 14, v: 5 },
+    { x: 22, y: 16, v: 6 },
+    { x: 13, y: 23, v: 7 },
+    { x: 18, y: 25, v: 8 }
+  ];
+  for (const st of stumpLocations) {
+    if (occupied.has(`${st.x},${st.y}`)) continue;
+    occupied.add(`${st.x},${st.y}`);
+    props.push({
+      id: `stump_${st.x}_${st.y}`,
+      name: 'Pień Ściętego Drzewa',
+      kind: 'tree_stump',
+      variant: st.v,
+      x: st.x,
+      y: st.y,
+      z: tiles[st.y][st.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 0.9,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  // 7B. Glionox Lush & Berry Bushes (`forest_env.png` row 4 variants 0..7)
+  const bushLocations = [
+    { x: 11, y: 19, v: 4, name: 'Krzew Leśnych Jagód' },
+    { x: 6, y: 19, v: 5, name: 'Krzew Leśnych Jagód' },
+    { x: 10, y: 24, v: 6, name: 'Krzew Dziki Maliniak' },
+    { x: 19, y: 12, v: 7, name: 'KrzewZłotych Jagód' },
+    { x: 13, y: 20, v: 0, name: 'Gęsty Krzew Leszczyny' },
+    { x: 20, y: 21, v: 1, name: 'Krzew Paprociowy' },
+    { x: 8, y: 11, v: 2, name: 'Krzew Wzgórza Druidów' },
+    { x: 18, y: 19, v: 3, name: 'Krzew Polany' }
+  ];
+  for (const b of bushLocations) {
+    if (occupied.has(`${b.x},${b.y}`)) continue;
+    occupied.add(`${b.x},${b.y}`);
+    props.push({
+      id: `bush_${b.x}_${b.y}`,
+      name: b.name,
+      kind: 'berry_bush',
+      variant: b.v,
+      x: b.x,
+      y: b.y,
+      z: tiles[b.y][b.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.0,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
   }
 
   for (let y = 0; y < height; y++) {
@@ -527,11 +599,13 @@ export function createForestClearingMap(): IsometricWorldMap {
         (x === 19 && y === 23);
 
       if (isOuterBorder || isForestRing || isScenicCluster) {
-        const isOak = (x + y) % 4 === 0;
+        const treeVariant = (x * 7 + y * 13) % 9;
+        const isOak = treeVariant % 2 === 1;
         props.push({
           id: `tree_${x}_${y}`,
-          name: isOak ? 'Prastary Dąb' : 'Sosna Puszczy',
+          name: isOak ? 'Prastary Dąb Puszczy' : 'Wysoka Sosna Puszczy',
           kind: isOak ? 'ancient_oak' : 'pine_tree',
+          variant: treeVariant,
           x,
           y,
           z: tiles[y][x].z,
@@ -540,6 +614,30 @@ export function createForestClearingMap(): IsometricWorldMap {
           heightZ: 3.2,
           blocksMovement: true,
           blocksSight: true,
+          interactive: false
+        });
+        occupied.add(`${x},${y}`);
+      } else if (
+        tiles[y][x].terrain === 'forest_grass' &&
+        dist > 4.2 &&
+        dist < 11.8 &&
+        (x * 19 + y * 31) % 7 === 0
+      ) {
+        // Walkable Glionox Wildflowers & Tall Grass Clusters (`forest_env.png` rows 0..3)
+        const floraVariant = (x * 11 + y * 17) % 32;
+        props.push({
+          id: `flora_${x}_${y}`,
+          name: floraVariant < 16 ? 'Kępa Polnych Kwiatów' : 'Wysoka Trawa Leśna',
+          kind: 'wildflower_patch',
+          variant: floraVariant,
+          x,
+          y,
+          z: tiles[y][x].z,
+          sizeX: 1,
+          sizeY: 1,
+          heightZ: 0.4,
+          blocksMovement: false,
+          blocksSight: false,
           interactive: false
         });
       }

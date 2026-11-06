@@ -13,6 +13,7 @@ import {
   BakedCharacterBuffers,
   bakeCharacterBuffers
 } from '../assets/characterBakery';
+import { preloadGlionoxForestAssets } from '../assets/glionoxAtlas';
 import {
   generatePropPbrBuffers,
   generateTilePbrBuffers,
@@ -98,7 +99,9 @@ function rgbaBufferToTexture(
     const imgData = new ImageData(new Uint8ClampedArray(rgba), width, height);
     ctx.putImageData(imgData, 0, 0);
   }
-  return Texture.from(canvas);
+  const tex = Texture.from(canvas);
+  tex.source.scaleMode = 'nearest';
+  return tex;
 }
 
 export class IsoSceneView {
@@ -141,6 +144,10 @@ export class IsoSceneView {
   }
 
   public async mount(containerEl: HTMLElement): Promise<void> {
+    await preloadGlionoxForestAssets();
+    this.tileTextureCache.clear();
+    this.propTextureCache.clear();
+
     await this.app.init({
       resizeTo: containerEl,
       backgroundColor: 0x0b0e14,
@@ -324,13 +331,14 @@ export class IsoSceneView {
     kind: PropKind,
     isOpen: boolean,
     rotW: number,
-    rotH: number
+    rotH: number,
+    variant = 0
   ): DualPbrTexturePair {
-    const key = `${kind}_${isOpen ? 'open' : 'closed'}_${rotW}x${rotH}`;
+    const key = `${kind}_${isOpen ? 'open' : 'closed'}_${rotW}x${rotH}_v${variant}`;
     const existing = this.propTextureCache.get(key);
     if (existing) return existing;
 
-    const synth = generatePropPbrBuffers(kind, isOpen, rotW, rotH);
+    const synth = generatePropPbrBuffers(kind, isOpen, rotW, rotH, variant);
     const pair: DualPbrTexturePair = {
       albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
       normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
@@ -818,7 +826,8 @@ export class IsoSceneView {
             prop.kind,
             Boolean(prop.isOpen),
             fp.width,
-            fp.height
+            fp.height,
+            prop.variant ?? ((prop.x * 7 + prop.y * 13) % 9)
           );
           const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
 

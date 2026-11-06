@@ -1,6 +1,13 @@
 import { ELEVATION_STEP_PX, TILE_HEIGHT, TILE_WIDTH } from '../core/isoMath';
 import { PropKind, TileTerrainType } from '../core/worldMap';
 import { RGBAColor } from '../rpg/characterData';
+import {
+  generateGlionoxForestTilePbr,
+  getGlionoxBushPbr,
+  getGlionoxStumpPbr,
+  getGlionoxTreePbr,
+  getGlionoxWildflowerOrGrassPbr
+} from './glionoxAtlas';
 
 export interface SynthesizedPbrBufferPair {
   width: number;
@@ -179,6 +186,15 @@ export function generateTilePbrBuffers(
   terrain: TileTerrainType,
   elevationSteps = 1
 ): SynthesizedPbrBufferPair {
+  if (
+    terrain === 'forest_grass' ||
+    terrain === 'forest_soil' ||
+    terrain === 'dirt_path'
+  ) {
+    const glionoxTile = generateGlionoxForestTilePbr(terrain, elevationSteps);
+    if (glionoxTile) return glionoxTile;
+  }
+
   const key = `${terrain}_z${elevationSteps}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
@@ -469,9 +485,24 @@ export function generatePropPbrBuffers(
   kind: PropKind,
   isOpen = false,
   rotatedSizeX = 1,
-  rotatedSizeY = 1
+  rotatedSizeY = 1,
+  variant = 0
 ): SynthesizedPbrBufferPair {
-  const key = `${kind}_${isOpen ? 'open' : 'closed'}_${rotatedSizeX}x${rotatedSizeY}`;
+  if (kind === 'pine_tree' || kind === 'ancient_oak') {
+    const glionoxTree = getGlionoxTreePbr(variant);
+    if (glionoxTree) return glionoxTree;
+  } else if (kind === 'tree_stump') {
+    const glionoxStump = getGlionoxStumpPbr(variant);
+    if (glionoxStump) return glionoxStump;
+  } else if (kind === 'berry_bush') {
+    const glionoxBush = getGlionoxBushPbr(variant);
+    if (glionoxBush) return glionoxBush;
+  } else if (kind === 'wildflower_patch') {
+    const glionoxFlora = getGlionoxWildflowerOrGrassPbr(variant);
+    if (glionoxFlora) return glionoxFlora;
+  }
+
+  const key = `${kind}_${isOpen ? 'open' : 'closed'}_${rotatedSizeX}x${rotatedSizeY}_v${variant}`;
   const cached = propCache.get(key);
   if (cached) return cached;
 
@@ -757,6 +788,30 @@ export function generatePropPbrBuffers(
       { r: 44, g: 84, b: 36 },
       { r: 86, g: 138, b: 56 },
       173
+    );
+  } else if (kind === 'tree_stump') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 24, 12);
+    renderGnarledTrunk(baseAnchorPxX, baseAnchorPxY, 12, 9, 18, { r: 96, g: 68, b: 44 });
+  } else if (kind === 'berry_bush') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 24, 12);
+    renderFoliageCluster(
+      baseAnchorPxX,
+      baseAnchorPxY - 14,
+      22,
+      14,
+      { r: 42, g: 78, b: 36 },
+      { r: 78, g: 124, b: 52 },
+      variant * 19 + 7
+    );
+  } else if (kind === 'wildflower_patch') {
+    renderFoliageCluster(
+      baseAnchorPxX,
+      baseAnchorPxY - 6,
+      14,
+      8,
+      { r: 74, g: 118, b: 48 },
+      { r: 224, g: 186, b: 64 },
+      variant * 23 + 3
     );
   } else if (kind === 'campfire') {
     renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 34, 17);
