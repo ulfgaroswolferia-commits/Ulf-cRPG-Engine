@@ -41,6 +41,12 @@ import {
   StatType
 } from './inventorySystem';
 
+export const MERCHANT_ACTOR_IDS: ReadonlyArray<string> = [
+  'npc_dobromir',
+  'npc_bogusz',
+  'npc_gniewosz'
+];
+
 export interface ActorEntity {
   id: string;
   recipe: CharacterVisualRecipe;
@@ -57,6 +63,7 @@ export interface ActorEntity {
   speechBubbleText?: string | null;
   speechBubbleTimer?: number;
   dialogueId?: string;
+  isMerchant?: boolean;
   patrolPoints?: WorldGridPoint[];
   patrolIndex?: number;
   patrolWaitTimer?: number;
@@ -345,7 +352,8 @@ export class CrpgGameState {
       animFrame: 0,
       animTimer: 0,
       path: [],
-      dialogueId: 'npc_dobromir'
+      dialogueId: 'npc_dobromir',
+      isMerchant: true
     });
 
     // 2. Blacksmith Bożydar by the eastern market stall & forge
@@ -638,7 +646,8 @@ export class CrpgGameState {
       animFrame: 0,
       animTimer: 0,
       path: [],
-      dialogueId: 'npc_bogusz'
+      dialogueId: 'npc_bogusz',
+      isMerchant: true
     });
 
     // 3. Patrolling Forest Ranger walking across the clearing & hill stairs
@@ -1015,7 +1024,8 @@ export class CrpgGameState {
       animFrame: 0,
       animTimer: 0,
       path: [],
-      dialogueId: 'npc_gniewosz'
+      dialogueId: 'npc_gniewosz',
+      isMerchant: true
     });
   }
 
@@ -1937,7 +1947,51 @@ export class CrpgGameState {
     };
   }
 
+  public isNearMerchant(maxDist = 2.8): boolean {
+    if (
+      this.activeDialogue &&
+      (MERCHANT_ACTOR_IDS.includes(this.activeDialogue.actorId) ||
+        this.activeDialogue.node.id.includes('trade') ||
+        this.activeDialogue.node.id.includes('sold'))
+    ) {
+      return true;
+    }
+
+    return this.npcs.some((npc) => {
+      if (!MERCHANT_ACTOR_IDS.includes(npc.id) && !npc.isMerchant) return false;
+      const dist = Math.hypot(this.player.x - npc.x, this.player.y - npc.y);
+      return dist <= maxDist;
+    });
+  }
+
+  public getActiveOrNearbyMerchant(maxDist = 2.8): ActorEntity | null {
+    if (this.activeDialogue && MERCHANT_ACTOR_IDS.includes(this.activeDialogue.actorId)) {
+      const active = this.npcs.find((n) => n.id === this.activeDialogue?.actorId);
+      if (active) return active;
+    }
+
+    let closest: ActorEntity | null = null;
+    let closestDist = maxDist;
+
+    for (const npc of this.npcs) {
+      if (!MERCHANT_ACTOR_IDS.includes(npc.id) && !npc.isMerchant) continue;
+      const dist = Math.hypot(this.player.x - npc.x, this.player.y - npc.y);
+      if (dist <= closestDist) {
+        closestDist = dist;
+        closest = npc;
+      }
+    }
+
+    return closest;
+  }
+
   public sellItemForSiekance(instanceId: string): { success: boolean; earned: number; itemName: string } {
+    if (!this.isNearMerchant()) {
+      this.addLog('⚠️ Sprzedaż możliwa tylko u kupca! Podejdź i porozmawiaj z handlarzem.');
+      this.sayPlayerBark('Mogę sprzedawać przedmioty tylko u kupca.', 2.5);
+      return { success: false, earned: 0, itemName: '' };
+    }
+
     const found = this.backpack.findByInstanceId(instanceId);
     if (!found || !found.item) {
       return { success: false, earned: 0, itemName: '' };
@@ -1966,6 +2020,12 @@ export class CrpgGameState {
     earnedTotal: number;
     itemsSold: Array<{ name: string; count: number; earned: number }>;
   } {
+    if (!this.isNearMerchant()) {
+      this.addLog('⚠️ Sprzedaż możliwa tylko u kupca! Podejdź i porozmawiaj z handlarzem.');
+      this.sayPlayerBark('Mogę sprzedawać przedmioty tylko u kupca.', 2.5);
+      return { soldCount: 0, earnedTotal: 0, itemsSold: [] };
+    }
+
     const result = {
       soldCount: 0,
       earnedTotal: 0,

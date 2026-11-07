@@ -11,6 +11,7 @@ describe('Merchant NPCs & Siekańce Hacksilver Economy (Every Location + Single-
     expect(dobromir).toBeDefined();
     expect(dobromir?.recipe.name).toContain('Dobromir');
     expect(dobromir?.dialogueId).toBe('npc_dobromir');
+    expect(dobromir?.isMerchant).toBe(true);
 
     // 2. Forest Clearing -> Wędrowny Kramarz Bogusz
     const forestGame = new CrpgGameState('forest_clearing');
@@ -20,6 +21,7 @@ describe('Merchant NPCs & Siekańce Hacksilver Economy (Every Location + Single-
     expect(bogusz?.dialogueId).toBe('npc_bogusz');
     expect(bogusz?.tileX).toBe(17);
     expect(bogusz?.tileY).toBe(17);
+    expect(bogusz?.isMerchant).toBe(true);
 
     // 3. Sanctum Dungeon -> Paser Gniewosz
     const sanctumGame = new CrpgGameState('sanctum_dungeon');
@@ -29,10 +31,54 @@ describe('Merchant NPCs & Siekańce Hacksilver Economy (Every Location + Single-
     expect(gniewosz?.dialogueId).toBe('npc_gniewosz');
     expect(gniewosz?.tileX).toBe(14);
     expect(gniewosz?.tileY).toBe(7);
+    expect(gniewosz?.isMerchant).toBe(true);
   });
 
-  it('allows selling any item from backpack for siekańce, crediting wallet and freeing inventory weight', () => {
+  it('strictly FORBIDS selling items or duplicates when NOT near a merchant', () => {
+    // In Slavic Village, player spawns at (16, 20), whereas Kupiec Dobromir is at (14, 14) (dist ~6.3)
+    const game = new CrpgGameState('slavic_village');
+    expect(game.isNearMerchant()).toBe(false);
+
+    const testItem = createItemInstance('weapon_hunting_bow', 1);
+    game.backpack.tryAddItem(testItem, true);
+    const initialSiekance = game.siekance;
+
+    // 1. Trying to sell single item while away from merchant fails
+    const singleSell = game.sellItemForSiekance(testItem.instanceId);
+    expect(singleSell.success).toBe(false);
+    expect(game.siekance).toBe(initialSiekance);
+    expect(game.backpack.findByInstanceId(testItem.instanceId)).toBeDefined();
+    expect(game.logs.some((l) => l.includes('Sprzedaż możliwa tylko u kupca'))).toBe(true);
+
+    // 2. Trying to sell duplicates while away from merchant fails
+    const dupeItem = createItemInstance('weapon_hunting_bow', 1);
+    game.backpack.tryAddItem(dupeItem, true);
+    const dupeSell = game.sellAllDuplicatesForSiekance();
+    expect(dupeSell.soldCount).toBe(0);
+    expect(dupeSell.earnedTotal).toBe(0);
+    expect(game.siekance).toBe(initialSiekance);
+    expect(game.logs.some((l) => l.includes('Sprzedaż możliwa tylko u kupca'))).toBe(true);
+
+    // 3. Walk player up to Kupiec Dobromir (tile 14, 15 - adjacent to stall)
+    game.player.tileX = 14;
+    game.player.tileY = 15;
+    game.player.x = 14.5;
+    game.player.y = 15.5;
+
+    expect(game.isNearMerchant()).toBe(true);
+
+    // Selling now succeeds!
+    const allowedSell = game.sellItemForSiekance(testItem.instanceId);
+    expect(allowedSell.success).toBe(true);
+    expect(game.siekance).toBeGreaterThan(initialSiekance);
+    expect(game.backpack.findByInstanceId(testItem.instanceId)).toBeUndefined();
+  });
+
+  it('allows selling any item from backpack for siekańce when at merchant, crediting wallet and freeing inventory weight', () => {
     const game = new CrpgGameState('forest_clearing');
+    // In forest_clearing, player starts at (15.5, 17.5), and Bogusz is at (17.5, 17.5), distance = 2.0 <= 2.8
+    expect(game.isNearMerchant()).toBe(true);
+
     const initialSiekance = game.siekance;
     const sausage = createItemInstance('item_roasted_sausage', 2);
     const expectedPrice = getItemPriceInSiekance(sausage);
@@ -49,10 +95,16 @@ describe('Merchant NPCs & Siekańce Hacksilver Economy (Every Location + Single-
     expect(game.backpack.currentWeight).toBeLessThan(weightBefore);
   });
 
-  it('sells all duplicate items with a single action, keeping equipped items and first unequipped copies', () => {
+  it('sells all duplicate items with a single action when at merchant, keeping equipped items and first unequipped copies', () => {
     const game = new CrpgGameState('slavic_village');
-    // Clear backpack so we control exactly what is tested
+    // Clear backpack and walk to Dobromir
     game.backpack.clearAllSlots();
+    game.player.tileX = 14;
+    game.player.tileY = 15;
+    game.player.x = 14.5;
+    game.player.y = 15.5;
+    expect(game.isNearMerchant()).toBe(true);
+
     const initialSiekance = game.siekance;
 
     // Equip Sunblade sword

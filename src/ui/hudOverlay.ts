@@ -843,6 +843,7 @@ export class HudOverlay {
 
     let emptyRenderedCount = 0;
 
+    const isNearMerchant = this.game.isNearMerchant();
     const inventoryDrawerHtml = this.isInventoryOpen
       ? `
       <div class="inventory-drawer" data-layout="compact-backpack">
@@ -862,7 +863,11 @@ export class HudOverlay {
             </div>
           </div>
           <div class="compact-header-right">
-            <button type="button" class="btn-sell-duplicates" data-action="sell-duplicates" title="Odkup jednym przyciskiem wszystkie zdublowane przedmioty w ekwipunku za siekańce">💰 Sprzedaj duplikaty</button>
+            ${
+              isNearMerchant
+                ? `<button type="button" class="btn-sell-duplicates" data-action="sell-duplicates" title="Kupiec w zasięgu: Odkup jednym przyciskiem wszystkie zdublowane przedmioty w ekwipunku za siekańce">💰 Sprzedaj duplikaty</button>`
+                : `<button type="button" class="btn-sell-duplicates disabled" disabled title="Sprzedaż możliwa tylko u handlarza (podejdź i porozmawiaj z Kupcem Dobromirem, Kramarzem Boguszem lub Paserem Gniewoszem)">🏪 Sprzedaż tylko u kupca</button>`
+            }
             <button type="button" class="sort-btn" data-bag-sort="rarity" title="Uporządkuj przedmioty w plecaku">⇅ Uporządkuj</button>
             <button class="btn-icon" data-action="toggle-inventory" title="Zamknij plecak (I lub Esc)">✕</button>
           </div>
@@ -1002,7 +1007,11 @@ export class HudOverlay {
                       </div>
                       <div class="bag-item-actions">
                         <span class="equip-state">${actionLabel}</span>
-                        <button type="button" class="bag-sell-btn" data-action="sell-single" data-instance-id="${slotItem.instanceId}" title="Sprzedaj kupcowi za ${itemPrice} siekańców">💰 Sprzedaj</button>
+                        ${
+                          isNearMerchant
+                            ? `<button type="button" class="bag-sell-btn" data-action="sell-single" data-instance-id="${slotItem.instanceId}" title="Sprzedaj kupcowi za ${itemPrice} siekańców">💰 Sprzedaj</button>`
+                            : ''
+                        }
                       </div>
                     </div>
                   `;
