@@ -202,20 +202,35 @@ export function createForestClearingMap(): IsometricWorldMap {
     linkedLightId: campfireLightId
   });
 
-  // 2. Multi-tile Camp Props around the Central Campfire (2x1 Ranger Tent & 1x2 Fallen Log)
+  // 2. Large Slavic Thatched Cottage & Fallen Log around the Central Campfire (2×1, scale ×2)
+  const campCottageLightId = 'light_camp_cottage';
+  lights.push({
+    id: campCottageLightId,
+    x: 17.5,
+    y: 12.5,
+    z: tiles[12][17].z + 1.6,
+    color: { r: 255, g: 186, b: 78 },
+    intensity: 1.35,
+    radius: 6.5,
+    flickerSpeed: 2.4,
+    enabled: true
+  });
   props.push({
-    id: 'tent_ranger_camp',
-    name: 'Namiot Traperski (2x1)',
-    kind: 'ranger_tent',
+    id: 'cottage_camp_clearing',
+    name: 'Chata Zrębowa Obozowiska (Chata z Gankiem, 2×1)',
+    kind: 'slavic_cottage',
+    variant: 0,
     x: 17,
-    y: 13,
-    z: tiles[13][17].z,
+    y: 12,
+    z: tiles[12][17].z,
     sizeX: 2,
     sizeY: 1,
-    heightZ: 2.0,
+    heightZ: 4.8,
     blocksMovement: true,
     blocksSight: true,
-    interactive: true
+    interactive: true,
+    isOpen: true,
+    linkedLightId: campCottageLightId
   });
 
   props.push({
@@ -593,9 +608,9 @@ export function createForestClearingMap(): IsometricWorldMap {
   });
   props.push({
     id: 'cabin_forester_lodge',
-    name: 'Zrębowa Chata Gajowego (2×1)',
+    name: 'Gospoda Leśna „Pod Wilczym Kłem” (2×1)',
     kind: 'slavic_cottage',
-    variant: 3,
+    variant: 5,
     x: 19,
     y: 20,
     z: tiles[20][19].z,
@@ -623,9 +638,9 @@ export function createForestClearingMap(): IsometricWorldMap {
   });
   props.push({
     id: 'cabin_hunter_clearing',
-    name: 'Chata Myśliwska w Zagajniku (2×1)',
+    name: 'Kuźnia i Chata Myśliwska w Zagajniku (2×1)',
     kind: 'slavic_cottage',
-    variant: 0,
+    variant: 7,
     x: 9,
     y: 13,
     z: tiles[13][9].z,
