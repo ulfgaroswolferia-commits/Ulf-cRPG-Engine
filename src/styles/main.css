@@ -444,18 +444,20 @@ body,
   left: 24px;
   bottom: 142px;
   top: auto;
-  width: min(530px, calc(100vw - 32px));
-  max-height: min(415px, calc(100vh - 205px));
-  background: rgba(13, 17, 26, 0.94);
+  width: min(720px, calc(100vw - 32px));
+  height: 480px;
+  max-height: calc(100vh - 165px);
+  background: rgba(12, 16, 25, 0.96);
   border: 1px solid var(--border-brass-bright);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(10px);
   z-index: 20;
+  box-sizing: border-box;
 }
 
 .panel-header {
@@ -494,8 +496,8 @@ body,
 
 .inventory-workspace {
   display: grid;
-  grid-template-columns: 205px 1fr;
-  gap: 10px;
+  grid-template-columns: 215px 1fr;
+  gap: 12px;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -662,12 +664,19 @@ body,
   border: 1px solid rgba(196, 158, 84, 0.22);
   border-radius: 6px;
   padding: 5px 6px;
+  height: 60px;
+  min-height: 60px;
+  max-height: 60px;
+  box-sizing: border-box;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .compact-stat-strip {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
+  height: 100%;
 }
 
 .compact-stat-pill {
@@ -675,9 +684,11 @@ body,
   justify-content: space-between;
   align-items: center;
   font-size: 10px;
-  padding: 3px 5px;
+  padding: 2px 5px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.03);
+  box-sizing: border-box;
+  height: 22px;
 }
 
 .compact-stat-pill.row-upgrade {
@@ -787,19 +798,20 @@ body,
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
-  padding-right: 3px;
+  padding-right: 5px;
   flex: 1;
-  max-height: 240px;
+  min-height: 0;
 }
 
 .backpack-slot {
   border-radius: 5px;
-  padding: 4px 7px;
-  min-height: 36px;
+  padding: 5px 9px;
+  min-height: 42px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   transition: all 0.12s ease;
+  box-sizing: border-box;
 }
 
 .backpack-slot.empty {
@@ -843,6 +855,10 @@ body,
 .bag-item-title-wrap {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 
 .bag-item-sub {
@@ -887,12 +903,14 @@ body,
 }
 
 .item-name {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: break-word;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .equip-state {
@@ -911,10 +929,15 @@ body,
   background: rgba(10, 13, 21, 0.94);
   border: 1px solid rgba(86, 226, 255, 0.28);
   border-radius: 6px;
-  padding: 6px 10px;
-  min-height: 36px;
+  padding: 6px 12px;
+  height: 52px;
+  min-height: 52px;
+  max-height: 52px;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .comparison-empty-hint {
@@ -928,9 +951,10 @@ body,
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .compact-comp-main {
