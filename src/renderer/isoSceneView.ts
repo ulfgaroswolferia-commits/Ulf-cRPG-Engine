@@ -381,6 +381,11 @@ export class IsoSceneView {
         this.renderFrame();
       } catch (err) {
         console.error('Błąd w pętli renderowania klatki IsoSceneView:', err);
+        if (this.worldContainer.filters && this.worldContainer.filters.length > 0) {
+          console.warn('Wyłączam post-filter z powodu błędu, aby scena pozostała widoczna.');
+          this.worldContainer.filters = [];
+          this.postFilter = null;
+        }
       }
     });
   }

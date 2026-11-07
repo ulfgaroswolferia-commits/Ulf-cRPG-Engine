@@ -293,8 +293,6 @@ void main(void) {
     graded *= vig;
 
     finalColor = vec4(clamp(graded, 0.0, 1.0), base.a);
-
-    finalColor = vec4(clamp(col, 0.0, 1.0), base.a);
 }
 `;
 
