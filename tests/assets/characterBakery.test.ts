@@ -55,4 +55,51 @@ describe('characterBakery - Modular Isometric Character Generation & Texture Bak
     expect(opaquePixels).toBeGreaterThan(500);
     expect(Object.keys(EQUIPMENT_CATALOG).length).toBeGreaterThanOrEqual(10);
   });
+
+  it('bakes specialized Slavic & dark fantasy archetypes (Ranger with Bow/Quiver, Druid with Antlers, Lamellar Warrior)', () => {
+    // 1. Ranger with Bow, Quiver, and Cowl
+    const rangerRecipe = {
+      ...generateRandomCharacterRecipe(202),
+      equipment: {
+        head: 'helm_ranger_cowl',
+        torso: 'torso_warden_brigandine',
+        cloak: 'cloak_ranger_quiver',
+        legs: 'legs_leather_boots',
+        mainHand: 'weapon_hunting_bow',
+        offHand: null
+      }
+    };
+    const bakedRanger = bakeCharacterBuffers(rangerRecipe);
+    expect(bakedRanger.albedoRGBA.length).toBe(64 * 4 * 96 * 8 * 4);
+
+    // 2. Slavic Lamellar Warrior with Round Shield & Szyszak
+    const warriorRecipe = {
+      ...generateRandomCharacterRecipe(303),
+      equipment: {
+        head: 'helm_szyszak',
+        torso: 'torso_slavic_lamellar',
+        cloak: 'cloak_steel_pauldrons',
+        legs: 'legs_steel_greaves',
+        mainHand: 'weapon_slavic_axe',
+        offHand: 'offhand_slavic_shield'
+      }
+    };
+    const bakedWarrior = bakeCharacterBuffers(warriorRecipe);
+    expect(bakedWarrior.albedoRGBA.length).toBe(64 * 4 * 96 * 8 * 4);
+
+    // 3. Druid with Antlers and Astral Staff
+    const druidRecipe = {
+      ...generateRandomCharacterRecipe(404),
+      equipment: {
+        head: 'helm_druid_antlers',
+        torso: 'torso_archmage_robes',
+        cloak: 'cloak_crimson_mantle',
+        legs: 'legs_lapcie',
+        mainHand: 'weapon_astral_staff',
+        offHand: 'offhand_grimoire'
+      }
+    };
+    const bakedDruid = bakeCharacterBuffers(druidRecipe);
+    expect(bakedDruid.albedoRGBA.length).toBe(64 * 4 * 96 * 8 * 4);
+  });
 });

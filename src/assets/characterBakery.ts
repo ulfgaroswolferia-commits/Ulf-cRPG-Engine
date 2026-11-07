@@ -88,7 +88,8 @@ export function generateRandomCharacterRecipe(
     'torso_archmage_robes',
     'torso_linen_tunic',
     'torso_slavic_giezlo',
-    'torso_przeszywanica'
+    'torso_przeszywanica',
+    'torso_slavic_lamellar'
   ];
   const heads: Array<string | null> = [
     null,
@@ -96,15 +97,23 @@ export function generateRandomCharacterRecipe(
     'helm_shadow_hood',
     'helm_arcane_circlet',
     'helm_szyszak',
-    'helm_klobuk'
+    'helm_klobuk',
+    'helm_druid_antlers',
+    'helm_ranger_cowl'
   ];
-  const cloaks: Array<string | null> = [null, 'cloak_crimson_mantle', 'cloak_steel_pauldrons'];
+  const cloaks: Array<string | null> = [
+    null,
+    'cloak_crimson_mantle',
+    'cloak_steel_pauldrons',
+    'cloak_ranger_quiver'
+  ];
   const legs = ['legs_steel_greaves', 'legs_leather_boots', 'legs_lapcie'];
   const weapons: Array<string | null> = [
     'weapon_sunblade_longsword',
     'weapon_Executioner_axe',
     'weapon_astral_staff',
-    'weapon_slavic_axe'
+    'weapon_slavic_axe',
+    'weapon_hunting_bow'
   ];
   const offhands: Array<string | null> = [
     null,
@@ -313,6 +322,914 @@ function drawTaperedLimb(
   }
 }
 
+function drawArticulatedArm(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  shoulderX: number,
+  shoulderY: number,
+  handX: number,
+  handY: number,
+  isLeftArm: boolean,
+  facingX: number,
+  skinColor: RGBAColor,
+  sleeveColor: RGBAColor,
+  vambraceColor: RGBAColor | null,
+  roughness: number,
+  metallic: number
+): void {
+  // Articulated elbow position
+  const elbowBendX = isLeftArm ? -2.8 + facingX * 1.5 : 2.8 + facingX * 1.5;
+  const elbowX = (shoulderX + handX) * 0.5 + elbowBendX;
+  const elbowY = (shoulderY + handY) * 0.5 + 2.5;
+
+  // Upper arm (sleeve/muscle)
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    shoulderX,
+    shoulderY,
+    elbowX,
+    elbowY,
+    3.8,
+    3.0,
+    sleeveColor,
+    vambraceColor,
+    roughness,
+    metallic
+  );
+
+  // Forearm & Vambrace (karwasz)
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    elbowX,
+    elbowY,
+    handX,
+    handY,
+    3.2,
+    2.4,
+    vambraceColor ? vambraceColor : sleeveColor,
+    vambraceColor ? { r: 218, g: 174, b: 84 } : null,
+    vambraceColor ? 0.3 : roughness,
+    vambraceColor ? 0.8 : metallic
+  );
+
+  // Clenched hand / gauntlet
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    handX,
+    handY,
+    2.6,
+    2.6,
+    skinColor,
+    vambraceColor ? vambraceColor : null,
+    0.6,
+    0.2
+  );
+}
+
+function drawLayeredPauldron(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  px: number,
+  py: number,
+  isLeft: boolean,
+  primaryColor: RGBAColor,
+  trimColor: RGBAColor,
+  hasFurMantle: boolean,
+  roughness: number,
+  metallic: number
+): void {
+  // Fur collar / tuft under pauldron
+  if (hasFurMantle) {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      px + (isLeft ? 1.5 : -1.5),
+      py - 1.5,
+      6.2,
+      5.2,
+      { r: 78, g: 68, b: 60 },
+      { r: 142, g: 128, b: 114 },
+      0.9,
+      0.05
+    );
+  }
+
+  // Tier 1: Main curved shoulder plate
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    px,
+    py,
+    5.6,
+    5.0,
+    primaryColor,
+    trimColor,
+    roughness,
+    metallic
+  );
+
+  // Tier 2: Lower articulating pauldron lame
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    px + (isLeft ? -1.2 : 1.2),
+    py + 3.2,
+    4.4,
+    3.2,
+    primaryColor,
+    trimColor,
+    roughness,
+    metallic
+  );
+
+  // Center rivet highlight
+  setPixelWithNormal(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    px,
+    py,
+    trimColor,
+    1.25,
+    0,
+    0,
+    0.15,
+    0.95
+  );
+}
+
+function drawDetailedBlade(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number,
+  bladeColor: RGBAColor,
+  goldColor: RGBAColor
+): void {
+  const dx = tipX - handX;
+  const dy = tipY - handY;
+  const len = Math.max(1, Math.hypot(dx, dy));
+  const nx = -dy / len;
+  const ny = dx / len;
+
+  // Crossguard quillons with winged finials
+  const guardX0 = handX + nx * 5.5;
+  const guardY0 = handY + ny * 5.5;
+  const guardX1 = handX - nx * 5.5;
+  const guardY1 = handY - ny * 5.5;
+
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    guardX0,
+    guardY0,
+    guardX1,
+    guardY1,
+    2.2,
+    2.2,
+    goldColor,
+    null,
+    0.18,
+    0.95
+  );
+
+  // Disc pommel counterweight
+  const pommelX = handX - (dx / len) * 4.5;
+  const pommelY = handY - (dy / len) * 4.5;
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    pommelX,
+    pommelY,
+    2.2,
+    2.2,
+    goldColor,
+    null,
+    0.2,
+    0.92
+  );
+
+  // Double-edged steel blade
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    handX,
+    handY,
+    tipX,
+    tipY,
+    3.0,
+    1.2,
+    bladeColor,
+    { r: 245, g: 250, b: 255 },
+    0.14,
+    0.96
+  );
+
+  // Dark fuller groove (zbrocze)
+  const fullerSteps = Math.floor(len * 0.65);
+  for (let i = 2; i < fullerSteps; i++) {
+    const t = i / len;
+    const fx = handX + dx * t;
+    const fy = handY + dy * t;
+    setPixelWithNormal(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      fx,
+      fy,
+      { r: 84, g: 96, b: 112 },
+      0.65,
+      0,
+      0,
+      0.35,
+      0.75
+    );
+  }
+}
+
+function drawDetailedAxe(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number,
+  woodColor: RGBAColor,
+  ironColor: RGBAColor,
+  goldColor: RGBAColor
+): void {
+  // Wood haft (ash wood toporzysko)
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    handX - 2,
+    handY + 7,
+    tipX,
+    tipY,
+    2.4,
+    2.2,
+    woodColor,
+    goldColor,
+    0.7,
+    0.1
+  );
+
+  // Steel socket
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    tipX,
+    tipY + 2,
+    2.8,
+    3.2,
+    goldColor,
+    null,
+    0.25,
+    0.9
+  );
+
+  // Bearded axe head (broda topora)
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    tipX + 3.8,
+    tipY + 4.5,
+    6.8,
+    5.4,
+    ironColor,
+    { r: 245, g: 250, b: 255 },
+    0.18,
+    0.94
+  );
+
+  // Rear hammer lug
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    tipX - 2.8,
+    tipY + 2.0,
+    2.4,
+    2.0,
+    ironColor,
+    null,
+    0.28,
+    0.9
+  );
+}
+
+function drawDetailedStaff(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number,
+  woodColor: RGBAColor,
+  crystalColor: RGBAColor
+): void {
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    handX - 2,
+    handY + 12,
+    tipX,
+    tipY,
+    2.6,
+    2.2,
+    woodColor,
+    { r: 212, g: 174, b: 84 },
+    0.65,
+    0.15
+  );
+
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    tipX,
+    tipY + 1.5,
+    4.2,
+    3.0,
+    { r: 224, g: 182, b: 84 },
+    null,
+    0.2,
+    0.92
+  );
+
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    tipX,
+    tipY - 2.5,
+    5.2,
+    5.2,
+    crystalColor,
+    { r: 255, g: 255, b: 255 },
+    0.05,
+    0.98,
+    false
+  );
+}
+
+function drawDetailedBow(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  handX: number,
+  handY: number,
+  facingX: number,
+  woodColor: RGBAColor,
+  goldColor: RGBAColor
+): void {
+  const topX = handX + facingX * 2 - 2;
+  const topY = handY - 24;
+  const btmX = handX + facingX * 2 - 2;
+  const btmY = handY + 14;
+
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    handX,
+    handY,
+    topX,
+    topY,
+    2.6,
+    1.4,
+    woodColor,
+    goldColor,
+    0.45,
+    0.2
+  );
+
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    handX,
+    handY,
+    btmX,
+    btmY,
+    2.6,
+    1.4,
+    woodColor,
+    goldColor,
+    0.45,
+    0.2
+  );
+
+  const bowSteps = Math.ceil(Math.hypot(btmX - topX, btmY - topY));
+  for (let i = 0; i <= bowSteps; i++) {
+    const t = i / bowSteps;
+    const sx = topX + (btmX - topX) * t + 3;
+    const sy = topY + (btmY - topY) * t;
+    setPixelWithNormal(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      sx,
+      sy,
+      { r: 235, g: 235, b: 240 },
+      1.0,
+      0,
+      0,
+      0.8,
+      0.1
+    );
+  }
+}
+
+function drawDetailedShield(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  offX: number,
+  offY: number,
+  shieldId: string,
+  primaryColor: RGBAColor,
+  trimColor: RGBAColor,
+  roughness: number,
+  metallic: number
+): void {
+  const isSlavicRound = shieldId === 'offhand_slavic_shield';
+
+  if (isSlavicRound) {
+    const rad = 10.5;
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      offX,
+      offY,
+      rad,
+      rad * 0.95,
+      primaryColor,
+      trimColor,
+      roughness,
+      metallic
+    );
+
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+      const rx = offX + Math.cos(angle) * (rad * 0.55);
+      const ry = offY + Math.sin(angle) * (rad * 0.55 * 0.95);
+      setPixelWithNormal(
+        albedo,
+        normalMat,
+        sheetW,
+        sheetH,
+        rx,
+        ry,
+        trimColor,
+        1.15,
+        0,
+        0,
+        0.2,
+        0.88
+      );
+    }
+
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      offX,
+      offY,
+      3.8,
+      3.6,
+      { r: 184, g: 192, b: 204 },
+      trimColor,
+      0.16,
+      0.96
+    );
+  } else {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      offX,
+      offY - 2,
+      7.8,
+      12.5,
+      primaryColor,
+      trimColor,
+      roughness,
+      metallic
+    );
+
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      offX,
+      offY - 3,
+      3.5,
+      4.8,
+      trimColor,
+      null,
+      0.2,
+      0.92
+    );
+  }
+}
+
+function drawDetailedTorch(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  offX: number,
+  offY: number,
+  frame: number,
+  primaryColor: RGBAColor
+): void {
+  drawTaperedLimb(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    offX,
+    offY + 4,
+    offX - 3,
+    offY - 14,
+    2.4,
+    2.8,
+    primaryColor,
+    { r: 42, g: 32, b: 24 },
+    0.7,
+    0.1
+  );
+
+  const flicker = Math.sin(frame * 1.6) * 1.5;
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    offX - 3 + flicker,
+    offY - 18,
+    5.6,
+    7.5,
+    { r: 255, g: 196, b: 64 },
+    { r: 255, g: 96, b: 24 },
+    0.05,
+    0.95,
+    false
+  );
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    offX - 3 + flicker * 0.5,
+    offY - 17,
+    2.8,
+    3.8,
+    { r: 255, g: 252, b: 220 },
+    null,
+    0.02,
+    0.98,
+    false
+  );
+}
+
+function drawDetailedGrimoire(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  offX: number,
+  offY: number,
+  primaryColor: RGBAColor,
+  trimColor: RGBAColor
+): void {
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    offX,
+    offY,
+    5.5,
+    7.5,
+    primaryColor,
+    trimColor,
+    0.65,
+    0.25
+  );
+  drawShadedEllipse(
+    albedo,
+    normalMat,
+    sheetW,
+    sheetH,
+    offX,
+    offY,
+    2.2,
+    2.8,
+    trimColor,
+    null,
+    0.2,
+    0.92
+  );
+}
+
+function drawDetailedHelm(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number,
+  cx: number,
+  headY: number,
+  facingX: number,
+  facingY: number,
+  headItem: EquipmentItemDef
+): void {
+  const { id, visualStyle, primaryColor, trimColor, roughness, metallic } = headItem;
+
+  if (id === 'helm_szyszak') {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY + 3.5,
+      8.8,
+      5.2,
+      { r: 96, g: 104, b: 114 },
+      null,
+      0.45,
+      0.75
+    );
+
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 2.5,
+      8.6,
+      8.4,
+      primaryColor,
+      trimColor,
+      roughness,
+      metallic
+    );
+
+    drawTaperedLimb(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 9.5,
+      cx,
+      headY - 14.5,
+      2.2,
+      0.8,
+      trimColor,
+      null,
+      0.18,
+      0.96
+    );
+
+    if (facingY > 0) {
+      const nasalX = cx + facingX * 2.2;
+      for (let ny = -2; ny <= 4; ny++) {
+        setPixelWithNormal(
+          albedo,
+          normalMat,
+          sheetW,
+          sheetH,
+          nasalX,
+          headY + ny,
+          trimColor,
+          1.2,
+          0,
+          0,
+          0.2,
+          0.92
+        );
+      }
+    }
+  } else if (id === 'helm_klobuk') {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 6.5,
+      6.8,
+      6.5,
+      primaryColor,
+      trimColor,
+      0.92,
+      0.0
+    );
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 2.5,
+      9.4,
+      3.2,
+      trimColor,
+      primaryColor,
+      0.95,
+      0.0
+    );
+  } else if (id === 'helm_druid_antlers') {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 3.8,
+      8.8,
+      3.2,
+      { r: 52, g: 112, b: 64 },
+      trimColor,
+      0.65,
+      0.15
+    );
+    drawTaperedLimb(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx - 5,
+      headY - 5,
+      cx - 10,
+      headY - 14,
+      2.0,
+      0.8,
+      primaryColor,
+      null,
+      0.55,
+      0.1
+    );
+    drawTaperedLimb(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx + 5,
+      headY - 5,
+      cx + 10,
+      headY - 14,
+      2.0,
+      0.8,
+      primaryColor,
+      null,
+      0.55,
+      0.1
+    );
+  } else if (visualStyle === 'hood') {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 2.0,
+      9.4,
+      9.8,
+      primaryColor,
+      trimColor,
+      roughness,
+      metallic
+    );
+    if (facingY > 0.1) {
+      drawShadedEllipse(
+        albedo,
+        normalMat,
+        sheetW,
+        sheetH,
+        cx + facingX * 2,
+        headY + 1.5,
+        5.4,
+        4.8,
+        { r: 12, g: 16, b: 22 },
+        null,
+        0.8,
+        0.05
+      );
+      const eyeColor = { r: 112, g: 235, b: 255 };
+      setPixelWithNormal(albedo, normalMat, sheetW, sheetH, cx + facingX * 2 - 2.5, headY + 1, eyeColor, 1.4, 0, 0, 0.05, 0.98);
+      setPixelWithNormal(albedo, normalMat, sheetW, sheetH, cx + facingX * 2 + 2.5, headY + 1, eyeColor, 1.4, 0, 0, 0.05, 0.98);
+    }
+  } else if (visualStyle === 'full_helm') {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 1.2,
+      8.8,
+      9.4,
+      primaryColor,
+      trimColor,
+      roughness,
+      metallic
+    );
+    if (facingY > 0) {
+      for (let vx = -4; vx <= 4; vx++) {
+        setPixelWithNormal(
+          albedo,
+          normalMat,
+          sheetW,
+          sheetH,
+          cx + facingX * 2 + vx,
+          headY - 1,
+          { r: 16, g: 20, b: 28 },
+          1.0,
+          0,
+          0,
+          0.1,
+          0.9
+        );
+      }
+    }
+  } else {
+    drawShadedEllipse(
+      albedo,
+      normalMat,
+      sheetW,
+      sheetH,
+      cx,
+      headY - 3.8,
+      8.8,
+      3.0,
+      primaryColor,
+      trimColor,
+      roughness,
+      metallic
+    );
+  }
+}
+
 const bufferCache = new Map<string, BakedCharacterBuffers>();
 
 /**
@@ -350,35 +1267,160 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
       const legSwing = frame === 0 ? 0 : Math.sin(stridePhase) * 5.0;
       const bobY = frame === 0 ? 0 : Math.abs(Math.cos(stridePhase)) * 2.2;
 
+      // Hand & Arm Coordinates
+      const shoulderLeftX = cx - 11.5;
+      const shoulderRightX = cx + 11.5;
+      const shoulderY = groundY - 47 - bobY;
+
+      const mainHandX = cx + 12 + facingX * 2.5;
+      const mainHandY = groundY - 35 - bobY + legSwing * 0.25;
+
+      const offHandX = cx - 12 - facingX * 1.5;
+      const offHandY = groundY - 35 - bobY - legSwing * 0.25;
+
       const drawCloakFirst = facingY >= -0.15;
 
-      const renderCloak = (): void => {
+      const renderCloakOrQuiver = (): void => {
         if (!layers.cloakItem) return;
-        // Flowing pleated cape with tapered hem
-        for (let row = 0; row <= 28; row++) {
-          const t = row / 28;
-          const flare = 8 + t * 7.5;
-          const wave = Math.sin(t * 5 + frame * 1.4) * 1.2;
+        const { visualStyle, primaryColor, trimColor, roughness, metallic } = layers.cloakItem;
+
+        if (visualStyle === 'quiver') {
+          // Ranger leather quiver across back with protruding arrows
+          const quiverX = cx - facingX * 2.5;
+          const quiverY = groundY - 42 - bobY;
+
+          // Cross-torso baldric strap
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx - 9,
+            groundY - 46 - bobY,
+            cx + 8,
+            groundY - 28 - bobY,
+            2.2,
+            2.0,
+            primaryColor,
+            trimColor,
+            0.65,
+            0.2
+          );
+
+          // Cylindrical leather quiver
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            quiverX - 3,
+            quiverY - 10,
+            quiverX + 4,
+            quiverY + 8,
+            3.6,
+            3.0,
+            primaryColor,
+            trimColor,
+            roughness,
+            metallic
+          );
+
+          // 4 wooden arrows protruding with goose feather fletchings (lotki)
+          const fletchColors: RGBAColor[] = [
+            { r: 240, g: 244, b: 248 },
+            { r: 188, g: 42, b: 36 },
+            { r: 240, g: 244, b: 248 },
+            { r: 188, g: 42, b: 36 }
+          ];
+          for (let ai = 0; ai < 4; ai++) {
+            const ax = quiverX - 5 + ai * 2.2;
+            const ay = quiverY - 14 - ai * 1.5;
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              ax,
+              ay + 2,
+              { r: 168, g: 124, b: 78 },
+              0.9,
+              0,
+              0,
+              0.7,
+              0.1
+            );
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              ax,
+              ay,
+              fletchColors[ai],
+              1.1,
+              0,
+              0,
+              0.5,
+              0.1
+            );
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              ax + 1,
+              ay - 1,
+              fletchColors[ai],
+              1.2,
+              0,
+              0,
+              0.5,
+              0.1
+            );
+          }
+        } else {
+          // Flowing pleated cape with dynamic stride waves and golden/fur hem
+          for (let row = 0; row <= 28; row++) {
+            const t = row / 28;
+            const flare = 8.5 + t * 8.5;
+            const wave = Math.sin(t * 5.2 + stridePhase) * 1.8;
+            drawShadedEllipse(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              cx - facingX * 3.8 + wave,
+              groundY - 48 - bobY + row,
+              flare,
+              2.6,
+              primaryColor,
+              row > 23 ? trimColor : null,
+              roughness,
+              metallic
+            );
+          }
+
+          // Brooch clasp at collarbones
           drawShadedEllipse(
             albedoRGBA,
             normalMaterialRGBA,
             sheetWidth,
             sheetHeight,
-            cx - facingX * 3.5 + wave,
-            groundY - 48 - bobY + row,
-            flare,
-            2.5,
-            layers.cloakItem.primaryColor,
-            row > 24 ? layers.cloakItem.trimColor : null,
-            layers.cloakItem.roughness,
-            layers.cloakItem.metallic
+            cx,
+            groundY - 48 - bobY,
+            2.8,
+            2.2,
+            trimColor,
+            null,
+            0.18,
+            0.94
           );
         }
       };
 
-      if (drawCloakFirst) renderCloak();
+      if (drawCloakFirst) renderCloakOrQuiver();
 
-      // Articulated Legs, Knee-Cops & Boots
+      // 1. Articulated Legs, Knee-Cops & Boots
       const leftHipX = cx - 5 + facingX * 1.8;
       const rightHipX = cx + 5 + facingX * 1.8;
       const leftFootX = leftHipX - legSwing * 0.45;
@@ -395,7 +1437,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         groundY - 27 - bobY,
         leftFootX,
         leftFootY,
-        4.4,
+        4.6,
         3.2,
         layers.legsItem.primaryColor,
         layers.legsItem.trimColor,
@@ -411,7 +1453,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         groundY - 27 - bobY,
         rightFootX,
         rightFootY,
-        4.4,
+        4.6,
         3.2,
         layers.legsItem.primaryColor,
         layers.legsItem.trimColor,
@@ -419,7 +1461,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         layers.legsItem.metallic
       );
 
-      // Boots Sabatons
+      // Boots & Sabatons
       drawShadedEllipse(
         albedoRGBA,
         normalMaterialRGBA,
@@ -427,8 +1469,8 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         sheetHeight,
         leftFootX + facingX * 1.5,
         leftFootY,
-        4.2,
-        2.8,
+        4.4,
+        3.0,
         layers.legsItem.trimColor,
         null,
         layers.legsItem.roughness,
@@ -441,16 +1483,82 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         sheetHeight,
         rightFootX + facingX * 1.5,
         rightFootY,
-        4.2,
-        2.8,
+        4.4,
+        3.0,
         layers.legsItem.trimColor,
         null,
         layers.legsItem.roughness,
         layers.legsItem.metallic
       );
 
-      // Sculpted Heroic Torso / Cuirass / Robes
+      // 2. Skirt / Tassets / Robes / Tunic Hem
       const isRobes = layers.torsoItem.visualStyle === 'robes';
+      const isPlateOrBrig =
+        layers.torsoItem.visualStyle === 'plate' ||
+        layers.torsoItem.visualStyle === 'brigandine';
+
+      if (isRobes) {
+        // Draped flared robe skirt down to ankles with mystical runic hem
+        for (let ry = 0; ry <= 22; ry++) {
+          const t = ry / 22;
+          const rFlare = 8.5 + t * 6.5;
+          const rColor = ry > 18 ? layers.torsoItem.trimColor : layers.torsoItem.primaryColor;
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx + legSwing * 0.15 * t,
+            groundY - 26 - bobY + ry,
+            rFlare,
+            2.0,
+            rColor,
+            ry > 19 ? { r: 124, g: 228, b: 255 } : null,
+            layers.torsoItem.roughness,
+            layers.torsoItem.metallic
+          );
+        }
+      } else if (isPlateOrBrig) {
+        // Articulated chainmail hauberk / plate tassets covering upper thighs
+        for (let ty = 0; ty <= 8; ty++) {
+          const tColor = ty > 6 ? layers.torsoItem.trimColor : { r: 88, g: 96, b: 108 };
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx,
+            groundY - 26 - bobY + ty,
+            9.8 + ty * 0.35,
+            2.0,
+            tColor,
+            ty === 8 ? layers.torsoItem.trimColor : null,
+            0.32,
+            0.85
+          );
+        }
+      } else {
+        // Slavic linen tunic / giezlo hem with red woven krajka border
+        for (let ty = 0; ty <= 7; ty++) {
+          const tColor = ty > 4 ? { r: 198, g: 36, b: 36 } : layers.torsoItem.primaryColor;
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx,
+            groundY - 26 - bobY + ty,
+            9.2 + ty * 0.4,
+            2.0,
+            tColor,
+            ty > 5 ? { r: 248, g: 244, b: 236 } : null,
+            0.85,
+            0.02
+          );
+        }
+      }
+
+      // 3. Sculpted Heroic Torso / Cuirass
       const torsoHeight = isRobes ? 23 : 17;
       drawShadedEllipse(
         albedoRGBA,
@@ -459,7 +1567,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         sheetHeight,
         cx,
         groundY - 37 - bobY,
-        11.2,
+        11.5,
         torsoHeight,
         layers.torsoItem.primaryColor,
         layers.torsoItem.trimColor,
@@ -467,7 +1575,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         layers.torsoItem.metallic
       );
 
-      // Waist Belt & Buckle + Chest Emblem
+      // Waist Belt & Buckle
       drawShadedEllipse(
         albedoRGBA,
         normalMaterialRGBA,
@@ -475,14 +1583,30 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         sheetHeight,
         cx,
         groundY - 27 - bobY,
-        10.6,
-        2.6,
-        { r: 54, g: 38, b: 26 },
+        10.8,
+        2.8,
+        { r: 52, g: 36, b: 26 },
         layers.torsoItem.trimColor,
         0.4,
         0.75
       );
       if (facingY > -0.2) {
+        // Center bronze buckle
+        drawShadedEllipse(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          cx + facingX * 2.2,
+          groundY - 27 - bobY,
+          2.6,
+          2.2,
+          { r: 218, g: 172, b: 74 },
+          null,
+          0.18,
+          0.94
+        );
+        // Chest emblem (Swaróg Kolowrót / Griffin)
         drawShadedEllipse(
           albedoRGBA,
           normalMaterialRGBA,
@@ -500,10 +1624,42 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         );
       }
 
+      // Adventurer's Leather Side Pouch & Crystal Potion Flask
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        cx - 8.5 + facingX * 1.5,
+        groundY - 25 - bobY,
+        3.2,
+        3.6,
+        { r: 68, g: 46, b: 32 },
+        { r: 212, g: 172, b: 84 },
+        0.55,
+        0.2
+      );
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        cx + 8.5 + facingX * 1.5,
+        groundY - 25 - bobY,
+        2.4,
+        3.2,
+        { r: 224, g: 42, b: 48 },
+        { r: 255, g: 240, b: 240 },
+        0.05,
+        0.95,
+        false
+      );
+
       // Slavic folk krajka embroidery (crimson-and-white geometric sash & placket)
       const isSlavicTorso =
         layers.torsoItem.id === 'torso_slavic_giezlo' ||
-        layers.torsoItem.id === 'torso_przeszywanica';
+        layers.torsoItem.id === 'torso_przeszywanica' ||
+        layers.torsoItem.id === 'torso_slavic_lamellar';
       if (isSlavicTorso && facingY > -0.2) {
         for (let py = -8; py <= 4; py++) {
           const krajkaColor =
@@ -523,56 +1679,87 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
             0.02
           );
         }
-        drawShadedEllipse(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          cx,
-          groundY - 27 - bobY,
-          10.8,
-          2.0,
-          layers.torsoItem.trimColor,
-          { r: 248, g: 244, b: 236 },
-          0.85,
-          0.02
-        );
       }
 
-      // Layered Shoulder Pauldrons & Arms
+      // 4. Articulated Arms Connecting Shoulders to Hands with Vambraces
+      const sleeveColor = layers.torsoItem.primaryColor;
+      const vambraceColor = isPlateOrBrig
+        ? layers.torsoItem.trimColor
+        : { r: 84, g: 58, b: 42 };
+
+      drawArticulatedArm(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        shoulderLeftX,
+        shoulderY,
+        offHandX,
+        offHandY,
+        true,
+        facingX,
+        recipe.skinTone,
+        sleeveColor,
+        vambraceColor,
+        layers.torsoItem.roughness,
+        layers.torsoItem.metallic
+      );
+
+      drawArticulatedArm(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        shoulderRightX,
+        shoulderY,
+        mainHandX,
+        mainHandY,
+        false,
+        facingX,
+        recipe.skinTone,
+        sleeveColor,
+        vambraceColor,
+        layers.torsoItem.roughness,
+        layers.torsoItem.metallic
+      );
+
+      // 5. Layered Multi-Tiered Shoulder Pauldrons
       const pauldronColor = layers.cloakItem?.trimColor ?? layers.torsoItem.trimColor;
-      drawShadedEllipse(
+      const pauldronTrim = layers.torsoItem.primaryColor;
+      const hasFurMantle = layers.cloakItem?.visualStyle === 'pauldrons';
+
+      drawLayeredPauldron(
         albedoRGBA,
         normalMaterialRGBA,
         sheetWidth,
         sheetHeight,
-        cx - 11.5,
-        groundY - 47 - bobY,
-        5.5,
-        4.8,
+        shoulderLeftX,
+        shoulderY,
+        true,
         pauldronColor,
-        layers.torsoItem.primaryColor,
+        pauldronTrim,
+        hasFurMantle,
         0.24,
         0.86
       );
-      drawShadedEllipse(
+      drawLayeredPauldron(
         albedoRGBA,
         normalMaterialRGBA,
         sheetWidth,
         sheetHeight,
-        cx + 11.5,
-        groundY - 47 - bobY,
-        5.5,
-        4.8,
+        shoulderRightX,
+        shoulderY,
+        false,
         pauldronColor,
-        layers.torsoItem.primaryColor,
+        pauldronTrim,
+        hasFurMantle,
         0.24,
         0.86
       );
 
-      if (!drawCloakFirst) renderCloak();
+      if (!drawCloakFirst) renderCloakOrQuiver();
 
-      // Neck & Head
+      // 6. Neck & Head
       const headY = groundY - 58 - bobY;
       drawShadedEllipse(
         albedoRGBA,
@@ -603,7 +1790,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         0.05
       );
 
-      // Facial Features (Eyes & Brow when facing forward/sideways)
+      // Facial Features (Eyes & Brow)
       if (facingY > 0.1 && layers.headItem?.visualStyle !== 'full_helm') {
         const eyeOffsetX = facingX * 2.5;
         setPixelWithNormal(
@@ -634,6 +1821,26 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           0.2,
           0.1
         );
+
+        // Slavic mustache (wąsy)
+        if (recipe.hairStyle === 'slavic_parted' || recipe.hairStyle === 'elder_beard') {
+          for (let wx = -4; wx <= 4; wx++) {
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              cx + eyeOffsetX + wx,
+              headY + 3 + Math.abs(wx) * 0.4,
+              recipe.hairColor,
+              1.0,
+              0,
+              0,
+              0.8,
+              0.05
+            );
+          }
+        }
       }
 
       // Hair Layer
@@ -654,7 +1861,6 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           0.08
         );
 
-        // Slavic parted bowl-cut styling
         if (recipe.hairStyle === 'slavic_parted') {
           drawShadedEllipse(
             albedoRGBA,
@@ -670,25 +1876,8 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
             0.76,
             0.08
           );
-          if (facingY > 0.1) {
-            setPixelWithNormal(
-              albedoRGBA,
-              normalMaterialRGBA,
-              sheetWidth,
-              sheetHeight,
-              cx + facingX * 1.8,
-              headY - 5,
-              recipe.skinTone,
-              0.85,
-              0,
-              0,
-              0.6,
-              0.05
-            );
-          }
         }
 
-        // Patriarchal flowing beard for Żercy & Wołchwowie
         if (recipe.hairStyle === 'elder_beard' && facingY > -0.25) {
           for (let by = 0; by <= 12; by++) {
             const bt = by / 12;
@@ -710,9 +1899,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           }
         }
 
-        // Twin braids and flower wreath (wianek) for Slavic maidens & herbalists
         if (recipe.hairStyle === 'wreath_braids') {
-          // Left & right draped braids
           drawTaperedLimb(
             albedoRGBA,
             normalMaterialRGBA,
@@ -746,7 +1933,6 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
             0.06
           );
 
-          // Floral & herb wreath around the crown
           const wreathRadius = 7.5;
           const flowerPalette: RGBAColor[] = [
             { r: 235, g: 60, b: 60 },
@@ -779,207 +1965,123 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         }
       }
 
-      // Helmet / Hood / Circlet / Kłobuk
+      // Helmet / Headgear
       if (layers.headItem) {
-        if (layers.headItem.id === 'helm_klobuk') {
-          // Conical Slavic felt hat with rolled brim
-          drawShadedEllipse(
-            albedoRGBA,
-            normalMaterialRGBA,
-            sheetWidth,
-            sheetHeight,
-            cx,
-            headY - 6.5,
-            6.5,
-            6.0,
-            layers.headItem.primaryColor,
-            layers.headItem.trimColor,
-            0.92,
-            0.0
-          );
-          drawShadedEllipse(
-            albedoRGBA,
-            normalMaterialRGBA,
-            sheetWidth,
-            sheetHeight,
-            cx,
-            headY - 2.5,
-            9.2,
-            3.0,
-            layers.headItem.trimColor,
-            layers.headItem.primaryColor,
-            0.95,
-            0.0
-          );
-        } else {
-          const isCirclet = layers.headItem.visualStyle === 'circlet';
-          const helmRy = isCirclet ? 3.0 : 9.4;
-          const helmCy = isCirclet ? headY - 3.8 : headY - 1.2;
-          drawShadedEllipse(
-            albedoRGBA,
-            normalMaterialRGBA,
-            sheetWidth,
-            sheetHeight,
-            cx,
-            helmCy,
-            8.8,
-            helmRy,
-            layers.headItem.primaryColor,
-            layers.headItem.trimColor,
-            layers.headItem.roughness,
-            layers.headItem.metallic
-          );
-
-          // Dark T-visor slit on full plate helmet
-          if (layers.headItem.visualStyle === 'full_helm' && facingY > 0) {
-            for (let vx = -4; vx <= 4; vx++) {
-              setPixelWithNormal(
-                albedoRGBA,
-                normalMaterialRGBA,
-                sheetWidth,
-                sheetHeight,
-                cx + facingX * 2 + vx,
-                headY - 1,
-                { r: 16, g: 20, b: 28 },
-                1.0,
-                0,
-                0,
-                0.1,
-                0.9
-              );
-            }
-          }
-        }
+        drawDetailedHelm(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          cx,
+          headY,
+          facingX,
+          facingY,
+          layers.headItem
+        );
       }
 
-      // Main Hand Weapon (Sword with crossguard, Battleaxe with crescent blade, or Crystal Staff)
+      // 7. Main Hand Weapon
       if (layers.mainHandItem) {
-        const handX = cx + 13 + facingX * 2;
-        const handY = groundY - 34 - bobY + legSwing * 0.25;
-        const tipX = handX + 7 + facingX * 4;
-        const tipY = handY - 26;
+        const { visualStyle, primaryColor, trimColor } = layers.mainHandItem;
+        const tipX = mainHandX + 7 + facingX * 4;
+        const tipY = mainHandY - 26;
 
-        // Crossguard / Hilt
-        drawTaperedLimb(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          handX - 4,
-          handY - 2,
-          handX + 5,
-          handY + 2,
-          2.0,
-          2.0,
-          layers.mainHandItem.trimColor,
-          null,
-          0.2,
-          0.92
-        );
-
-        // Weapon Shaft / Blade
-        drawTaperedLimb(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          handX,
-          handY,
-          tipX,
-          tipY,
-          2.5,
-          1.4,
-          layers.mainHandItem.primaryColor,
-          layers.mainHandItem.trimColor,
-          layers.mainHandItem.roughness,
-          layers.mainHandItem.metallic
-        );
-
-        if (layers.mainHandItem.visualStyle === 'battleaxe') {
-          drawShadedEllipse(
+        if (visualStyle === 'bow') {
+          drawDetailedBow(
             albedoRGBA,
             normalMaterialRGBA,
             sheetWidth,
             sheetHeight,
-            tipX + 2,
-            tipY + 5,
-            6.5,
-            5.0,
-            layers.mainHandItem.primaryColor,
-            layers.mainHandItem.trimColor,
-            0.2,
-            0.94
+            mainHandX,
+            mainHandY,
+            facingX,
+            primaryColor,
+            trimColor
           );
-        } else if (layers.mainHandItem.visualStyle === 'runestaff') {
-          drawShadedEllipse(
+        } else if (visualStyle === 'battleaxe') {
+          drawDetailedAxe(
             albedoRGBA,
             normalMaterialRGBA,
             sheetWidth,
             sheetHeight,
+            mainHandX,
+            mainHandY,
             tipX,
             tipY,
-            4.8,
-            4.8,
-            layers.mainHandItem.trimColor,
-            { r: 220, g: 252, b: 255 },
-            0.08,
-            0.96
+            trimColor,
+            primaryColor,
+            { r: 218, g: 174, b: 84 }
+          );
+        } else if (visualStyle === 'runestaff') {
+          drawDetailedStaff(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            mainHandX,
+            mainHandY,
+            tipX,
+            tipY,
+            primaryColor,
+            trimColor
+          );
+        } else {
+          // Longsword
+          drawDetailedBlade(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            mainHandX,
+            mainHandY,
+            tipX,
+            tipY,
+            primaryColor,
+            trimColor
           );
         }
       }
 
-      // Off-Hand Shield / Flaming Torch / Tome
+      // 8. Off-Hand Shield / Torch / Tome
       if (layers.offHandItem) {
-        const offX = cx - 13;
-        const offY = groundY - 34 - bobY - legSwing * 0.2;
-        if (layers.offHandItem.visualStyle === 'torch') {
-          drawTaperedLimb(
+        const { visualStyle, primaryColor, trimColor, roughness, metallic } = layers.offHandItem;
+
+        if (visualStyle === 'torch') {
+          drawDetailedTorch(
             albedoRGBA,
             normalMaterialRGBA,
             sheetWidth,
             sheetHeight,
-            offX,
-            offY + 4,
-            offX - 3,
-            offY - 14,
-            2.2,
-            2.8,
-            layers.offHandItem.primaryColor,
-            null,
-            0.7,
-            0.1
+            offHandX,
+            offHandY,
+            frame,
+            primaryColor
           );
-          drawShadedEllipse(
+        } else if (visualStyle === 'tome') {
+          drawDetailedGrimoire(
             albedoRGBA,
             normalMaterialRGBA,
             sheetWidth,
             sheetHeight,
-            offX - 3,
-            offY - 18,
-            5.2,
-            7.0,
-            { r: 255, g: 192, b: 64 },
-            { r: 255, g: 98, b: 24 },
-            0.05,
-            0.95,
-            false
+            offHandX,
+            offHandY,
+            primaryColor,
+            trimColor
           );
         } else {
-          const rx = layers.offHandItem.visualStyle === 'kiteshield' ? 7.2 : 4.8;
-          const ry = layers.offHandItem.visualStyle === 'kiteshield' ? 11.5 : 6.5;
-          drawShadedEllipse(
+          // Slavic or Heraldic Shield
+          drawDetailedShield(
             albedoRGBA,
             normalMaterialRGBA,
             sheetWidth,
             sheetHeight,
-            offX,
-            offY,
-            rx,
-            ry,
-            layers.offHandItem.primaryColor,
-            layers.offHandItem.trimColor,
-            layers.offHandItem.roughness,
-            layers.offHandItem.metallic
+            offHandX,
+            offHandY,
+            layers.offHandItem.id,
+            primaryColor,
+            trimColor,
+            roughness,
+            metallic
           );
         }
       }

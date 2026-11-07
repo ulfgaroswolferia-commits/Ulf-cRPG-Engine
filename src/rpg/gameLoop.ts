@@ -229,6 +229,10 @@ export class CrpgGameState {
     this.backpack.tryAddItem(createItemInstance('helm_shadow_hood', 1), true);
     this.backpack.tryAddItem(createItemInstance('offhand_heraldic_shield', 1), true);
     this.backpack.tryAddItem(createItemInstance('ring_emerald_seal', 1), true);
+    this.backpack.tryAddItem(createItemInstance('torso_slavic_lamellar', 1), true);
+    this.backpack.tryAddItem(createItemInstance('cloak_ranger_quiver', 1), true);
+    this.backpack.tryAddItem(createItemInstance('weapon_hunting_bow', 1), true);
+    this.backpack.tryAddItem(createItemInstance('offhand_slavic_shield', 1), true);
 
     this.loadMap(initialMapId);
   }
@@ -291,7 +295,7 @@ export class CrpgGameState {
       cloak: 'cloak_crimson_mantle',
       legs: 'legs_steel_greaves',
       mainHand: 'weapon_sunblade_longsword',
-      offHand: null
+      offHand: 'offhand_slavic_shield'
     };
     this.npcs.push({
       id: 'npc_gniewko',
@@ -373,12 +377,12 @@ export class CrpgGameState {
     radogostRecipe.hairStyle = 'elder_beard';
     radogostRecipe.hairColor = { r: 215, g: 220, b: 226 };
     radogostRecipe.equipment = {
-      head: null,
+      head: 'helm_druid_antlers',
       torso: 'torso_slavic_giezlo',
       cloak: 'cloak_crimson_mantle',
       legs: 'legs_lapcie',
       mainHand: 'weapon_astral_staff',
-      offHand: null
+      offHand: 'offhand_grimoire'
     };
     this.npcs.push({
       id: 'npc_radogost',

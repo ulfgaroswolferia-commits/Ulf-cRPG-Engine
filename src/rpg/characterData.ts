@@ -64,7 +64,9 @@ export interface EquipmentItemDef {
     | 'kiteshield'
     | 'tome'
     | 'food'
-    | 'relic_item';
+    | 'relic_item'
+    | 'bow'
+    | 'quiver';
 }
 
 export interface CharacterEquipmentLoadout {
@@ -552,6 +554,68 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     attackBonus: 4,
     loreBonus: 3,
     visualStyle: 'runestaff'
+  },
+  weapon_hunting_bow: {
+    id: 'weapon_hunting_bow',
+    name: 'Refleksyjny Łuk Cisowy Myśliwego',
+    slot: 'mainHand',
+    description: 'Starannie wyprofilowany łuk z cisowego drewna ze ścięgnistym oplotem, zdolny szyć strzałami na znaczny dystans.',
+    primaryColor: { r: 128, g: 86, b: 52 },
+    trimColor: { r: 218, g: 182, b: 94 },
+    roughness: 0.45,
+    metallic: 0.2,
+    attackBonus: 5,
+    visualStyle: 'bow'
+  },
+  cloak_ranger_quiver: {
+    id: 'cloak_ranger_quiver',
+    name: 'Skórzany Kołczan i Opończa Tropiciela',
+    slot: 'cloak',
+    description: 'Wzmocniony kołczan z brzechwami gęsich piór, narzucony na ramiona wraz z ciemnozieloną opończą.',
+    primaryColor: { r: 52, g: 68, b: 54 },
+    trimColor: { r: 168, g: 132, b: 84 },
+    roughness: 0.72,
+    metallic: 0.1,
+    armorBonus: 1,
+    visualStyle: 'quiver'
+  },
+  torso_slavic_lamellar: {
+    id: 'torso_slavic_lamellar',
+    name: 'Słowiańska Zbroja Łuskowa Drużynnika',
+    slot: 'torso',
+    description: 'Ciężki pancerz z zachodzących na siebie żelaznych łusek związanych rzemieniami, noszony przez elitarnych wojów księcia.',
+    primaryColor: { r: 122, g: 130, b: 142 },
+    trimColor: { r: 212, g: 168, b: 72 },
+    roughness: 0.25,
+    metallic: 0.9,
+    armorBonus: 7,
+    visualStyle: 'plate'
+  },
+  helm_druid_antlers: {
+    id: 'helm_druid_antlers',
+    name: 'Wieniec Żercy z Rogami Jelenia',
+    slot: 'head',
+    description: 'Rytualna korona z poroża jelenia opleciona liśćmi dębu i runicznymi wstęgami, wzmacniająca więź z duchami puszczy.',
+    primaryColor: { r: 196, g: 184, b: 162 },
+    trimColor: { r: 84, g: 218, b: 164 },
+    roughness: 0.45,
+    metallic: 0.15,
+    hidesHair: false,
+    loreBonus: 3,
+    visualStyle: 'circlet'
+  },
+  helm_ranger_cowl: {
+    id: 'helm_ranger_cowl',
+    name: 'Kaptur Czatownika z Wilczym Kłem',
+    slot: 'head',
+    description: 'Głęboki leśny kaptur rzucający cień na twarz z przymocowanym talizmanem wilczego kła.',
+    primaryColor: { r: 38, g: 52, b: 42 },
+    trimColor: { r: 218, g: 196, b: 154 },
+    roughness: 0.8,
+    metallic: 0.05,
+    hidesHair: true,
+    armorBonus: 2,
+    visualStyle: 'hood'
   },
 
   // Off Hand
