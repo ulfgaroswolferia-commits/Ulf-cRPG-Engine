@@ -205,6 +205,16 @@ vec3 evalPointLight(vec4 posRad, vec4 colInt, vec2 fragPx, vec3 N, vec3 albedo) 
     return diffuse + specular;
 }
 
+// Narkowicz ACES Filmic Tone Mapping curve for cinematic contrast & highlight rolloff
+vec3 acesFilmic(vec3 x) {
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
 void main(void) {
     vec4 base = texture(uTexture, vTextureCoord);
     if (uEnablePbr < 0.5) {
@@ -224,11 +234,11 @@ void main(void) {
     float hU = dot(cU, vec3(0.299, 0.587, 0.114));
     float hD = dot(cD, vec3(0.299, 0.587, 0.114));
 
-    vec3 N = normalize(vec3((hL - hR) * 2.4, (hU - hD) * 2.4, 1.0));
+    vec3 N = normalize(vec3((hL - hR) * 2.6, (hU - hD) * 2.6, 1.0));
 
     // Multi-tap Bloom with warm scattering for flames, torches, magic crystals and lights
     vec2 bStep1 = uInputSize.zw * 2.8;
-    vec2 bStep2 = uInputSize.zw * 5.6;
+    vec2 bStep2 = uInputSize.zw * 5.8;
 
     vec3 s1 = texture(uTexture, vTextureCoord + vec2(-bStep1.x, -bStep1.y)).rgb;
     vec3 s2 = texture(uTexture, vTextureCoord + vec2( bStep1.x, -bStep1.y)).rgb;
@@ -241,13 +251,13 @@ void main(void) {
     vec3 s8 = texture(uTexture, vTextureCoord + vec2(0.0,  bStep2.y)).rgb;
 
     vec3 bloomSample = (cL + cR + cU + cD) * 0.12 + (s1 + s2 + s3 + s4) * 0.08 + (s5 + s6 + s7 + s8) * 0.05;
-    vec3 bloomThreshold = max(vec3(0.0), bloomSample - vec3(0.58));
-    vec3 bloomGlow = bloomThreshold * vec3(1.22, 1.02, 0.82) * 0.48;
+    vec3 bloomThreshold = max(vec3(0.0), bloomSample - vec3(0.54));
+    vec3 bloomGlow = pow(bloomThreshold, vec3(1.2)) * vec3(1.35, 1.08, 0.85) * 0.58;
 
     // Natural ambient illumination preserving dark fantasy contrast & texture details
     float zenith = 0.90 + 0.10 * max(0.0, dot(N, normalize(vec3(-0.35, -0.55, 0.75))));
-    float ambFactor = mix(0.52, 0.95, clamp(uAmbient, 0.1, 1.0));
-    vec3 ambientCol = base.rgb * vec3(0.95, 0.98, 1.04) * (ambFactor * zenith);
+    float ambFactor = mix(0.50, 0.94, clamp(uAmbient, 0.1, 1.0));
+    vec3 ambientCol = base.rgb * vec3(0.94, 0.97, 1.04) * (ambFactor * zenith);
 
     vec3 dynamicLights = vec3(0.0);
     dynamicLights += evalPointLight(uLight0PosRad, uLight0ColInt, vScreenPx, N, base.rgb);
@@ -260,19 +270,29 @@ void main(void) {
     // Energy-conserving soft-knee compression so overlapping lights never blind or wash out textures
     dynamicLights = dynamicLights / (vec3(1.0) + dynamicLights * 1.25);
 
+    // Victor Vran / ARPG style Fresnel rim light & wet surface specular reflection
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    float nDotV = clamp(dot(N, V), 0.0, 1.0);
+    float fresnel = pow(1.0 - nDotV, 3.2);
+    vec3 rimLight = vec3(0.32, 0.54, 0.88) * (fresnel * 0.28 * (0.5 + 0.5 * uAmbient));
+
     // Subtle drifting woodland mist (soft continuous atmosphere without tile stepping)
     vec2 worldCoord = (vScreenPx - uCameraOffset) / max(0.2, uZoom);
     float mist = fbmMist(worldCoord * 0.0035 + vec2(uTime * 0.03, -uTime * 0.015));
     float mistMask = smoothstep(0.50, 0.82, mist) * 0.040;
     vec3 mistCol = (vec3(0.12, 0.16, 0.22) + dynamicLights * 0.22) * mistMask;
 
-    vec3 col = ambientCol + dynamicLights + bloomGlow + mistCol;
+    vec3 rawColor = ambientCol + dynamicLights + bloomGlow + rimLight + mistCol;
 
-    // Gentle vignette & soft shoulder roll-off without over-brightening midtones
+    // ACES Filmic tonemapping for lush, rich dark-fantasy contrast & deep velvet blacks
+    vec3 graded = acesFilmic(rawColor * 1.08);
+
+    // Gentle vignette
     vec2 centered = vTextureCoord * 2.0 - 1.0;
-    float vig = clamp(1.0 - dot(centered, centered) * 0.14, 0.72, 1.0);
-    col *= vig;
-    col = col / (vec3(1.0) + max(vec3(0.0), col - vec3(0.72)) * 0.55);
+    float vig = clamp(1.0 - dot(centered, centered) * 0.14, 0.75, 1.0);
+    graded *= vig;
+
+    finalColor = vec4(clamp(graded, 0.0, 1.0), base.a);
 
     finalColor = vec4(clamp(col, 0.0, 1.0), base.a);
 }

@@ -279,6 +279,9 @@ export function generateTilePbrBuffers(
 
         const edgeDist = 1.0 - (dx + dy);
 
+        let pixelRoughness = roughness;
+        let pixelMetallic = metallic;
+
         if (terrain === 'forest_grass' || terrain === 'forest_soil') {
           const patch = fbm(u * 4.5, v * 4.5, 3);
           if (patch > 0.56) {
@@ -297,6 +300,8 @@ export function generateTilePbrBuffers(
             pixelColor = { r: 124, g: 108, b: 88 };
             shade = 0.95 + (0.28 - vor.f1) * 0.6;
             nx += (vor.f1 - 0.14) * 1.4;
+            pixelRoughness = 0.45;
+            pixelMetallic = 0.18;
           } else if (edgeDist < 0.14) {
             // Grassy border blending into the trail edges
             pixelColor = { r: 56, g: 88, b: 44 };
@@ -308,10 +313,14 @@ export function generateTilePbrBuffers(
           shade = 0.88 + wave * 0.22;
           nx = wave * 0.45;
           ny = -0.35 + wave * 0.35;
+          pixelRoughness = 0.05;
+          pixelMetallic = 0.88;
           if (edgeDist < 0.09) {
             // Shoreline foam & shallow tint
             pixelColor = { r: 68, g: 142, b: 168 };
             shade = 1.15;
+            pixelRoughness = 0.25;
+            pixelMetallic = 0.45;
           }
         } else if (terrain === 'stairs_stone') {
           const stepIdx = Math.floor(y / 8);
@@ -334,15 +343,19 @@ export function generateTilePbrBuffers(
             if (terrain === 'mossy_cobble' || (terrain === 'dungeon_stone' && detailNoise > 0.58)) {
               pixelColor = { r: 48, g: 88, b: 42 }; // Lush moss in stone crevices
               shade = 0.78;
+              pixelRoughness = 0.92;
             } else {
               shade *= 0.46;
+              pixelRoughness = 0.96;
             }
             ny += 0.55;
           } else if (vor.edge < 0.15) {
-            // Beveled stone highlight
-            shade *= 1.12;
-            nx -= 0.28;
-            ny -= 0.28;
+            // Beveled wet stone highlight (Victor Vran / PoE specular sheen)
+            shade *= 1.16;
+            nx -= 0.32;
+            ny -= 0.32;
+            pixelRoughness = Math.max(0.2, roughness - 0.26);
+            pixelMetallic = Math.min(0.48, metallic + 0.2);
           }
 
           if (terrain === 'arcane_inlay') {
@@ -355,6 +368,8 @@ export function generateTilePbrBuffers(
             ) {
               pixelColor = { r: 82, g: 228, b: 255 };
               shade = 1.35;
+              pixelRoughness = 0.12;
+              pixelMetallic = 0.82;
             }
           }
 
@@ -374,8 +389,8 @@ export function generateTilePbrBuffers(
           shade,
           Math.max(-1, Math.min(1, nx)),
           Math.max(-1, Math.min(1, ny)),
-          roughness,
-          metallic
+          pixelRoughness,
+          pixelMetallic
         );
       }
     }

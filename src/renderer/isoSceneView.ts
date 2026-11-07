@@ -1295,24 +1295,69 @@ export class IsoSceneView {
   }
 
   private updateParticles(dt: number): void {
-    // Spawn embers / arcane motes from active light sources
-    if (this.particles.length < 75 && Math.random() < 0.65) {
-      const enabledLights = this.game.map.lights.filter((l) => l.enabled);
-      if (enabledLights.length > 0) {
-        const l = enabledLights[Math.floor(Math.random() * enabledLights.length)];
-        const isCyan = l.color.b > l.color.r;
+    // Spawn atmospheric crackling embers, sparks, and ethereal motes
+    if (this.particles.length < 140 && Math.random() < 0.72) {
+      const fireProps = this.game.map.props.filter(
+        (p) => (p.kind === 'campfire' || p.kind === 'torch_sconce') && p.isOpen
+      );
+      const arcaneProps = this.game.map.props.filter(
+        (p) =>
+          p.kind === 'arcane_crystal' ||
+          p.kind === 'slavic_shrine' ||
+          p.kind === 'runic_altar'
+      );
+
+      if (fireProps.length > 0 && Math.random() < 0.55) {
+        // Crackling sparks & embers rising from campfires / torches
+        const p = fireProps[Math.floor(Math.random() * fireProps.length)];
+        const isCampfire = p.kind === 'campfire';
+        const sparkColors = [0xffe066, 0xffa726, 0xff7043, 0xff3d00];
         this.particles.push({
-          x: l.x + 0.5 + (Math.random() - 0.5) * 0.35,
-          y: l.y + 0.5 + (Math.random() - 0.5) * 0.35,
-          z: l.z + 0.1,
-          vx: (Math.random() - 0.5) * 0.25,
-          vy: (Math.random() - 0.5) * 0.25,
-          vz: 0.55 + Math.random() * 0.5,
+          x: p.x + 0.5 + (Math.random() - 0.5) * (isCampfire ? 0.45 : 0.22),
+          y: p.y + 0.5 + (Math.random() - 0.5) * (isCampfire ? 0.45 : 0.22),
+          z: p.z + (isCampfire ? 0.35 : 1.35),
+          vx: (Math.random() - 0.5) * 0.35,
+          vy: (Math.random() - 0.5) * 0.35,
+          vz: 0.85 + Math.random() * 0.75,
           life: 0,
-          maxLife: 1.2 + Math.random() * 1.1,
-          color: isCyan ? 0x58e6ff : 0xffb347,
-          size: isCyan ? 2.6 : 2.2
+          maxLife: 0.8 + Math.random() * 0.85,
+          color: sparkColors[Math.floor(Math.random() * sparkColors.length)],
+          size: 1.6 + Math.random() * 1.4
         });
+      } else if (arcaneProps.length > 0 && Math.random() < 0.45) {
+        // Floating ethereal motes around arcane crystals & ancient shrines
+        const p = arcaneProps[Math.floor(Math.random() * arcaneProps.length)];
+        const moteColors = [0x58e6ff, 0x80d8ff, 0xce93d8, 0x69f0ae];
+        this.particles.push({
+          x: p.x + 0.5 + (Math.random() - 0.5) * 0.5,
+          y: p.y + 0.5 + (Math.random() - 0.5) * 0.5,
+          z: p.z + 0.3 + Math.random() * 0.8,
+          vx: (Math.random() - 0.5) * 0.16,
+          vy: (Math.random() - 0.5) * 0.16,
+          vz: 0.3 + Math.random() * 0.35,
+          life: 0,
+          maxLife: 1.6 + Math.random() * 1.2,
+          color: moteColors[Math.floor(Math.random() * moteColors.length)],
+          size: 2.2 + Math.random() * 1.5
+        });
+      } else {
+        const enabledLights = this.game.map.lights.filter((l) => l.enabled);
+        if (enabledLights.length > 0) {
+          const l = enabledLights[Math.floor(Math.random() * enabledLights.length)];
+          const isCyan = l.color.b > l.color.r;
+          this.particles.push({
+            x: l.x + 0.5 + (Math.random() - 0.5) * 0.35,
+            y: l.y + 0.5 + (Math.random() - 0.5) * 0.35,
+            z: l.z + 0.1,
+            vx: (Math.random() - 0.5) * 0.25,
+            vy: (Math.random() - 0.5) * 0.25,
+            vz: 0.55 + Math.random() * 0.5,
+            life: 0,
+            maxLife: 1.2 + Math.random() * 1.1,
+            color: isCyan ? 0x58e6ff : 0xffb347,
+            size: isCyan ? 2.6 : 2.2
+          });
+        }
       }
     }
 
@@ -1323,6 +1368,8 @@ export class IsoSceneView {
         this.particles.splice(i, 1);
         continue;
       }
+      p.vx += Math.sin(p.life * 7.5 + p.y * 2.5) * 0.06 * dt;
+      p.vy += Math.cos(p.life * 7.5 + p.x * 2.5) * 0.06 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
@@ -1354,19 +1401,20 @@ export class IsoSceneView {
       });
     }
 
-    // Add player's equipped torch or rune staff light!
+    // Add player's dynamic light (Torch / Astral Staff or subtle Hero Key Light)
     const playerOffhand = this.game.player.recipe.equipment.offHand;
     const playerMainhand = this.game.player.recipe.equipment.mainHand;
+    const pRot = toRotatedContinuous(
+      this.game.player.x,
+      this.game.player.y,
+      mapW,
+      mapH,
+      this.rotation
+    );
+    const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z + 1.4);
+
     if (playerOffhand === 'offhand_torch' || playerMainhand === 'weapon_astral_staff') {
       const isStaff = playerMainhand === 'weapon_astral_staff';
-      const pRot = toRotatedContinuous(
-        this.game.player.x,
-        this.game.player.y,
-        mapW,
-        mapH,
-        this.rotation
-      );
-      const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z + 1.4);
       result.push({
         screenX: pScr.x,
         screenY: pScr.y,
@@ -1374,8 +1422,20 @@ export class IsoSceneView {
         r: isStaff ? 0.35 : 1.0,
         g: isStaff ? 0.88 : 0.68,
         b: isStaff ? 1.0 : 0.28,
-        intensity: 1.38 + Math.sin(this.elapsedSeconds * 5.0) * 0.08,
+        intensity: 1.45 + Math.sin(this.elapsedSeconds * 5.0) * 0.08,
         radiusPx: 5.8 * (TILE_WIDTH * 0.5)
+      });
+    } else {
+      // Subtle personal adventurer fill / aura light (ARPG standard so hero is always readable)
+      result.push({
+        screenX: pScr.x,
+        screenY: pScr.y,
+        zHeightPx: 38,
+        r: 0.88,
+        g: 0.82,
+        b: 0.94,
+        intensity: 0.65,
+        radiusPx: 3.6 * (TILE_WIDTH * 0.5)
       });
     }
 
@@ -1499,6 +1559,25 @@ export class IsoSceneView {
         );
 
         this.floorLayer.addChild(sprite);
+
+        if (cell.terrain === 'abyss_water' && this.bufferMode === 'final_pbr') {
+          // Dynamic specular caustics rippling across dark water surface
+          const wavePhase = this.elapsedSeconds * 2.2 + rx * 1.5 + ry * 2.1;
+          const shimmerAlpha = 0.16 + Math.sin(wavePhase) * 0.12;
+          if (shimmerAlpha > 0.06) {
+            const causticGfx = this.displayPool.graphics();
+            const caustW = TILE_WIDTH * 0.32;
+            const caustH = TILE_HEIGHT * 0.2;
+            const caustOffX = Math.sin(wavePhase * 0.8) * 6;
+            const caustOffY = Math.cos(wavePhase * 0.9) * 3;
+            causticGfx
+              .ellipse(scr.x + caustOffX, scr.y + caustOffY, caustW, caustH)
+              .stroke({ color: 0x90e0ef, width: 1.2, alpha: shimmerAlpha })
+              .ellipse(scr.x - caustOffX * 0.5, scr.y - caustOffY * 0.5, caustW * 0.55, caustH * 0.45)
+              .fill({ color: 0x00b4d8, alpha: shimmerAlpha * 0.35 });
+            this.floorLayer.addChild(causticGfx);
+          }
+        }
 
         if (this.bufferMode === 'walkability_fov') {
           const walkOk = this.game.isTileWalkable(cell.x, cell.y);
@@ -1689,39 +1768,64 @@ export class IsoSceneView {
             prop.variant ?? ((prop.x * 7 + prop.y * 13) % 9)
           );
 
-          // Render Dynamic Tree / Pillar / Watchtower / Rock Cast Shadow away from nearest firelight
-          if (
-            this.bufferMode === 'final_pbr' &&
-            (prop.kind === 'pine_tree' ||
-              prop.kind === 'ancient_oak' ||
-              prop.kind === 'pillar' ||
-              prop.kind === 'dead_tree' ||
-              prop.kind === 'watchtower' ||
-              prop.kind === 'rock_cliff')
-          ) {
-            let sdx = -16;
-            let sdy = 8;
-            if (screenLights.length > 0) {
-              let nearest = screenLights[0];
-              let bestD = Infinity;
-              for (const l of screenLights) {
-                const d = Math.hypot(scr.x - l.screenX, scr.y - l.screenY);
-                if (d < bestD) {
-                  bestD = d;
-                  nearest = l;
+          // Grounding Ambient Occlusion (AO) & Directional Penumbra Shadow for solid props
+          if (this.bufferMode === 'final_pbr') {
+            const isFloraOrNonSolid =
+              prop.kind === 'wildflower_patch' ||
+              prop.kind === 'ground_loot' ||
+              prop.kind === 'exit_path';
+
+            if (!isFloraOrNonSolid) {
+              const baseRx = Math.max(16, (fp.width + fp.height) * 14);
+              const baseRy = Math.max(8, (fp.width + fp.height) * 7);
+
+              const aoGfx = this.displayPool.graphics();
+              // Dense inner contact AO anchoring prop to ground
+              aoGfx
+                .ellipse(scr.x, scr.y, baseRx * 0.72, baseRy * 0.72)
+                .fill({ color: 0x010204, alpha: 0.58 });
+              // Soft feathered outer ambient occlusion
+              aoGfx
+                .ellipse(scr.x, scr.y, baseRx, baseRy)
+                .fill({ color: 0x030508, alpha: 0.28 });
+
+              // Directional penumbra cast shadow for tall structures
+              const isTall =
+                prop.kind === 'pine_tree' ||
+                prop.kind === 'ancient_oak' ||
+                prop.kind === 'pillar' ||
+                prop.kind === 'dead_tree' ||
+                prop.kind === 'watchtower' ||
+                prop.kind === 'rock_cliff' ||
+                prop.kind === 'slavic_cottage' ||
+                prop.kind === 'wall_block';
+
+              if (isTall) {
+                let sdx = -16;
+                let sdy = 8;
+                if (screenLights.length > 0) {
+                  let nearest = screenLights[0];
+                  let bestD = Infinity;
+                  for (const l of screenLights) {
+                    const d = Math.hypot(scr.x - l.screenX, scr.y - l.screenY);
+                    if (d < bestD) {
+                      bestD = d;
+                      nearest = l;
+                    }
+                  }
+                  const dx = scr.x - nearest.screenX;
+                  const dy = scr.y - nearest.screenY;
+                  const len = Math.max(1, Math.hypot(dx, dy));
+                  sdx = (dx / len) * 26;
+                  sdy = (dy / len) * 13;
                 }
+                aoGfx
+                  .ellipse(scr.x + sdx * 0.65, scr.y + sdy * 0.65, baseRx * 1.08, baseRy * 1.08)
+                  .fill({ color: 0x020406, alpha: 0.36 });
               }
-              const dx = scr.x - nearest.screenX;
-              const dy = scr.y - nearest.screenY;
-              const len = Math.max(1, Math.hypot(dx, dy));
-              sdx = (dx / len) * 26;
-              sdy = (dy / len) * 13;
+
+              this.sortedObjectLayer.addChild(aoGfx);
             }
-            const treeShadow = this.displayPool.graphics();
-            treeShadow
-              .ellipse(scr.x + sdx * 0.55, scr.y + sdy * 0.55, 32, 16)
-              .fill({ color: 0x030508, alpha: 0.42 });
-            this.sortedObjectLayer.addChild(treeShadow);
           }
 
           const sp = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
@@ -1896,7 +2000,7 @@ export class IsoSceneView {
         zMax: actor.z + 1.9,
         render: (orderIndex, totalCount) => {
 
-          // Render Dynamic 2.5D Cast Shadow away from nearest point light
+          // Render Dual-Layer Cast Shadow (Inner Contact Core + Directional Penumbra)
           if (this.bufferMode === 'final_pbr') {
             let shadowOffsetX = -8;
             let shadowOffsetY = 4;
@@ -1918,9 +2022,15 @@ export class IsoSceneView {
             }
 
             const shadowGfx = this.displayPool.graphics();
+            // Layer 1: Dense tight contact shadow directly beneath feet (anchors actor to ground)
             shadowGfx
-              .ellipse(scr.x + shadowOffsetX * 0.45, scr.y + shadowOffsetY * 0.45, 19, 9.5)
-              .fill({ color: 0x04060a, alpha: 0.52 });
+              .ellipse(scr.x, scr.y + 1, 13, 6.5)
+              .fill({ color: 0x010204, alpha: 0.68 });
+            // Layer 2: Directional penumbra cast shadow away from light
+            shadowGfx
+              .ellipse(scr.x + shadowOffsetX * 0.55, scr.y + shadowOffsetY * 0.55, 20, 10)
+              .fill({ color: 0x030509, alpha: 0.42 });
+
             if (actor.id === this.game.player.id) {
               // Subtle selection ring under active player hero
               shadowGfx
@@ -2154,15 +2264,21 @@ export class IsoSceneView {
       this.debugOverlayContainer.addChild(popText);
     }
 
-    // 4. Render Subtle Atmospheric Ember & Firefly Particles in Final PBR Mode (no blinding giant halos)
+    // 4. Render Atmospheric Ember, Spark, and Ethereal Mote Particles in Final PBR Mode
     if (this.bufferMode === 'final_pbr') {
       for (const p of this.particles) {
         const rotP = toRotatedContinuous(p.x, p.y, mapW, mapH, this.rotation);
         const scrP = gridToScreen(rotP.rx, rotP.ry, p.z);
-        const alpha = Math.sin((p.life / p.maxLife) * Math.PI) * 0.65;
+        const lifeRatio = p.life / p.maxLife;
+        const alpha = Math.sin(lifeRatio * Math.PI) * 0.82;
+        // Inner bright spark core
+        this.lightingOverlayGraphics
+          .circle(scrP.x, scrP.y, p.size * 0.55)
+          .fill({ color: 0xffffff, alpha: alpha * 0.95 });
+        // Outer colored glow halo
         this.lightingOverlayGraphics
           .circle(scrP.x, scrP.y, p.size)
-          .fill({ color: p.color, alpha });
+          .fill({ color: p.color, alpha: alpha * 0.65 });
       }
     }
 
