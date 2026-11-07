@@ -1255,7 +1255,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
   for (let dir = 0; dir < directions; dir++) {
     const angle = (dir / 8) * Math.PI * 2;
     const facingX = Math.sin(angle);
-    const facingY = Math.cos(angle); // +1 = facing camera (South), -1 = facing away (North)
+    const facingY = -Math.cos(angle); // +1 = facing camera (South, dir=4), -1 = facing away (North, dir=0)
 
     for (let frame = 0; frame < framesPerDirection; frame++) {
       const ox = frame * frameWidth;
@@ -1790,59 +1790,6 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         0.05
       );
 
-      // Facial Features (Eyes & Brow)
-      if (facingY > 0.1 && layers.headItem?.visualStyle !== 'full_helm') {
-        const eyeOffsetX = facingX * 2.5;
-        setPixelWithNormal(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          cx + eyeOffsetX - 2.5,
-          headY - 1,
-          { r: 28, g: 34, b: 46 },
-          1.0,
-          0,
-          0,
-          0.2,
-          0.1
-        );
-        setPixelWithNormal(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          cx + eyeOffsetX + 2.5,
-          headY - 1,
-          { r: 28, g: 34, b: 46 },
-          1.0,
-          0,
-          0,
-          0.2,
-          0.1
-        );
-
-        // Slavic mustache (wąsy)
-        if (recipe.hairStyle === 'slavic_parted' || recipe.hairStyle === 'elder_beard') {
-          for (let wx = -4; wx <= 4; wx++) {
-            setPixelWithNormal(
-              albedoRGBA,
-              normalMaterialRGBA,
-              sheetWidth,
-              sheetHeight,
-              cx + eyeOffsetX + wx,
-              headY + 3 + Math.abs(wx) * 0.4,
-              recipe.hairColor,
-              1.0,
-              0,
-              0,
-              0.8,
-              0.05
-            );
-          }
-        }
-      }
-
       // Hair Layer
       if (layers.showHair) {
         const crestBoost = recipe.hairStyle === 'noble_crest' ? 2.5 : 0;
@@ -1876,27 +1823,6 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
             0.76,
             0.08
           );
-        }
-
-        if (recipe.hairStyle === 'elder_beard' && facingY > -0.25) {
-          for (let by = 0; by <= 12; by++) {
-            const bt = by / 12;
-            const bWidth = Math.max(1.8, 5.4 * (1.0 - bt * 0.62));
-            drawShadedEllipse(
-              albedoRGBA,
-              normalMaterialRGBA,
-              sheetWidth,
-              sheetHeight,
-              cx + facingX * 2.6,
-              headY + 5 + by,
-              bWidth,
-              1.8,
-              recipe.hairColor,
-              null,
-              0.85,
-              0.05
-            );
-          }
         }
 
         if (recipe.hairStyle === 'wreath_braids') {
@@ -1978,6 +1904,75 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           facingY,
           layers.headItem
         );
+      }
+
+      // Facial Features (Crisp Sclera, Iris, Eyebrows, Mustache, Beard)
+      if (facingY > -0.05 && layers.headItem?.visualStyle !== 'full_helm') {
+        const eyeOffsetX = facingX * 2.8;
+
+        // Eyebrows
+        const browColor = recipe.hairColor;
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX - 3, headY - 3, browColor, 0.9, 0, 0, 0.7, 0.1);
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX - 2, headY - 3, browColor, 0.9, 0, 0, 0.7, 0.1);
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX + 2, headY - 3, browColor, 0.9, 0, 0, 0.7, 0.1);
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX + 3, headY - 3, browColor, 0.9, 0, 0, 0.7, 0.1);
+
+        // Eyes: White sclera with dark iris/pupil
+        const eyeWhite: RGBAColor = { r: 242, g: 242, b: 246 };
+        const irisColor: RGBAColor = { r: 24, g: 30, b: 42 };
+
+        // Left eye
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX - 3, headY - 1, eyeWhite, 1.0, 0, 0, 0.3, 0.1);
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX - 2, headY - 1, irisColor, 1.0, 0, 0, 0.1, 0.2);
+
+        // Right eye
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX + 2, headY - 1, irisColor, 1.0, 0, 0, 0.1, 0.2);
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX + 3, headY - 1, eyeWhite, 1.0, 0, 0, 0.3, 0.1);
+
+        // Nose bridge
+        setPixelWithNormal(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight, cx + eyeOffsetX, headY + 1, recipe.skinTone, 0.85, 0, 0, 0.6, 0.05);
+
+        // Slavic mustache (wąsy)
+        if (recipe.hairStyle === 'slavic_parted' || recipe.hairStyle === 'elder_beard' || recipe.hairStyle === 'noble_crest') {
+          for (let wx = -4; wx <= 4; wx++) {
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              cx + eyeOffsetX + wx,
+              headY + 3 + Math.abs(wx) * 0.35,
+              recipe.hairColor,
+              1.0,
+              0,
+              0,
+              0.8,
+              0.05
+            );
+          }
+        }
+
+        // Patriarchal flowing beard for Żercy & Elder characters
+        if (recipe.hairStyle === 'elder_beard') {
+          for (let by = 0; by <= 12; by++) {
+            const bt = by / 12;
+            const bWidth = Math.max(1.8, 5.4 * (1.0 - bt * 0.62));
+            drawShadedEllipse(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              cx + facingX * 2.6,
+              headY + 5 + by,
+              bWidth,
+              1.8,
+              recipe.hairColor,
+              null,
+              0.85,
+              0.05
+            );
+          }
+        }
       }
 
       // 7. Main Hand Weapon
