@@ -1,0 +1,139 @@
+{
+  "version": "1.0.0",
+  "title": "Księga Przaśnych Kolapsów i Gawęd Pogranicza",
+  "description": "Asset dialogowy z przaśnymi tekstami oraz kolapsami frazeologicznymi (bez żadnych nawiązań do chronionych marek).",
+  "kolapsy": [
+    {
+      "id": "kolaps_pala_goryczy",
+      "npcId": "npc_gniewko",
+      "title": "Pała czy czara goryczy?",
+      "context": "Władca Pogranicza — Król Gniewomir — unosi się gniewem na posłańca po stracie wozu z prowiantem",
+      "steps": [
+        {
+          "speaker": "Król Gniewomir",
+          "role": "Suweren Pogranicza",
+          "line": "Przegiąłeś pałę goryczy!"
+        },
+        {
+          "speaker": "Kanclerz Sulisław",
+          "role": "Doradca Dworski",
+          "line": "Czarę, królu..."
+        },
+        {
+          "speaker": "Król Gniewomir",
+          "role": "Suweren Pogranicza",
+          "line": "Jaką kurwa znowu czarę?!"
+        },
+        {
+          "speaker": "Kanclerz Sulisław",
+          "role": "Doradca Dworski",
+          "line": "Goryczy, królu, goryczy!"
+        },
+        {
+          "speaker": "Król Gniewomir",
+          "role": "Suweren Pogranicza",
+          "line": "AA tę czarę goryczy, kurwa? Nie łap mnie za słówka, tępy chuju!"
+        }
+      ]
+    },
+    {
+      "id": "kolaps_skora_z_lasu",
+      "npcId": "npc_dobromir",
+      "title": "Skóra na niedźwiedziu z lasu",
+      "context": "Kupiec Dobromir targuje się o futra przy straganie na rynku pod Światowidem",
+      "steps": [
+        {
+          "speaker": "Kupiec Dobromir",
+          "role": "Handlarz Bursztynem i Solą",
+          "line": "Nie dziel wilka z lasu, póki skóra jeszcze w gawrze siedzi!"
+        },
+        {
+          "speaker": "Wędrowiec",
+          "role": "Najemnik z Pogranicza",
+          "line": "Skóry na niedźwiedziu, gospodarzu..."
+        },
+        {
+          "speaker": "Kupiec Dobromir",
+          "role": "Handlarz Bursztynem i Solą",
+          "line": "Jakim kurwa znowu niedźwiedziu?!"
+        },
+        {
+          "speaker": "Wędrowiec",
+          "role": "Najemnik z Pogranicza",
+          "line": "Nie dzieli się skóry na niedźwiedziu, a z lasu to się wilka nie wywołuje!"
+        },
+        {
+          "speaker": "Kupiec Dobromir",
+          "role": "Handlarz Bursztynem i Solą",
+          "line": "AA tę skórę na niedźwiedziu, kurwa?! Handlujesz ze mną czy będziesz mi tu gramatykę strugał, mądralo zajebany?!"
+        }
+      ]
+    },
+    {
+      "id": "kolaps_gwozdz_w_plecy",
+      "npcId": "npc_bozydar",
+      "title": "Ostatni gwóźdź w plecy",
+      "context": "Płatnerz Bożydar klnie przy kowadle na dłużnika, który nie zapłacił za kolczugę",
+      "steps": [
+        {
+          "speaker": "Płatnerz Bożydar",
+          "role": "Kowal Grodowy",
+          "line": "Wbiłeś mi tym długiem ostatni gwóźdź w plecy!"
+        },
+        {
+          "speaker": "Czeladnik",
+          "role": "Pomocnik Kowala",
+          "line": "Nóż w plecy, mistrzu, albo gwóźdź do trumny..."
+        },
+        {
+          "speaker": "Płatnerz Bożydar",
+          "role": "Kowal Grodowy",
+          "line": "Jakiej kurwa znowu trumny?!"
+        },
+        {
+          "speaker": "Czeladnik",
+          "role": "Pomocnik Kowala",
+          "line": "No gwóźdź wbija się do trumny, a w plecy to nóż!"
+        },
+        {
+          "speaker": "Płatnerz Bożydar",
+          "role": "Kowal Grodowy",
+          "line": "AA ten gwóźdź do trumny, kurwa?! Zaraz ci młotem wbiję jedno i drugie w dupę, jak nie weźmiesz się za miechy!"
+        }
+      ]
+    },
+    {
+      "id": "kolaps_krew_w_maliny",
+      "npcId": "npc_vaelen",
+      "title": "Krew w piach czy w maliny?",
+      "context": "Kapitan Vaelen komentuje nieudany zwiad przy ognisku na Polanie Wilczego Ognia",
+      "steps": [
+        {
+          "speaker": "Kapitan Vaelen",
+          "role": "Zwiadowca Pogranicza",
+          "line": "Cały nasz zwiad poszedł jak krew w maliny, bo ktoś wpuścił nas w piach!"
+        },
+        {
+          "speaker": "Wędrowiec",
+          "role": "Najemnik z Pogranicza",
+          "line": "Jak krew w piach, kapitanie..."
+        },
+        {
+          "speaker": "Kapitan Vaelen",
+          "role": "Zwiadowca Pogranicza",
+          "line": "Jaki kurwa znowu piach?! Tu jest czarnoziem i igliwie!"
+        },
+        {
+          "speaker": "Wędrowiec",
+          "role": "Najemnik z Pogranicza",
+          "line": "Mówi się: krew w piach, a w maliny to się kogoś wpuszcza!"
+        },
+        {
+          "speaker": "Kapitan Vaelen",
+          "role": "Zwiadowca Pogranicza",
+          "line": "AA tę krew w piach, kurwa?! Nie filozofuj mi tu przy ognisku, bo zaraz sam pójdziesz w maliny razem z zębami!"
+        }
+      ]
+    }
+  ]
+}

@@ -84,3 +84,148 @@ export function pickGridTileAtScreen(
 
   return null;
 }
+
+export type EdgePanDirection = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
+
+export interface EdgePanInput {
+  pointerX: number;
+  pointerY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  marginPx: number;
+  enabled: boolean;
+  isPointerInside: boolean;
+  isOverUi: boolean;
+  forcedDirection: EdgePanDirection | null;
+}
+
+export interface EdgePanResult {
+  direction: EdgePanDirection | null;
+  offsetDeltaX: number;
+  offsetDeltaY: number;
+  strength: number;
+}
+
+const DIRECTION_VECTORS: Record<EdgePanDirection, { dx: number; dy: number }> = {
+  N: { dx: 0, dy: 1 },
+  NE: { dx: -Math.SQRT1_2, dy: Math.SQRT1_2 },
+  E: { dx: -1, dy: 0 },
+  SE: { dx: -Math.SQRT1_2, dy: -Math.SQRT1_2 },
+  S: { dx: 0, dy: -1 },
+  SW: { dx: Math.SQRT1_2, dy: -Math.SQRT1_2 },
+  W: { dx: 1, dy: 0 },
+  NW: { dx: Math.SQRT1_2, dy: Math.SQRT1_2 }
+};
+
+function angleToCompassDirection(nx: number, ny: number): EdgePanDirection {
+  const deg = (Math.atan2(ny, nx) * 180) / Math.PI; // -180..180 (0 = E, -90 = N, 90 = S, ±180 = W)
+  if (deg >= -22.5 && deg < 22.5) return 'E';
+  if (deg >= 22.5 && deg < 67.5) return 'SE';
+  if (deg >= 67.5 && deg < 112.5) return 'S';
+  if (deg >= 112.5 && deg < 157.5) return 'SW';
+  if (deg >= -67.5 && deg < -22.5) return 'NE';
+  if (deg >= -112.5 && deg < -67.5) return 'N';
+  if (deg >= -157.5 && deg < -112.5) return 'NW';
+  return 'W';
+}
+
+/**
+ * Computes progressive camera 360-degree circular ring & edge-panning vector
+ * from pointer coordinates or an explicitly hovered/pressed edge arrow button.
+ */
+export function computeEdgePanState(input: EdgePanInput): EdgePanResult {
+  if (input.forcedDirection) {
+    const vec = DIRECTION_VECTORS[input.forcedDirection];
+    return {
+      direction: input.forcedDirection,
+      offsetDeltaX: vec.dx,
+      offsetDeltaY: vec.dy,
+      strength: 1
+    };
+  }
+
+  if (
+    !input.enabled ||
+    !input.isPointerInside ||
+    input.viewportWidth <= 0 ||
+    input.viewportHeight <= 0 ||
+    input.marginPx <= 0
+  ) {
+    return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
+  }
+
+  if (
+    input.pointerX < 0 ||
+    input.pointerX > input.viewportWidth ||
+    input.pointerY < 0 ||
+    input.pointerY > input.viewportHeight
+  ) {
+    return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
+  }
+
+  const outerRimPx = Math.min(28, input.marginPx * 0.45);
+  const inOuterRim =
+    input.pointerX <= outerRimPx ||
+    input.pointerX >= input.viewportWidth - outerRimPx ||
+    input.pointerY <= outerRimPx ||
+    input.pointerY >= input.viewportHeight - outerRimPx;
+
+  if (input.isOverUi && !inOuterRim) {
+    return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
+  }
+
+  const cx = input.viewportWidth * 0.5;
+  const cy = input.viewportHeight * 0.5;
+  const nx = (input.pointerX - cx) / Math.max(1, cx); // -1 (West) .. +1 (East)
+  const ny = (input.pointerY - cy) / Math.max(1, cy); // -1 (North) .. +1 (South)
+  const radialDist = Math.hypot(nx, ny);
+
+  const m = input.marginPx;
+  let edgeProgressX = 0;
+  let edgeProgressY = 0;
+
+  if (input.pointerX < m) {
+    edgeProgressX = 1 - input.pointerX / m;
+  } else if (input.pointerX > input.viewportWidth - m) {
+    edgeProgressX = 1 - (input.viewportWidth - input.pointerX) / m;
+  }
+
+  if (input.pointerY < m) {
+    edgeProgressY = 1 - input.pointerY / m;
+  } else if (input.pointerY > input.viewportHeight - m) {
+    edgeProgressY = 1 - (input.viewportHeight - input.pointerY) / m;
+  }
+
+  const edgeProgress = Math.max(edgeProgressX, edgeProgressY);
+
+  // Elliptical / circular ring threshold around the entire screen
+  const minHalfDim = Math.min(cx, cy);
+  const ringThreshold = Math.max(0.68, 1 - (m * 1.45) / Math.max(1, minHalfDim));
+  const radialProgress =
+    radialDist > ringThreshold
+      ? Math.min(1, (radialDist - ringThreshold) / Math.max(0.12, 1.08 - ringThreshold))
+      : 0;
+
+  const combinedProgress = Math.max(edgeProgress, radialProgress);
+  if (combinedProgress <= 0.001 || radialDist <= 0.001) {
+    return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
+  }
+
+  // Smooth progressive ramp (gentle at inner ring boundary, full speed at outer edge)
+  const smoothRamp = 0.22 + 0.78 * Math.pow(combinedProgress, 1.25);
+  const strength = Math.min(1, Number(smoothRamp.toFixed(4)));
+
+  // Continuous 360-degree radial camera movement vector toward cursor
+  const unitX = -nx / radialDist;
+  const unitY = -ny / radialDist;
+  const offsetDeltaX = unitX * strength;
+  const offsetDeltaY = unitY * strength;
+  const direction = angleToCompassDirection(nx, ny);
+
+  return {
+    direction,
+    offsetDeltaX,
+    offsetDeltaY,
+    strength
+  };
+}

@@ -26,4 +26,51 @@ describe('proceduralForge - High-Detail Isometric Tile & Prop PBR Normal/Albedo 
     expect(altar1x2.width).toBe(192);
     expect(altar2x1.anchorX).not.toBe(altar1x2.anchorX);
   });
+
+  it('synthesizes Slavic settlement & marketplace PBR props (slavic_cottage, market_stall, slavic_shrine, slavic_well, wattle_fence)', () => {
+    const cottage = generatePropPbrBuffers('slavic_cottage', true, 2, 1, 0);
+    expect(cottage.width).toBe(192);
+    expect(cottage.height).toBeGreaterThanOrEqual(160);
+    // Ensure non-transparent pixels exist in the rendered thatched cottage
+    let cottageOpaquePixels = 0;
+    for (let i = 3; i < cottage.albedoRGBA.length; i += 4) {
+      if (cottage.albedoRGBA[i] > 0) cottageOpaquePixels++;
+    }
+    expect(cottageOpaquePixels).toBeGreaterThan(1500);
+
+    const stall = generatePropPbrBuffers('market_stall', false, 2, 1, 1);
+    expect(stall.width).toBe(192);
+    let stallOpaquePixels = 0;
+    for (let i = 3; i < stall.albedoRGBA.length; i += 4) {
+      if (stall.albedoRGBA[i] > 0) stallOpaquePixels++;
+    }
+    expect(stallOpaquePixels).toBeGreaterThan(1000);
+
+    const shrine = generatePropPbrBuffers('slavic_shrine', true, 1, 1, 0);
+    const well = generatePropPbrBuffers('slavic_well', false, 1, 1, 0);
+    const fence = generatePropPbrBuffers('wattle_fence', false, 1, 1, 0);
+
+    expect(shrine.width).toBe(128);
+    expect(well.width).toBe(128);
+    expect(fence.width).toBe(128);
+  });
+
+  it('synthesizes Isometric Game Kit & OpenGameArt props (watchtower, graveyard_fence, dead_tree, rock_cliff)', () => {
+    const tower0 = generatePropPbrBuffers('watchtower', true, 1, 1, 0);
+    const tower1 = generatePropPbrBuffers('watchtower', true, 1, 1, 1);
+    const tower2 = generatePropPbrBuffers('watchtower', true, 1, 1, 2);
+    const gFence = generatePropPbrBuffers('graveyard_fence', false, 1, 1, 0);
+    const deadTree = generatePropPbrBuffers('dead_tree', false, 1, 1, 0);
+    const cliff = generatePropPbrBuffers('rock_cliff', false, 1, 1, 0);
+
+    for (const buf of [tower0, tower1, tower2, gFence, deadTree, cliff]) {
+      expect(buf.width).toBeGreaterThanOrEqual(128);
+      expect(buf.height).toBeGreaterThanOrEqual(128);
+      let opaque = 0;
+      for (let i = 3; i < buf.albedoRGBA.length; i += 4) {
+        if (buf.albedoRGBA[i] > 16) opaque++;
+      }
+      expect(opaque).toBeGreaterThan(250);
+    }
+  });
 });

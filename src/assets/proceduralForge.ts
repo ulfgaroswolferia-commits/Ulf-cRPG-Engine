@@ -6,7 +6,17 @@ import {
   getGlionoxBushPbr,
   getGlionoxStumpPbr,
   getGlionoxTreePbr,
-  getGlionoxWildflowerOrGrassPbr
+  getGlionoxWildflowerOrGrassPbr,
+  getOgaCabinPbr,
+  getOgaChestPbr,
+  getOgaDeadTreePbr,
+  getOgaGraveyardFencePbr,
+  getOgaLanternPostPbr,
+  getOgaPillarOrObeliskPbr,
+  getOgaRockCliffPbr,
+  getOgaSignpostPbr,
+  getOgaWellPbr,
+  getOgaWoodenFencePbr
 } from './glionoxAtlas';
 
 export interface SynthesizedPbrBufferPair {
@@ -189,7 +199,8 @@ export function generateTilePbrBuffers(
   if (
     terrain === 'forest_grass' ||
     terrain === 'forest_soil' ||
-    terrain === 'dirt_path'
+    terrain === 'dirt_path' ||
+    terrain === 'abyss_water'
   ) {
     const glionoxTile = generateGlionoxForestTilePbr(terrain, elevationSteps);
     if (glionoxTile) return glionoxTile;
@@ -491,6 +502,9 @@ export function generatePropPbrBuffers(
   if (kind === 'pine_tree' || kind === 'ancient_oak') {
     const glionoxTree = getGlionoxTreePbr(variant);
     if (glionoxTree) return glionoxTree;
+  } else if (kind === 'dead_tree') {
+    const deadTree = getOgaDeadTreePbr(variant);
+    if (deadTree) return deadTree;
   } else if (kind === 'tree_stump') {
     const glionoxStump = getGlionoxStumpPbr(variant);
     if (glionoxStump) return glionoxStump;
@@ -500,6 +514,33 @@ export function generatePropPbrBuffers(
   } else if (kind === 'wildflower_patch') {
     const glionoxFlora = getGlionoxWildflowerOrGrassPbr(variant);
     if (glionoxFlora) return glionoxFlora;
+  } else if (kind === 'slavic_cottage') {
+    const cabin = getOgaCabinPbr(variant, isOpen);
+    if (cabin) return cabin;
+  } else if (kind === 'slavic_well') {
+    const well = getOgaWellPbr();
+    if (well) return well;
+  } else if (kind === 'torch_sconce' && variant > 0) {
+    const lantern = getOgaLanternPostPbr(isOpen);
+    if (lantern) return lantern;
+  } else if (kind === 'wattle_fence' && variant > 1) {
+    const woodFence = getOgaWoodenFencePbr(variant);
+    if (woodFence) return woodFence;
+  } else if (kind === 'graveyard_fence') {
+    const graveFence = getOgaGraveyardFencePbr(variant);
+    if (graveFence) return graveFence;
+  } else if (kind === 'travel_signpost' && variant > 0) {
+    const signpost = getOgaSignpostPbr(variant);
+    if (signpost) return signpost;
+  } else if (kind === 'pillar' && variant > 0) {
+    const obelisk = getOgaPillarOrObeliskPbr(variant);
+    if (obelisk) return obelisk;
+  } else if (kind === 'chest' && variant > 0) {
+    const ogaChest = getOgaChestPbr(isOpen, variant);
+    if (ogaChest) return ogaChest;
+  } else if (kind === 'rock_cliff') {
+    const cliff = getOgaRockCliffPbr(variant);
+    if (cliff) return cliff;
   }
 
   const key = `${kind}_${isOpen ? 'open' : 'closed'}_${rotatedSizeX}x${rotatedSizeY}_v${variant}`;
@@ -1171,17 +1212,673 @@ export function generatePropPbrBuffers(
       0.12,
       0.92
     );
+  } else if (kind === 'slavic_shrine') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 34, 17);
+    // Mossy fieldstone ritual plinth ring
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY,
+      30,
+      15,
+      12,
+      { r: 96, g: 108, b: 84 },
+      { r: 74, g: 82, b: 66 },
+      0.72,
+      0.08
+    );
+    // Tall carved wooden pillar of four-faced Światowid
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 10,
+      16,
+      8,
+      72,
+      { r: 138, g: 98, b: 58 },
+      { r: 104, g: 72, b: 42 },
+      0.68,
+      0.12
+    );
+    // Conical wooden cap (kołpak Światowida) above the four carved faces
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 78,
+      20,
+      10,
+      14,
+      { r: 164, g: 122, b: 68 },
+      { r: 118, g: 84, b: 46 },
+      0.62,
+      0.18
+    );
+    // Carved facial reliefs & solar Swarga rune on the idol shaft
+    for (let y = -68; y <= -28; y++) {
+      for (let x = -11; x <= 11; x++) {
+        const isBrow = y === -62 || y === -46;
+        const isEyeGlow = isOpen && (y === -59 || y === -58) && (Math.abs(x - 4) <= 1 || Math.abs(x + 4) <= 1);
+        const isRune = isOpen && Math.abs(x) <= 4 && y >= -40 && y <= -32 && (Math.abs(x) === Math.abs(y + 36) || x === 0 || y === -36);
+        if (isEyeGlow || isRune) {
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + x,
+            baseAnchorPxY + y,
+            { r: 255, g: 192, b: 64 },
+            1.35,
+            0,
+            -0.8,
+            0.12,
+            0.9
+          );
+        } else if (isBrow) {
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + x,
+            baseAnchorPxY + y,
+            { r: 68, g: 46, b: 28 },
+            0.85,
+            0,
+            0.65,
+            0.8,
+            0.05
+          );
+        }
+      }
+    }
+    // Sacred offering fire bowl at the foot of the idol
+    if (isOpen) {
+      for (let y = -20; y <= -8; y++) {
+        for (let x = -7; x <= 7; x++) {
+          const d = Math.hypot(x / 6, (y + 13) / 6);
+          if (d <= 1.0) {
+            blendPixel(
+              albedoRGBA,
+              normalMaterialRGBA,
+              width,
+              height,
+              baseAnchorPxX + x,
+              baseAnchorPxY + y,
+              d < 0.5 ? { r: 255, g: 238, b: 132 } : { r: 255, g: 142, b: 36 },
+              1.3,
+              1.0 - d * 0.6,
+              0,
+              -0.85,
+              0.1,
+              0.92
+            );
+          }
+        }
+      }
+    }
+  } else if (kind === 'slavic_well') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 38, 19);
+    // Cobblestone base ring
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY,
+      34,
+      17,
+      8,
+      { r: 112, g: 116, b: 122 },
+      { r: 84, g: 88, b: 94 },
+      0.65,
+      0.12
+    );
+    // Log-cribbed oak well curb (zrębowa cembrowina studni)
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 6,
+      26,
+      13,
+      22,
+      { r: 128, g: 88, b: 50 },
+      { r: 96, g: 64, b: 36 },
+      0.72,
+      0.1
+    );
+    // Deep water mirror inside the well top diamond
+    for (let y = -34; y <= -22; y++) {
+      for (let x = -16; x <= 16; x++) {
+        const dx = Math.abs(x) / 16;
+        const dy = Math.abs(y + 28) / 7;
+        if (dx + dy <= 0.92) {
+          const ripple = Math.sin(x * 0.5 + y * 0.8) * 0.12;
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + x,
+            baseAnchorPxY + y,
+            { r: 28, g: 68, b: 96 },
+            0.85 + ripple,
+            ripple,
+            -0.85,
+            0.12,
+            0.88
+          );
+        }
+      }
+    }
+    // Two vertical oak posts + shingled rooflet + windlass & hanging bucket
+    renderIsoPrism(
+      baseAnchorPxX - 18,
+      baseAnchorPxY - 22,
+      5,
+      3,
+      42,
+      { r: 118, g: 80, b: 44 },
+      { r: 88, g: 58, b: 32 },
+      0.7,
+      0.1
+    );
+    renderIsoPrism(
+      baseAnchorPxX + 18,
+      baseAnchorPxY - 22,
+      5,
+      3,
+      42,
+      { r: 118, g: 80, b: 44 },
+      { r: 88, g: 58, b: 32 },
+      0.7,
+      0.1
+    );
+    // Wooden bucket on rope
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 36,
+      7,
+      4,
+      10,
+      { r: 148, g: 104, b: 58 },
+      { r: 108, g: 74, b: 40 },
+      0.6,
+      0.25
+    );
+    // Shingled well canopy rooflet (daszek gontowy)
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 60,
+      30,
+      15,
+      14,
+      { r: 156, g: 118, b: 64 },
+      { r: 114, g: 84, b: 44 },
+      0.68,
+      0.12
+    );
+  } else if (kind === 'wattle_fence') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 32, 14);
+    // Woven willow wattle fence (pleciony płot wiklinowy) along isometric axis
+    const isAltAxis = variant % 2 === 1;
+    const dirX = isAltAxis ? -1 : 1;
+    for (let s = -24; s <= 24; s++) {
+      const px = baseAnchorPxX + s * dirX;
+      const py = baseAnchorPxY + Math.round(s * 0.5);
+      const isStake = (s + 24) % 12 === 0;
+      const h = isStake ? 32 : 25;
+      for (let sy = 0; sy < h; sy++) {
+        const weave = Math.sin(s * 0.55 + (sy % 5) * 1.4);
+        const col = isStake
+          ? { r: 96, g: 64, b: 36 }
+          : sy % 4 === 0
+            ? { r: 148, g: 108, b: 58 }
+            : { r: 126, g: 88, b: 46 };
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          px,
+          py - sy,
+          col,
+          0.78 + weave * 0.18,
+          weave * 0.65,
+          -0.25,
+          0.78,
+          0.05
+        );
+      }
+    }
+  } else if (kind === 'travel_signpost') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 26, 13);
+    // Stone base cairn
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY,
+      18,
+      9,
+      12,
+      { r: 108, g: 112, b: 118 },
+      { r: 82, g: 86, b: 92 },
+      0.65,
+      0.12
+    );
+    // Tall carved wooden post
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 10,
+      7,
+      4,
+      68,
+      { r: 132, g: 92, b: 52 },
+      { r: 96, g: 66, b: 36 },
+      0.68,
+      0.12
+    );
+    // Directional wooden arrow boards
+    renderIsoPrism(
+      baseAnchorPxX + 10,
+      baseAnchorPxY - 58,
+      22,
+      8,
+      9,
+      { r: 176, g: 132, b: 74 },
+      { r: 134, g: 98, b: 52 },
+      0.58,
+      0.18
+    );
+    renderIsoPrism(
+      baseAnchorPxX - 8,
+      baseAnchorPxY - 46,
+      18,
+      7,
+      8,
+      { r: 162, g: 118, b: 66 },
+      { r: 122, g: 88, b: 48 },
+      0.58,
+      0.18
+    );
+    // Warm hanging lantern glow on signpost
+    renderIsoPrism(
+      baseAnchorPxX + 16,
+      baseAnchorPxY - 46,
+      5,
+      3,
+      9,
+      { r: 255, g: 214, b: 96 },
+      { r: 245, g: 162, b: 48 },
+      0.15,
+      0.92
+    );
+  } else if (kind === 'watchtower') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 38, 19);
+    // 1. Heavy stone foundation prism (kamienny cokół baszty)
+    const stoneCol = { r: 108, g: 112, b: 124 };
+    const stoneSide = { r: 82, g: 86, b: 96 };
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY, 32, 16, 38, stoneCol, stoneSide, 0.62, 0.18, 0.09);
+    // Arrow slits
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 18, 3, 2, 10, { r: 24, g: 26, b: 32 }, { r: 16, g: 18, b: 24 }, 0.9, 0.0);
+    // 2. Timber watchroom shaft
+    const woodTop = { r: 142, g: 98, b: 54 };
+    const woodSide = { r: 104, g: 72, b: 40 };
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 38, 28, 14, 36, woodTop, woodSide, 0.68, 0.12, 0.14);
+    // Overhanging corbeled balcony platform
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 74, 32, 16, 7, { r: 164, g: 118, b: 68 }, { r: 122, g: 86, b: 48 }, 0.65, 0.15);
+    // 3. Roof / parapet: variant 0 = crenellated battlements + beacon fire, variant 1 = timber pyramid rooflet, variant 2 = conical blue/slate tile roof
+    if (variant === 0) {
+      renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 81, 30, 15, 12, { r: 118, g: 122, b: 134 }, { r: 88, g: 92, b: 102 }, 0.58, 0.2);
+      if (isOpen) {
+        for (let y = -106; y <= -88; y++) {
+          for (let x = -8; x <= 8; x++) {
+            const d = Math.hypot(x / 7, (y + 96) / 8);
+            if (d <= 1.0) {
+              writePbrPixel(
+                albedoRGBA,
+                normalMaterialRGBA,
+                width,
+                height,
+                baseAnchorPxX + x,
+                baseAnchorPxY + y,
+                d < 0.45 ? { r: 255, g: 242, b: 148 } : { r: 255, g: 154, b: 42 },
+                1.35,
+                0,
+                -0.85,
+                0.08,
+                0.92
+              );
+            }
+          }
+        }
+      }
+    } else if (variant === 1) {
+      renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 81, 32, 16, 18, { r: 178, g: 132, b: 72 }, { r: 132, g: 96, b: 52 }, 0.72, 0.08);
+      renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 99, 14, 7, 10, { r: 198, g: 148, b: 82 }, { r: 148, g: 108, b: 58 }, 0.7, 0.1);
+    } else {
+      renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 81, 28, 14, 22, { r: 68, g: 88, b: 112 }, { r: 48, g: 64, b: 84 }, 0.45, 0.4);
+      renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 103, 12, 6, 14, { r: 84, g: 106, b: 132 }, { r: 58, g: 76, b: 98 }, 0.42, 0.45);
+    }
+  } else if (kind === 'graveyard_fence') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 32, 14);
+    // Stone plinth posts on endpoints
+    renderIsoPrism(baseAnchorPxX - 22, baseAnchorPxY, 8, 4, 34, { r: 114, g: 116, b: 124 }, { r: 84, g: 86, b: 94 }, 0.6, 0.25);
+    renderIsoPrism(baseAnchorPxX + 22, baseAnchorPxY, 8, 4, 34, { r: 114, g: 116, b: 124 }, { r: 84, g: 86, b: 94 }, 0.6, 0.25);
+    // Gothic iron railing bars & spearhead finials
+    for (let sx = -18; sx <= 18; sx += 4) {
+      const isFinial = sx % 8 === 0;
+      const h = isFinial ? 36 : 28;
+      for (let sy = 0; sy < h; sy++) {
+        const col = sy > h - 4 ? { r: 168, g: 172, b: 184 } : { r: 56, g: 60, b: 68 };
+        writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + sx, baseAnchorPxY - sy, col, 0.85, 0, -0.4, 0.35, 0.75);
+      }
+    }
+    for (let sx = -18; sx <= 18; sx++) {
+      for (const ry of [10, 24]) {
+        writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + sx, baseAnchorPxY - ry, { r: 72, g: 76, b: 86 }, 0.9, 0, -0.6, 0.32, 0.78);
+      }
+    }
+  } else if (kind === 'dead_tree') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 32, 16);
+    renderGnarledTrunk(baseAnchorPxX, baseAnchorPxY, 10, 4, 52, { r: 86, g: 82, b: 78 });
+    const branches = [
+      { dx: -18, dy: -42, len: 26, thick: 3 },
+      { dx: 16, dy: -46, len: 24, thick: 3 },
+      { dx: -24, dy: -60, len: 20, thick: 2.5 },
+      { dx: 22, dy: -64, len: 22, thick: 2.5 },
+      { dx: -6, dy: -76, len: 16, thick: 2 }
+    ];
+    for (const b of branches) {
+      for (let s = 0; s < b.len; s++) {
+        const t = s / b.len;
+        const bx = Math.round(baseAnchorPxX + b.dx * t + Math.sin(t * 3.14) * 3);
+        const by = Math.round(baseAnchorPxY + b.dy - s * 0.7);
+        for (let w = -Math.ceil(b.thick * (1 - t * 0.5)); w <= Math.ceil(b.thick * (1 - t * 0.5)); w++) {
+          writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, bx + w, by, { r: 76, g: 72, b: 68 }, 0.8, 0, -0.5, 0.85, 0.04);
+        }
+      }
+    }
+  } else if (kind === 'rock_cliff') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 36, 18);
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY, 34, 17, 24, { r: 122, g: 114, b: 104 }, { r: 92, g: 84, b: 76 }, 0.75, 0.12, 0.14);
+    renderIsoPrism(baseAnchorPxX - 6, baseAnchorPxY - 18, 24, 12, 28, { r: 138, g: 128, b: 118 }, { r: 104, g: 94, b: 86 }, 0.72, 0.14, 0.16);
+    renderIsoPrism(baseAnchorPxX + 4, baseAnchorPxY - 38, 16, 8, 20, { r: 148, g: 138, b: 128 }, { r: 112, g: 102, b: 92 }, 0.7, 0.15, 0.18);
+    for (let y = -26; y <= -18; y++) {
+      for (let x = -14; x <= -2; x++) {
+        if ((x + y) % 3 === 0) {
+          writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, { r: 64, g: 98, b: 46 }, 0.88, 0, -0.4, 0.86, 0.02);
+        }
+      }
+    }
   } else if (
     kind === 'runic_altar' ||
     kind === 'sarcophagus' ||
     kind === 'ranger_tent' ||
     kind === 'fallen_log' ||
-    kind === 'exit_path'
+    kind === 'exit_path' ||
+    kind === 'slavic_cottage' ||
+    kind === 'market_stall'
   ) {
     const stepDx = rotatedSizeX > 1 ? 32 : -32;
     const stepDy = 16;
 
-    if (kind === 'ranger_tent') {
+    if (kind === 'slavic_cottage') {
+      renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 68, 34);
+      // 1. Fieldstone foundation plinth (kamienna podmurówka)
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY,
+        48,
+        24,
+        12,
+        { r: 108, g: 110, b: 114 },
+        { r: 82, g: 84, b: 88 },
+        0.72,
+        0.08
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy,
+        48,
+        24,
+        12,
+        { r: 108, g: 110, b: 114 },
+        { r: 82, g: 84, b: 88 },
+        0.72,
+        0.08
+      );
+
+      // 2. Timber log cabin walls (zrębowe ściany z bali z bielonymi spoinami)
+      const wallTopCol = { r: 124, g: 84, b: 48 };
+      const wallSideCol =
+        variant % 2 === 1 ? { r: 214, g: 206, b: 188 } : { r: 112, g: 76, b: 44 };
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 10,
+        44,
+        22,
+        36,
+        wallTopCol,
+        wallSideCol,
+        0.68,
+        0.1,
+        0.16
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy - 10,
+        44,
+        22,
+        36,
+        wallTopCol,
+        wallSideCol,
+        0.68,
+        0.1,
+        0.16
+      );
+
+      // 3. Carved oak door & warm glowing amber cottage window
+      const midX = baseAnchorPxX + stepDx * 0.5;
+      const midY = baseAnchorPxY + stepDy * 0.5;
+      renderIsoPrism(
+        midX - 10,
+        midY - 6,
+        10,
+        5,
+        24,
+        { r: 92, g: 58, b: 32 },
+        { r: 74, g: 46, b: 26 },
+        0.6,
+        0.2
+      );
+      // Glowing hearth window panes
+      const winCol = isOpen ? { r: 255, g: 204, b: 84 } : { r: 72, g: 88, b: 104 };
+      renderIsoPrism(
+        midX + 14,
+        midY - 14,
+        9,
+        5,
+        11,
+        winCol,
+        winCol,
+        0.15,
+        0.88
+      );
+
+      // 4. Steep layered thatched straw roof (wysoka słomiana strzecha)
+      const thatchTop = { r: 196, g: 158, b: 82 };
+      const thatchSide = { r: 158, g: 124, b: 62 };
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 42,
+        50,
+        25,
+        16,
+        thatchTop,
+        thatchSide,
+        0.84,
+        0.04,
+        0.22
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy - 42,
+        50,
+        25,
+        16,
+        thatchTop,
+        thatchSide,
+        0.84,
+        0.04,
+        0.22
+      );
+      renderIsoPrism(
+        midX,
+        midY - 54,
+        42,
+        20,
+        16,
+        { r: 208, g: 170, b: 92 },
+        { r: 168, g: 132, b: 68 },
+        0.82,
+        0.05,
+        0.24
+      );
+      // Roof ridge beam (kalenica) & Slavic crossed gable horns (śparogi) + stone chimney
+      renderIsoPrism(
+        midX,
+        midY - 68,
+        32,
+        12,
+        10,
+        { r: 138, g: 98, b: 52 },
+        { r: 102, g: 72, b: 38 },
+        0.68,
+        0.15
+      );
+      renderIsoPrism(
+        midX - 14,
+        midY - 72,
+        8,
+        4,
+        14,
+        { r: 118, g: 114, b: 110 },
+        { r: 88, g: 84, b: 80 },
+        0.7,
+        0.12
+      );
+    } else if (kind === 'market_stall') {
+      renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 64, 30);
+      const midX = baseAnchorPxX + stepDx * 0.5;
+      const midY = baseAnchorPxY + stepDy * 0.5;
+
+      // 1. Timber merchant counter (drewniana lada kramu)
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY,
+        42,
+        21,
+        22,
+        { r: 156, g: 112, b: 64 },
+        { r: 114, g: 78, b: 44 },
+        0.62,
+        0.14
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy,
+        42,
+        21,
+        22,
+        { r: 156, g: 112, b: 64 },
+        { r: 114, g: 78, b: 44 },
+        0.62,
+        0.14
+      );
+
+      // 2. Trade goods displayed on counter (gliniane dzbany, kosze, bele sukna, koła sera)
+      renderIsoPrism(
+        baseAnchorPxX - 8,
+        baseAnchorPxY - 22,
+        10,
+        5,
+        11,
+        { r: 194, g: 96, b: 58 },
+        { r: 152, g: 72, b: 42 },
+        0.45,
+        0.22
+      );
+      renderIsoPrism(
+        midX,
+        midY - 22,
+        12,
+        6,
+        9,
+        { r: 232, g: 192, b: 78 },
+        { r: 188, g: 148, b: 54 },
+        0.5,
+        0.3
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx + 6,
+        baseAnchorPxY + stepDy - 22,
+        11,
+        6,
+        10,
+        { r: 74, g: 138, b: 92 },
+        { r: 52, g: 104, b: 68 },
+        0.55,
+        0.15
+      );
+
+      // 3. Corner timber support posts
+      renderIsoPrism(
+        baseAnchorPxX - 24,
+        baseAnchorPxY - 18,
+        4,
+        2,
+        36,
+        { r: 118, g: 82, b: 46 },
+        { r: 88, g: 60, b: 34 },
+        0.7,
+        0.1
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx + 24,
+        baseAnchorPxY + stepDy - 18,
+        4,
+        2,
+        36,
+        { r: 118, g: 82, b: 46 },
+        { r: 88, g: 60, b: 34 },
+        0.7,
+        0.1
+      );
+
+      // 4. Striped linen bazaar awning (płócienny pasiak nad kramem)
+      const awningPalette =
+        variant % 3 === 0
+          ? { top: { r: 186, g: 52, b: 48 }, side: { r: 228, g: 214, b: 184 } }
+          : variant % 3 === 1
+            ? { top: { r: 58, g: 134, b: 72 }, side: { r: 218, g: 178, b: 74 } }
+            : { top: { r: 56, g: 108, b: 168 }, side: { r: 224, g: 208, b: 172 } };
+
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 48,
+        46,
+        23,
+        12,
+        awningPalette.top,
+        awningPalette.side,
+        0.74,
+        0.08
+      );
+      renderIsoPrism(
+        baseAnchorPxX + stepDx,
+        baseAnchorPxY + stepDy - 48,
+        46,
+        23,
+        12,
+        awningPalette.side,
+        awningPalette.top,
+        0.74,
+        0.08
+      );
+    } else if (kind === 'ranger_tent') {
       renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 62, 30);
       renderIsoPrism(
         baseAnchorPxX,

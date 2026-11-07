@@ -12,6 +12,11 @@ export interface GlionoxForestRawSheets {
   stumps: LoadedImageBuffer;  // 864 x 48  (9 frames of 96x48)
   env: LoadedImageBuffer;     // 384 x 240 (8 cols x 5 rows of 48x48)
   tileset: LoadedImageBuffer; // 144 x 208 (9 cols x 13 rows of 16x16)
+  ogaCabins?: LoadedImageBuffer;        // 1024 x 1024 (4 cols x 4 rows of 256x256)
+  ogaTrees?: LoadedImageBuffer;         // 1600 x 640  (10 cols x 2 rows of 160x320)
+  ogaPropsFence?: LoadedImageBuffer;    // 1024 x 640  (8 cols x 5 rows of 128x128)
+  ogaTerrainTiles?: LoadedImageBuffer;  // 1024 x 384  (8 cols x 6 rows of 128x64)
+  ogaCliffsFoliage?: LoadedImageBuffer; // 1024 x 512  (row 0: 8x 128x256 cliffs; row 1..2: 8x 128x128 bushes/grass)
 }
 
 let loadedSheets: GlionoxForestRawSheets | null = null;
@@ -48,10 +53,23 @@ function loadSinglePngBuffer(url: string): Promise<LoadedImageBuffer> {
   });
 }
 
+async function tryLoadOptionalPng(url: string): Promise<LoadedImageBuffer | undefined> {
+  try {
+    return await loadSinglePngBuffer(url);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Asynchronously loads the 4 official PNG sheets from Glionox's
- * "Forest Biome Environment Set" (https://glionox.itch.io/forest-biome-environment-set)
- * located in `public/assets/glionox/`.
+ * "Forest Biome Environment Set" (`public/assets/glionox/`) AND the 5 pre-packed
+ * OpenGameArt isometric sprite atlases (`public/assets/oga/`):
+ * - `oga_cabins.png` (isometric-log-cabins, 16 variants)
+ * - `oga_trees.png` (isometric-trees-1, 10 lush + 10 dead trees)
+ * - `oga_props_fence.png` (graveyard-fence-and-props: fences, stone well, lantern, signpost, obelisks, chests)
+ * - `oga_terrain_tiles.png` (updated-grassland-tileset-stylized: grass, wildflowers, dirt, soil, water)
+ * - `oga_cliffs_foliage.png` (updated-grassland-tileset-stylized: rock cliffs/boulders, bushes, tall grass)
  */
 export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawSheets | null> {
   if (loadedSheets) return loadedSheets;
@@ -59,13 +77,38 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
 
   loadPromise = (async () => {
     try {
-      const [trees, stumps, env, tileset] = await Promise.all([
+      const [
+        trees,
+        stumps,
+        env,
+        tileset,
+        ogaCabins,
+        ogaTrees,
+        ogaPropsFence,
+        ogaTerrainTiles,
+        ogaCliffsFoliage
+      ] = await Promise.all([
         loadSinglePngBuffer('./assets/glionox/forest_trees.png'),
         loadSinglePngBuffer('./assets/glionox/forest_stumps.png'),
         loadSinglePngBuffer('./assets/glionox/forest_env.png'),
-        loadSinglePngBuffer('./assets/glionox/forest_tileset.png')
+        loadSinglePngBuffer('./assets/glionox/forest_tileset.png'),
+        tryLoadOptionalPng('./assets/oga/oga_cabins.png'),
+        tryLoadOptionalPng('./assets/oga/oga_trees.png'),
+        tryLoadOptionalPng('./assets/oga/oga_props_fence.png'),
+        tryLoadOptionalPng('./assets/oga/oga_terrain_tiles.png'),
+        tryLoadOptionalPng('./assets/oga/oga_cliffs_foliage.png')
       ]);
-      loadedSheets = { trees, stumps, env, tileset };
+      loadedSheets = {
+        trees,
+        stumps,
+        env,
+        tileset,
+        ogaCabins,
+        ogaTrees,
+        ogaPropsFence,
+        ogaTerrainTiles,
+        ogaCliffsFoliage
+      };
       return loadedSheets;
     } catch {
       // Graceful fallback in Node/Vitest environment
@@ -81,7 +124,7 @@ export function getGlionoxSheets(): GlionoxForestRawSheets | null {
 }
 
 /**
- * Generates a tangent-space normal & PBR material map for a pixel-art sprite
+ * Generates a tangent-space normal & PBR material map for a sprite
  * by combining spherical canopy/object volume normals with crisp Sobel luminance relief.
  */
 function buildPixelArtNormalMaterialBuffer(
@@ -94,7 +137,6 @@ function buildPixelArtNormalMaterialBuffer(
 ): Uint8ClampedArray {
   const normalMat = new Uint8ClampedArray(width * height * 4);
 
-  // Find bounding box of opaque pixels to shape spherical volume normal
   let minX = width;
   let maxX = 0;
   let minY = height;
@@ -149,8 +191,8 @@ function buildPixelArtNormalMaterialBuffer(
 }
 
 /**
- * Extracts a rectangular frame from a source sheet and scales it with crisp Nearest-Neighbor
- * interpolation into a target canvas buffer, adding a subtle ground ambient occlusion shadow.
+ * Extracts a rectangular frame from a source sheet and scales it into a target canvas buffer,
+ * adding a subtle ground ambient occlusion shadow and computing a PBR Normal+Material map.
  */
 function extractAndScaleSpritePbr(
   sheet: LoadedImageBuffer,
@@ -161,7 +203,9 @@ function extractAndScaleSpritePbr(
   scale: number,
   anchorYRatio: number,
   aoRadiusX: number,
-  aoRadiusY: number
+  aoRadiusY: number,
+  roughness = 0.76,
+  metallic = 0.06
 ): SynthesizedPbrBufferPair {
   const width = Math.round(srcW * scale);
   const height = Math.round(srcH * scale);
@@ -172,8 +216,16 @@ function extractAndScaleSpritePbr(
 
   // 1. Soft Ground Ambient Occlusion ellipse under the sprite base
   if (aoRadiusX > 0 && aoRadiusY > 0) {
-    for (let y = Math.max(0, Math.floor(anchorPxY - aoRadiusY)); y <= Math.min(height - 1, Math.ceil(anchorPxY + aoRadiusY)); y++) {
-      for (let x = Math.max(0, Math.floor(anchorPxX - aoRadiusX)); x <= Math.min(width - 1, Math.ceil(anchorPxX + aoRadiusX)); x++) {
+    for (
+      let y = Math.max(0, Math.floor(anchorPxY - aoRadiusY));
+      y <= Math.min(height - 1, Math.ceil(anchorPxY + aoRadiusY));
+      y++
+    ) {
+      for (
+        let x = Math.max(0, Math.floor(anchorPxX - aoRadiusX));
+        x <= Math.min(width - 1, Math.ceil(anchorPxX + aoRadiusX));
+        x++
+      ) {
         const d = Math.hypot((x - anchorPxX) / aoRadiusX, (y - anchorPxY) / aoRadiusY);
         if (d <= 1.0) {
           const i = (y * width + x) * 4;
@@ -186,19 +238,32 @@ function extractAndScaleSpritePbr(
     }
   }
 
-  // 2. Nearest-Neighbor crisp pixel-art blit
+  // 2. Blit source sprite (preserving baked alpha ground shadows)
   for (let y = 0; y < height; y++) {
     const sy = Math.min(srcH - 1, Math.floor(y / scale));
     for (let x = 0; x < width; x++) {
       const sx = Math.min(srcW - 1, Math.floor(x / scale));
       const sIdx = ((srcY + sy) * sheet.width + (srcX + sx)) * 4;
       const a = sheet.rgba[sIdx + 3];
-      if (a > 12) {
+      if (a > 8) {
         const dIdx = (y * width + x) * 4;
-        albedoRGBA[dIdx] = sheet.rgba[sIdx];
-        albedoRGBA[dIdx + 1] = sheet.rgba[sIdx + 1];
-        albedoRGBA[dIdx + 2] = sheet.rgba[sIdx + 2];
-        albedoRGBA[dIdx + 3] = a;
+        const srcAlpha = a / 255;
+        const dstAlpha = albedoRGBA[dIdx + 3] / 255;
+        const outAlpha = srcAlpha + dstAlpha * (1 - srcAlpha);
+        if (outAlpha > 0) {
+          albedoRGBA[dIdx] = Math.round(
+            (sheet.rgba[sIdx] * srcAlpha + albedoRGBA[dIdx] * dstAlpha * (1 - srcAlpha)) / outAlpha
+          );
+          albedoRGBA[dIdx + 1] = Math.round(
+            (sheet.rgba[sIdx + 1] * srcAlpha + albedoRGBA[dIdx + 1] * dstAlpha * (1 - srcAlpha)) /
+              outAlpha
+          );
+          albedoRGBA[dIdx + 2] = Math.round(
+            (sheet.rgba[sIdx + 2] * srcAlpha + albedoRGBA[dIdx + 2] * dstAlpha * (1 - srcAlpha)) /
+              outAlpha
+          );
+          albedoRGBA[dIdx + 3] = Math.min(255, Math.round(outAlpha * 255));
+        }
       }
     }
   }
@@ -207,8 +272,8 @@ function extractAndScaleSpritePbr(
     albedoRGBA,
     width,
     height,
-    0.78,
-    0.04,
+    roughness,
+    metallic,
     2.2
   );
 
@@ -225,19 +290,39 @@ function extractAndScaleSpritePbr(
 const glionoxPropCache = new Map<string, SynthesizedPbrBufferPair>();
 
 /**
- * Extracts one of the 9 Glionox Forest Trees (`forest_trees.png`, 96x224 per frame)
- * scaled by 1.25x nearest-neighbor (120x280) to fit the 128x64 isometric grid.
+ * Extracts a lush isometric tree:
+ * - Variants 0..9 use the 10 high-res painterly isometric trees from `oga_trees.png` (row 0, 160x320)
+ * - Variants 10..18 use the 9 pixel-art forest trees from Glionox's `forest_trees.png` (96x224)
  */
 export function getGlionoxTreePbr(variantIndex: number): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const idx = ((variantIndex % 9) + 9) % 9;
-  const key = `glionox_tree_${idx}`;
+  const idx = ((variantIndex % 19) + 19) % 19;
+  const key = `hybrid_tree_${idx}`;
   const cached = glionoxPropCache.get(key);
   if (cached) return cached;
 
+  if (idx < 10 && loadedSheets.ogaTrees) {
+    const pair = extractAndScaleSpritePbr(
+      loadedSheets.ogaTrees,
+      idx * 160,
+      0,
+      160,
+      320,
+      0.92,
+      258 / 320,
+      28,
+      14,
+      0.78,
+      0.04
+    );
+    glionoxPropCache.set(key, pair);
+    return pair;
+  }
+
+  const gIdx = idx % 9;
   const pair = extractAndScaleSpritePbr(
     loadedSheets.trees,
-    idx * 96,
+    gIdx * 96,
     0,
     96,
     224,
@@ -245,6 +330,324 @@ export function getGlionoxTreePbr(variantIndex: number): SynthesizedPbrBufferPai
     218 / 224,
     34,
     16
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts one of the 10 Gnarled Dead / Swamp Trees from `oga_trees.png` (row 1, 160x320 per cell).
+ */
+export function getOgaDeadTreePbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaTrees) return null;
+  const col = ((variantIndex % 10) + 10) % 10;
+  const key = `oga_dead_tree_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaTrees,
+    col * 160,
+    320,
+    160,
+    320,
+    0.92,
+    258 / 320,
+    24,
+    12,
+    0.82,
+    0.03
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts one of the 16 Isometric Log Cabins & Slavic Thatched Huts from `oga_cabins.png`
+ * (4x4 grid of 256x256 cells).
+ */
+export function getOgaCabinPbr(
+  variantIndex: number,
+  isOpen = true
+): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaCabins) return null;
+  const idx = ((variantIndex % 16) + 16) % 16;
+  const key = `oga_cabin_${idx}_${isOpen ? 'lit' : 'dim'}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const col = idx % 4;
+  const row = Math.floor(idx / 4);
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaCabins,
+    col * 256,
+    row * 256,
+    256,
+    256,
+    0.88,
+    188 / 256,
+    56,
+    28,
+    0.72,
+    0.08
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts the Stone & Timber Roofed Village Well from `oga_props_fence.png` (col=1, row=2, 128x128).
+ */
+export function getOgaWellPbr(): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const key = 'oga_well_0';
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    1 * 128,
+    2 * 128,
+    128,
+    128,
+    1.1,
+    102 / 128,
+    28,
+    14,
+    0.68,
+    0.12
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts the Wooden Street Lantern Post from `oga_props_fence.png` (col=2, row=2, 128x128)
+ * and adds a warm glowing lantern core when `isOpen` is true.
+ */
+export function getOgaLanternPostPbr(isOpen: boolean): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const key = `oga_lantern_${isOpen ? 'on' : 'off'}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    2 * 128,
+    2 * 128,
+    128,
+    128,
+    1.1,
+    104 / 128,
+    18,
+    9,
+    0.62,
+    0.22
+  );
+
+  if (isOpen) {
+    const cx = Math.round(pair.width * 0.44);
+    const cy = Math.round(pair.height * 0.36);
+    for (let y = -10; y <= 10; y++) {
+      for (let x = -10; x <= 10; x++) {
+        const d = Math.hypot(x / 9, y / 9);
+        if (d <= 1.0) {
+          const px = cx + x;
+          const py = cy + y;
+          if (px >= 0 && px < pair.width && py >= 0 && py < pair.height) {
+            const idx = (py * pair.width + px) * 4;
+            const glow = (1.0 - d) * 0.85;
+            pair.albedoRGBA[idx] = Math.min(255, Math.round(pair.albedoRGBA[idx] + 255 * glow));
+            pair.albedoRGBA[idx + 1] = Math.min(
+              255,
+              Math.round(pair.albedoRGBA[idx + 1] + 195 * glow)
+            );
+            pair.albedoRGBA[idx + 2] = Math.min(
+              255,
+              Math.round(pair.albedoRGBA[idx + 2] + 75 * glow)
+            );
+            pair.albedoRGBA[idx + 3] = Math.max(pair.albedoRGBA[idx + 3], Math.round(glow * 240));
+            pair.normalMaterialRGBA[idx + 2] = 20; // low roughness
+            pair.normalMaterialRGBA[idx + 3] = 235; // high emissive/metallic glint
+          }
+        }
+      }
+    }
+  }
+
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts Wooden Rail Fences & Trough from `oga_props_fence.png` (row 2, cols 4, 5, 3).
+ */
+export function getOgaWoodenFencePbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const cols = [4, 5, 3];
+  const col = cols[((variantIndex % cols.length) + cols.length) % cols.length];
+  const key = `oga_wood_fence_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    col * 128,
+    2 * 128,
+    128,
+    128,
+    1.08,
+    102 / 128,
+    24,
+    11,
+    0.76,
+    0.06
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts one of the 16 Wrought-Iron Graveyard Fences, Gates & Stone-Post Railings
+ * from `oga_props_fence.png` (rows 0..1, cols 0..7, 128x128 per cell).
+ */
+export function getOgaGraveyardFencePbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const idx = ((variantIndex % 16) + 16) % 16;
+  const key = `oga_grave_fence_${idx}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const col = idx % 8;
+  const row = Math.floor(idx / 8); // 0 or 1
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    col * 128,
+    row * 128,
+    128,
+    128,
+    1.08,
+    104 / 128,
+    26,
+    12,
+    0.45,
+    0.58
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts the Crossroads Wooden Signpost (col=6, row=2) or Wayside Stone Shrine (col=7, row=2)
+ * from `oga_props_fence.png`.
+ */
+export function getOgaSignpostPbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const col = variantIndex % 2 === 0 ? 6 : 7;
+  const key = `oga_signpost_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    col * 128,
+    2 * 128,
+    128,
+    128,
+    1.1,
+    104 / 128,
+    22,
+    11,
+    0.68,
+    0.12
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts one of the 8 Carved Stone Obelisks, Pillars & Tombstones
+ * from `oga_props_fence.png` (row 3, cols 0..7, 128x128).
+ */
+export function getOgaPillarOrObeliskPbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const col = ((variantIndex % 8) + 8) % 8;
+  const key = `oga_pillar_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    col * 128,
+    3 * 128,
+    128,
+    128,
+    1.12,
+    104 / 128,
+    26,
+    13,
+    0.56,
+    0.22
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts the Iron-Bound Treasure Chest (closed at col=6, row=4; open at col=7, row=4)
+ * or Wooden Supply Crates (cols=4..5, row=4) from `oga_props_fence.png`.
+ */
+export function getOgaChestPbr(
+  isOpen: boolean,
+  variantIndex = 0
+): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaPropsFence) return null;
+  const isCrate = variantIndex % 3 !== 0;
+  const col = isCrate ? (variantIndex % 2 === 1 ? 4 : 5) : isOpen ? 7 : 6;
+  const key = `oga_chest_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaPropsFence,
+    col * 128,
+    4 * 128,
+    128,
+    128,
+    1.05,
+    102 / 128,
+    24,
+    12,
+    0.48,
+    0.42
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
+/**
+ * Extracts one of the 8 Sculpted Isometric Rock Cliffs / Boulders
+ * from `oga_cliffs_foliage.png` (row 0, cols 0..7, 128x256).
+ */
+export function getOgaRockCliffPbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaCliffsFoliage) return null;
+  const col = ((variantIndex % 8) + 8) % 8;
+  const key = `oga_rock_cliff_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaCliffsFoliage,
+    col * 128,
+    0,
+    128,
+    256,
+    1.0,
+    204 / 256,
+    36,
+    18,
+    0.72,
+    0.1
   );
   glionoxPropCache.set(key, pair);
   return pair;
@@ -277,16 +680,34 @@ export function getGlionoxStumpPbr(variantIndex: number): SynthesizedPbrBufferPa
 }
 
 /**
- * Extracts one of the 8 Glionox Lush / Berry Bushes (`forest_env.png`, row 4, 48x48 per cell)
- * scaled by 1.35x nearest-neighbor (65x65).
+ * Extracts a Lush Bush / Shrub:
+ * - Variants 0..7: Stylized OGA grassland bushes (`oga_cliffs_foliage.png` row 1, 128x128)
+ * - Variants 8..15: Glionox pixel-art berry bushes (`forest_env.png` row 4, 48x48)
  */
 export function getGlionoxBushPbr(variantIndex: number): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const col = ((variantIndex % 8) + 8) % 8;
-  const key = `glionox_bush_${col}`;
+  const idx = ((variantIndex % 16) + 16) % 16;
+  const key = `hybrid_bush_${idx}`;
   const cached = glionoxPropCache.get(key);
   if (cached) return cached;
 
+  if (idx < 8 && loadedSheets.ogaCliffsFoliage) {
+    const pair = extractAndScaleSpritePbr(
+      loadedSheets.ogaCliffsFoliage,
+      idx * 128,
+      256,
+      128,
+      128,
+      1.0,
+      98 / 128,
+      20,
+      10
+    );
+    glionoxPropCache.set(key, pair);
+    return pair;
+  }
+
+  const col = idx % 8;
   const pair = extractAndScaleSpritePbr(
     loadedSheets.env,
     col * 48,
@@ -303,18 +724,38 @@ export function getGlionoxBushPbr(variantIndex: number): SynthesizedPbrBufferPai
 }
 
 /**
- * Extracts one of the 32 Glionox Wildflowers & Grass Clumps (`forest_env.png`, rows 0..3, 48x48 per cell)
- * scaled by 1.25x nearest-neighbor (60x60).
+ * Extracts Wildflowers, Tall Grass Clumps & Field Stones:
+ * - Variants 0..7: Stylized OGA tall grass & stones (`oga_cliffs_foliage.png` row 2, 128x128)
+ * - Variants 8..39: Glionox wildflowers & grass tufts (`forest_env.png` rows 0..3, 48x48)
  */
-export function getGlionoxWildflowerOrGrassPbr(variantIndex: number): SynthesizedPbrBufferPair | null {
+export function getGlionoxWildflowerOrGrassPbr(
+  variantIndex: number
+): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const idx = ((variantIndex % 32) + 32) % 32;
-  const key = `glionox_flora_${idx}`;
+  const idx = ((variantIndex % 40) + 40) % 40;
+  const key = `hybrid_flora_${idx}`;
   const cached = glionoxPropCache.get(key);
   if (cached) return cached;
 
-  const row = Math.floor(idx / 8); // 0..1 = wildflowers, 2..3 = grass clumps
-  const col = idx % 8;
+  if (idx < 8 && loadedSheets.ogaCliffsFoliage) {
+    const pair = extractAndScaleSpritePbr(
+      loadedSheets.ogaCliffsFoliage,
+      idx * 128,
+      384,
+      128,
+      128,
+      1.0,
+      98 / 128,
+      0,
+      0
+    );
+    glionoxPropCache.set(key, pair);
+    return pair;
+  }
+
+  const gIdx = (idx - 8) % 32;
+  const row = Math.floor(gIdx / 8); // 0..1 = wildflowers, 2..3 = grass clumps
+  const col = gIdx % 8;
 
   const pair = extractAndScaleSpritePbr(
     loadedSheets.env,
@@ -334,20 +775,21 @@ export function getGlionoxWildflowerOrGrassPbr(variantIndex: number): Synthesize
 const glionoxTileCache = new Map<string, SynthesizedPbrBufferPair>();
 
 /**
- * Synthesizes an isometric 2:1 tile (`forest_grass`, `forest_soil`, or `dirt_path`) using
- * Glionox's `forest_tileset.png` textures (olive-green meadow top, jagged grass overhang lip,
- * and rocky brown cliff walls from rows 11..12) + grass tuft accents from `forest_env.png`.
+ * Synthesizes an isometric 2:1 tile (`forest_grass`, `forest_soil`, `dirt_path`, or `abyss_water`)
+ * using OpenGameArt's "Updated Grassland Tileset Centralized/Stylized" (`oga_terrain_tiles.png`, 128x64 diamonds)
+ * combined with Glionox's 3D overhanging grass lip & rocky cliff wall (`forest_tileset.png`).
  */
 export function generateGlionoxForestTilePbr(
-  terrain: 'forest_grass' | 'forest_soil' | 'dirt_path',
+  terrain: 'forest_grass' | 'forest_soil' | 'dirt_path' | 'abyss_water',
   elevationSteps: number
 ): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const key = `glionox_tile_${terrain}_z${elevationSteps}`;
+  const key = `oga_glionox_tile_${terrain}_z${elevationSteps}`;
   const cached = glionoxTileCache.get(key);
   if (cached) return cached;
 
   const ts = loadedSheets.tileset;
+  const ogaTiles = loadedSheets.ogaTerrainTiles;
   const skirtSteps = Math.max(1, elevationSteps + 1);
   const skirtPx = skirtSteps * ELEVATION_STEP_PX;
   const width = TILE_WIDTH;
@@ -357,10 +799,16 @@ export function generateGlionoxForestTilePbr(
 
   const albedoRGBA = new Uint8ClampedArray(width * height * 4);
 
-  // Sample helper from `forest_tileset.png` with pixel-art scale factor 2x
-  const sampleTileset = (srcBaseX: number, srcBaseY: number, spanW: number, spanH: number, px: number, py: number) => {
-    const tx = srcBaseX + (Math.floor(px * 0.5) % spanW + spanW) % spanW;
-    const ty = srcBaseY + (Math.floor(py * 0.5) % spanH + spanH) % spanH;
+  const sampleTileset = (
+    srcBaseX: number,
+    srcBaseY: number,
+    spanW: number,
+    spanH: number,
+    px: number,
+    py: number
+  ) => {
+    const tx = srcBaseX + ((Math.floor(px * 0.5) % spanW) + spanW) % spanW;
+    const ty = srcBaseY + ((Math.floor(py * 0.5) % spanH) + spanH) % spanH;
     const idx = (ty * ts.width + tx) * 4;
     return {
       r: ts.rgba[idx],
@@ -370,50 +818,47 @@ export function generateGlionoxForestTilePbr(
     };
   };
 
-  // 1. Top Isometric Diamond Face using Glionox's exact grass & soil tileset palette
+  // Select OGA 128x64 isometric diamond tile row & column
+  const ogaCol = (elevationSteps * 3 + 1) % 8;
+  const ogaRow =
+    terrain === 'forest_grass'
+      ? elevationSteps % 2 === 0
+        ? 0 // wildflower meadow grass
+        : 1 // deep lush grassland
+      : terrain === 'dirt_path'
+        ? 2 // stylized warm dirt path
+        : terrain === 'forest_soil'
+          ? 3 // dark forest soil
+          : 5; // rippled deep water (abyss_water)
+
+  // 1. Top Isometric Diamond Face
   for (let y = 0; y < TILE_HEIGHT; y++) {
     for (let x = 0; x < width; x++) {
       const dx = Math.abs(x - halfW) / halfW;
       const dy = Math.abs(y - halfH) / halfH;
       if (dx + dy <= 1.0) {
         const edgeDist = 1.0 - (dx + dy);
-        // Sample textured detail tile (rows 9..10, cols 3..7 have Glionox grass tufts & pebbles)
-        const detailSample = sampleTileset(48, 144, 64, 32, x, y);
+        let r = 110;
+        let g = 132;
+        let b = 64;
 
-        let r = 127;
-        let g = 142;
-        let b = 68;
-
-        if (terrain === 'forest_grass') {
+        if (ogaTiles) {
+          const ox = ogaCol * 128 + x;
+          const oy = ogaRow * 64 + y;
+          const oIdx = (oy * ogaTiles.width + ox) * 4;
+          if (ogaTiles.rgba[oIdx + 3] > 32) {
+            r = ogaTiles.rgba[oIdx];
+            g = ogaTiles.rgba[oIdx + 1];
+            b = ogaTiles.rgba[oIdx + 2];
+          }
+        } else {
+          const detailSample = sampleTileset(48, 144, 64, 32, x, y);
           r = detailSample.a > 128 ? detailSample.r : 127;
           g = detailSample.a > 128 ? detailSample.g : 142;
           b = detailSample.a > 128 ? detailSample.b : 68;
-          // Subtle checkerboard pixel-art grass variation
-          if (((Math.floor(x / 2) + Math.floor(y / 2)) % 7 === 0) && r === 127) {
-            r = 116;
-            g = 132;
-            b = 62;
-          }
-        } else if (terrain === 'forest_soil') {
-          // Darker canopy-shaded forest floor matching Glionox shadow grass
-          r = Math.round((detailSample.a > 128 ? detailSample.r : 127) * 0.76);
-          g = Math.round((detailSample.a > 128 ? detailSample.g : 142) * 0.78);
-          b = Math.round((detailSample.a > 128 ? detailSample.b : 68) * 0.74);
-        } else if (terrain === 'dirt_path') {
-          // Earthy brown trail sampled from Glionox's dirt/stone palette (rows 11..12) with grassy edge transition
-          if (edgeDist < 0.14) {
-            r = 104;
-            g = 124;
-            b = 58;
-          } else {
-            const cliffSample = sampleTileset(32, 176, 64, 32, x, y);
-            r = Math.min(255, Math.round(cliffSample.r * 1.25 + 22));
-            g = Math.min(255, Math.round(cliffSample.g * 1.18 + 18));
-            b = Math.min(255, Math.round(cliffSample.b * 1.1 + 14));
-          }
         }
 
-        const edgeShade = edgeDist < 0.04 ? 0.92 : 1.0;
+        const edgeShade = edgeDist < 0.04 ? 0.9 : 1.0;
         const outIdx = (y * width + x) * 4;
         albedoRGBA[outIdx] = Math.round(r * edgeShade);
         albedoRGBA[outIdx + 1] = Math.round(g * edgeShade);
@@ -423,41 +868,10 @@ export function generateGlionoxForestTilePbr(
     }
   }
 
-  // 2. Stamp 2 small pixel-art grass tufts from `forest_env.png` (rows 2..3) onto `forest_grass`
-  if (terrain === 'forest_grass') {
-    const env = loadedSheets.env;
-    const tuftSpots = [
-      { cx: 46, cy: 26, col: (elevationSteps * 3 + 1) % 8, row: 2 },
-      { cx: 82, cy: 38, col: (elevationSteps * 5 + 4) % 8, row: 3 }
-    ];
-    for (const spot of tuftSpots) {
-      const srcX0 = spot.col * 48;
-      const srcY0 = spot.row * 48;
-      for (let sy = 16; sy < 44; sy++) {
-        for (let sx = 12; sx < 36; sx++) {
-          const sIdx = ((srcY0 + sy) * env.width + (srcX0 + sx)) * 4;
-          if (env.rgba[sIdx + 3] > 120) {
-            const dx = spot.cx + (sx - 24);
-            const dy = spot.cy + (sy - 32);
-            if (dx >= 8 && dx < width - 8 && dy >= 4 && dy < TILE_HEIGHT - 4) {
-              const dIdx = (dy * width + dx) * 4;
-              if (albedoRGBA[dIdx + 3] > 0) {
-                albedoRGBA[dIdx] = env.rgba[sIdx];
-                albedoRGBA[dIdx + 1] = env.rgba[sIdx + 1];
-                albedoRGBA[dIdx + 2] = env.rgba[sIdx + 2];
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // 3. Render Glionox's Jagged Grass Overhang Lip + Rocky Brown Cliff Wall (rows 11..12 of `forest_tileset.png`)
+  // 2. Render 3D Jagged Grass Overhang Lip + Rocky Brown Cliff Wall
   for (let x = 0; x < width; x++) {
     const bottomDiamondY = Math.round(TILE_HEIGHT - Math.abs(x - halfW) * 0.5);
     const isLeftFace = x < halfW;
-    // Jagged pixel-art grass overhang length (4..8 px)
     const lipDepth = 4 + ((Math.floor(x / 2) * 5 + 3) % 5);
 
     for (let sy = 0; sy < skirtPx; sy++) {
@@ -467,18 +881,22 @@ export function generateGlionoxForestTilePbr(
       const outIdx = (py * width + x) * 4;
       const faceShade = isLeftFace ? 0.96 : 0.72;
 
-      if (sy < lipDepth && terrain !== 'dirt_path') {
-        // Jagged overhanging grass lip (#7f8e44 top -> #477238 dark lower tip)
+      if (terrain === 'abyss_water') {
+        const depthDarken = 1.0 - (sy / Math.max(1, skirtPx)) * 0.35;
+        albedoRGBA[outIdx] = Math.round(18 * faceShade * depthDarken);
+        albedoRGBA[outIdx + 1] = Math.round(48 * faceShade * depthDarken);
+        albedoRGBA[outIdx + 2] = Math.round(68 * faceShade * depthDarken);
+        albedoRGBA[outIdx + 3] = 255;
+      } else if (sy < lipDepth && terrain === 'forest_grass') {
         const isTip = sy >= lipDepth - 2;
-        const r = isTip ? 71 : 112;
-        const g = isTip ? 114 : 132;
-        const b = isTip ? 56 : 62;
+        const r = isTip ? 54 : 76;
+        const g = isTip ? 86 : 108;
+        const b = isTip ? 38 : 48;
         albedoRGBA[outIdx] = Math.round(r * faceShade);
         albedoRGBA[outIdx + 1] = Math.round(g * faceShade);
         albedoRGBA[outIdx + 2] = Math.round(b * faceShade);
         albedoRGBA[outIdx + 3] = 255;
       } else {
-        // Sample Glionox rocky cliff wall directly from `forest_tileset.png` (x: 16..127, y: 176..207)
         const cliff = sampleTileset(16, 176, 96, 32, x, sy);
         const depthDarken = 1.0 - (sy / Math.max(1, skirtPx)) * 0.22;
         const shade = faceShade * depthDarken;
@@ -490,13 +908,14 @@ export function generateGlionoxForestTilePbr(
     }
   }
 
+  const isWater = terrain === 'abyss_water';
   const normalMaterialRGBA = buildPixelArtNormalMaterialBuffer(
     albedoRGBA,
     width,
     height,
-    0.82,
-    0.03,
-    1.8
+    isWater ? 0.12 : 0.82,
+    isWater ? 0.78 : 0.03,
+    isWater ? 1.4 : 1.8
   );
 
   const pair: SynthesizedPbrBufferPair = {

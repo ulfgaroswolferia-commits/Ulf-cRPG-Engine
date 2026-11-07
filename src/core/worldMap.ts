@@ -1,6 +1,6 @@
 import { RGBAColor } from '../rpg/characterData';
 
-export type MapId = 'forest_clearing' | 'sanctum_dungeon';
+export type MapId = 'forest_clearing' | 'slavic_village' | 'sanctum_dungeon';
 
 export type TileTerrainType =
   | 'dungeon_stone'
@@ -31,7 +31,17 @@ export type PropKind =
   | 'ground_loot'
   | 'exit_path'
   | 'ranger_tent' // 2x1 multi-tile prop
-  | 'fallen_log'; // 1x2 multi-tile prop
+  | 'fallen_log' // 1x2 multi-tile prop
+  | 'slavic_cottage' // 2x1 / 1x2 Slavic thatched log cottage
+  | 'market_stall' // 2x1 / 1x2 medieval marketplace vendor stall
+  | 'slavic_shrine' // 1x1 carved four-faced Światowid idol
+  | 'slavic_well' // 1x1 timber village well with rooflet & bucket
+  | 'wattle_fence' // 1x1 woven willow fence
+  | 'travel_signpost' // 1x1 wooden signpost for traveling between locations
+  | 'watchtower' // 1x1 / 2x1 Isometric Game Kit defensive watchtower / bastion spire
+  | 'graveyard_fence' // 1x1 OpenGameArt wrought-iron gothic fence / gate
+  | 'dead_tree' // 1x1 OpenGameArt gnarled dead / swamp tree
+  | 'rock_cliff'; // 1x1 OpenGameArt sculpted rock cliff / mossy boulder outcrop
 
 export interface TileCell {
   x: number;
@@ -504,7 +514,160 @@ export function createForestClearingMap(): IsometricWorldMap {
     isOpen: false
   });
 
-  // 7. Surrounding Dense Forest Perimeter (9 Glionox Tree Variants + Stumps + Berry Bushes + Wildflowers)
+  // 6B. Slavic Roadside Shrine of Światowid & Travel Signpost to the Slavic Settlement
+  const forestShrineLightId = 'light_forest_shrine';
+  lights.push({
+    id: forestShrineLightId,
+    x: 12,
+    y: 17,
+    z: tiles[17][12].z + 1.4,
+    color: { r: 255, g: 188, b: 68 },
+    intensity: 1.25,
+    radius: 5.5,
+    flickerSpeed: 2.8,
+    enabled: true
+  });
+  props.push({
+    id: 'forest_slavic_shrine',
+    name: 'Przydrożny Posąg Światowida',
+    kind: 'slavic_shrine',
+    x: 12,
+    y: 17,
+    z: tiles[17][12].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.4,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true,
+    linkedLightId: forestShrineLightId
+  });
+
+  props.push({
+    id: 'signpost_to_slavic_village',
+    name: 'Drogowskaz: Słowiańska Osada i Targowisko →',
+    kind: 'travel_signpost',
+    variant: 0,
+    x: 18,
+    y: 16,
+    z: tiles[16][18].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true
+  });
+
+  // 6C. Isometric Game Kit Watchtower & OGA Log Cabin / Cliffs / Graveyard Fence Accents
+  props.push({
+    id: 'watchtower_bastion_ne',
+    name: 'Baszta Obserwacyjna Strażnicy',
+    kind: 'watchtower',
+    variant: 0,
+    x: 24,
+    y: 7,
+    z: tiles[7][24].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 3.4,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: true
+  });
+
+  props.push({
+    id: 'cabin_forester_lodge',
+    name: 'Zrębowa Chata Gajowego (2×1)',
+    kind: 'slavic_cottage',
+    variant: 3,
+    x: 19,
+    y: 20,
+    z: tiles[20][19].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 2.8,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: true
+  });
+
+  const clearingRockCliffs = [
+    { x: 5, y: 11, v: 0, name: 'Skalna Turnia Wzgórza Druidów' },
+    { x: 11, y: 5, v: 2, name: 'Omszały Głaz Narzutowy' },
+    { x: 6, y: 23, v: 4, name: 'Skalna Skarpa nad Stawem' },
+    { x: 25, y: 12, v: 6, name: 'Urwisko pod Strażnicą' }
+  ];
+  for (const rc of clearingRockCliffs) {
+    props.push({
+      id: `cliff_${rc.x}_${rc.y}`,
+      name: rc.name,
+      kind: 'rock_cliff',
+      variant: rc.v,
+      x: rc.x,
+      y: rc.y,
+      z: tiles[rc.y][rc.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.4,
+      blocksMovement: true,
+      blocksSight: true,
+      interactive: false
+    });
+  }
+
+  const clearingDeadTrees = [
+    { x: 6, y: 20, v: 0 },
+    { x: 10, y: 23, v: 3 },
+    { x: 19, y: 6, v: 6 }
+  ];
+  for (const dt of clearingDeadTrees) {
+    props.push({
+      id: `dead_tree_${dt.x}_${dt.y}`,
+      name: 'Uschnięte Drzewo Moczaru',
+      kind: 'dead_tree',
+      variant: dt.v,
+      x: dt.x,
+      y: dt.y,
+      z: tiles[dt.y][dt.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 3.0,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  const druidIronFences = [
+    { x: 5, y: 10, v: 0 },
+    { x: 6, y: 10, v: 1 },
+    { x: 10, y: 10, v: 2 },
+    { x: 11, y: 10, v: 3 }
+  ];
+  for (const gf of druidIronFences) {
+    props.push({
+      id: `gfence_${gf.x}_${gf.y}`,
+      name: 'Kute Ogrodzenie Kręgu Druidów',
+      kind: 'graveyard_fence',
+      variant: gf.v,
+      x: gf.x,
+      y: gf.y,
+      z: tiles[gf.y][gf.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.3,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  // 7. Surrounding Dense Forest Perimeter (19 OGA + Glionox Tree Variants + Stumps + Berry Bushes + Wildflowers)
   const occupied = new Set<string>([
     '15,16', // Player spawn
     '16,14', // NPC Torvin
@@ -599,7 +762,7 @@ export function createForestClearingMap(): IsometricWorldMap {
         (x === 19 && y === 23);
 
       if (isOuterBorder || isForestRing || isScenicCluster) {
-        const treeVariant = (x * 7 + y * 13) % 9;
+        const treeVariant = (x * 7 + y * 13) % 19;
         const isOak = treeVariant % 2 === 1;
         props.push({
           id: `tree_${x}_${y}`,
@@ -623,11 +786,11 @@ export function createForestClearingMap(): IsometricWorldMap {
         dist < 11.8 &&
         (x * 19 + y * 31) % 7 === 0
       ) {
-        // Walkable Glionox Wildflowers & Tall Grass Clusters (`forest_env.png` rows 0..3)
-        const floraVariant = (x * 11 + y * 17) % 32;
+        // Walkable OGA + Glionox Wildflowers & Tall Grass Clusters (variants 0..39)
+        const floraVariant = (x * 11 + y * 17) % 40;
         props.push({
           id: `flora_${x}_${y}`,
-          name: floraVariant < 16 ? 'Kępa Polnych Kwiatów' : 'Wysoka Trawa Leśna',
+          name: floraVariant < 20 ? 'Kępa Polnych Kwiatów' : 'Wysoka Trawa Leśna',
           kind: 'wildflower_patch',
           variant: floraVariant,
           x,
@@ -648,6 +811,568 @@ export function createForestClearingMap(): IsometricWorldMap {
     id: 'forest_clearing',
     name: 'Polana Wilczego Ognia',
     subtitle: 'Otoczona puszczą polana obozowa (32×32) — Pieczenie na ognisku & Pokaz silnika',
+    width,
+    height,
+    maxElevation: 3,
+    tiles,
+    props,
+    lights
+  };
+}
+
+/**
+ * Generates the Slavic Dark-Fantasy Settlement & Marketplace (32x32):
+ * "Osada Nadbrzeżna: Targowisko pod Światowidem"
+ * Features thatched-roof log cottages, bustling vendor stalls with linen awnings,
+ * a central village well, a sacred hill grove with a four-faced Światowid idol,
+ * woven willow wattle fences, and surrounding forest/stream outskirts.
+ */
+export function createSlavicVillageMap(): IsometricWorldMap {
+  const width = 32;
+  const height = 32;
+  const tiles: TileCell[][] = [];
+  const props: WorldPropEntity[] = [];
+  const lights: PointLightSource[] = [];
+
+  for (let y = 0; y < height; y++) {
+    const row: TileCell[] = [];
+    for (let x = 0; x < width; x++) {
+      let z = 0;
+      let terrain: TileTerrainType = 'forest_grass';
+      let walkable = true;
+
+      // 1. Sacred Pagan Hill Grove of Światowid in North-West (x: 4..10, y: 4..10)
+      if (x >= 4 && x <= 10 && y >= 4 && y <= 10) {
+        z = 1;
+        terrain = 'forest_grass';
+        if (x >= 6 && x <= 8 && y >= 6 && y <= 8) {
+          z = 2;
+          terrain = 'mossy_cobble';
+        }
+      }
+
+      // Stone steps ascending to the Sacred Grove
+      if ((x === 9 || x === 10) && y === 10) {
+        z = 1;
+        terrain = 'stairs_stone';
+      }
+      if (x === 8 && y === 9) {
+        z = 1;
+        terrain = 'stairs_stone';
+      }
+
+      // 2. Central Marketplace Plaza (Rynek Osady, x: 12..20, y: 12..20)
+      if (x >= 12 && x <= 20 && y >= 12 && y <= 20) {
+        const distCenter = Math.hypot(x - 16, y - 16);
+        if (distCenter <= 4.3) {
+          terrain = 'mossy_cobble';
+        } else if (distCenter <= 5.6) {
+          terrain = 'dirt_path';
+        }
+      }
+
+      // 3. Village Roads connecting cottages, market square, and southern gate
+      const isSouthRoad = x >= 15 && x <= 17 && y >= 16 && y < height;
+      const isEastRoad = y >= 15 && y <= 17 && x >= 16 && x <= 27;
+      const isWestRoad = y >= 15 && y <= 16 && x >= 7 && x <= 16;
+      const isNorthRoad = x >= 15 && x <= 16 && y >= 6 && y <= 16;
+      if ((isSouthRoad || isEastRoad || isWestRoad || isNorthRoad) && z === 0) {
+        if (terrain !== 'mossy_cobble') {
+          terrain = 'dirt_path';
+        }
+      }
+
+      // 4. Scenic Stream / Mill Pond in South-East (x: 23..28, y: 21..26)
+      const pondDist = Math.hypot((x - 25.5) * 0.9, (y - 23.5) * 1.1);
+      if (pondDist <= 2.7) {
+        terrain = 'abyss_water';
+        walkable = false;
+      } else if (pondDist <= 3.6 && terrain === 'forest_grass') {
+        terrain = 'forest_soil';
+      }
+
+      row.push({ x, y, z, terrain, walkable });
+    }
+    tiles.push(row);
+  }
+
+  // --- A. Central Village Well & Communal Market Campfire ---
+  props.push({
+    id: 'village_central_well',
+    name: 'Studnia Gromadna z Żurawiem',
+    kind: 'slavic_well',
+    x: 16,
+    y: 16,
+    z: tiles[16][16].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.2,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false
+  });
+
+  const marketFireLightId = 'light_village_campfire';
+  lights.push({
+    id: marketFireLightId,
+    x: 14,
+    y: 18,
+    z: tiles[18][14].z + 1.2,
+    color: { r: 255, g: 156, b: 54 },
+    intensity: 1.55,
+    radius: 8.5,
+    flickerSpeed: 4.6,
+    enabled: true
+  });
+  props.push({
+    id: 'village_market_campfire',
+    name: 'Ognisko Targowe (Ruszt Kucharski)',
+    kind: 'campfire',
+    x: 14,
+    y: 18,
+    z: tiles[18][14].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.3,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true,
+    linkedLightId: marketFireLightId
+  });
+
+  // --- B. Three Bustling Marketplace Stalls (Kramy Kupieckie 2x1 / 1x2) ---
+  props.push({
+    id: 'stall_dobromir_wares',
+    name: 'Kram Kupca Dobromira (Sukno, Bursztyn i Prowiant)',
+    kind: 'market_stall',
+    variant: 0,
+    x: 13,
+    y: 13,
+    z: tiles[13][13].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['item_raw_sausage', 'cloak_crimson_mantle']
+  });
+
+  props.push({
+    id: 'stall_herbalist_wislawa',
+    name: 'Stragan Zielarki Wisławy (Zioła i Amulety)',
+    kind: 'market_stall',
+    variant: 1,
+    x: 18,
+    y: 13,
+    z: tiles[13][18].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['ring_emerald_seal', 'helm_arcane_circlet']
+  });
+
+  props.push({
+    id: 'stall_smith_bozydar',
+    name: 'Kram Płatnerza Bożydara (Oręż i Zbroje)',
+    kind: 'market_stall',
+    variant: 2,
+    x: 20,
+    y: 16,
+    z: tiles[16][20].z,
+    sizeX: 1,
+    sizeY: 2,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['weapon_Executioner_axe', 'legs_steel_greaves']
+  });
+
+  // --- C. Six Slavic Log Cabins & Thatched Cottages (OpenGameArt Isometric Log Cabins 0..15) ---
+  const cottages: ReadonlyArray<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    sizeX: number;
+    sizeY: number;
+    variant: number;
+  }> = [
+    {
+      id: 'cottage_elder_starosta',
+      name: 'Dwór Starosty Grodowego (Chata z Gankiem)',
+      x: 14,
+      y: 8,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 0
+    },
+    {
+      id: 'cottage_inn_wolf_fang',
+      name: 'Gospoda „Pod Wilczym Kłem” (Karczma Zrębowa)',
+      x: 22,
+      y: 11,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 5
+    },
+    {
+      id: 'cottage_herbalist_hut',
+      name: 'Chata Zielarki nad Jarem (Strzecha)',
+      x: 8,
+      y: 18,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 9
+    },
+    {
+      id: 'cottage_wheelwright',
+      name: 'Chata Kołodzieja i Bartnika',
+      x: 20,
+      y: 21,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 12
+    },
+    {
+      id: 'cottage_hunter_north',
+      name: 'Chata Łowczego Puszczy',
+      x: 19,
+      y: 7,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 2
+    },
+    {
+      id: 'cottage_fisherman_pond',
+      name: 'Chata Rybaka nad Stawem',
+      x: 25,
+      y: 18,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 14
+    }
+  ];
+
+  for (const c of cottages) {
+    const cz = tiles[c.y][c.x].z;
+    const lightId = `light_${c.id}`;
+    lights.push({
+      id: lightId,
+      x: c.x + 0.5,
+      y: c.y + 0.5,
+      z: cz + 1.5,
+      color: { r: 255, g: 186, b: 78 },
+      intensity: 1.25,
+      radius: 6.0,
+      flickerSpeed: 2.4,
+      enabled: true
+    });
+    props.push({
+      id: c.id,
+      name: c.name,
+      kind: 'slavic_cottage',
+      variant: c.variant,
+      x: c.x,
+      y: c.y,
+      z: cz,
+      sizeX: c.sizeX,
+      sizeY: c.sizeY,
+      heightZ: 2.8,
+      blocksMovement: true,
+      blocksSight: true,
+      interactive: true,
+      isOpen: true,
+      linkedLightId: lightId
+    });
+  }
+
+  // --- D. Sacred Pagan Shrine of Four-Faced Światowid on the Grove Hill ---
+  const shrineLightId = 'light_swiatowid_grove';
+  lights.push({
+    id: shrineLightId,
+    x: 7,
+    y: 7,
+    z: tiles[7][7].z + 1.6,
+    color: { r: 255, g: 196, b: 64 },
+    intensity: 1.5,
+    radius: 7.2,
+    flickerSpeed: 3.1,
+    enabled: true
+  });
+  props.push({
+    id: 'shrine_swiatowid_hill',
+    name: 'Posąg Czterotwarzowego Światowida (Święty Gaj)',
+    kind: 'slavic_shrine',
+    x: 7,
+    y: 7,
+    z: tiles[7][7].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.6,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true,
+    linkedLightId: shrineLightId
+  });
+
+  // --- E. Woven Willow Wattle Fences (Plecione Płoty Wiklinowe) around Cottages ---
+  const fenceCoords: ReadonlyArray<{ x: number; y: number; v: number }> = [
+    { x: 13, y: 8, v: 0 },
+    { x: 16, y: 8, v: 0 },
+    { x: 17, y: 8, v: 0 },
+    { x: 21, y: 11, v: 0 },
+    { x: 24, y: 11, v: 0 },
+    { x: 24, y: 12, v: 1 },
+    { x: 7, y: 18, v: 1 },
+    { x: 7, y: 19, v: 1 },
+    { x: 7, y: 20, v: 1 },
+    { x: 19, y: 21, v: 0 },
+    { x: 22, y: 21, v: 0 }
+  ];
+
+  for (const f of fenceCoords) {
+    props.push({
+      id: `fence_${f.x}_${f.y}`,
+      name: 'Pleciony Płot Wiklinowy',
+      kind: 'wattle_fence',
+      variant: f.v,
+      x: f.x,
+      y: f.y,
+      z: tiles[f.y][f.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.1,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  // --- F. Travel Signpost back to Forest Clearing & Village Chests ---
+  props.push({
+    id: 'signpost_to_forest_clearing',
+    name: 'Drogowskaz: Polana Wilczego Ognia ←',
+    kind: 'travel_signpost',
+    x: 17,
+    y: 23,
+    z: tiles[23][17].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true
+  });
+
+  props.push({
+    id: 'village_chest_starosta',
+    name: 'Okuta Skrzynia Starosty',
+    kind: 'chest',
+    variant: 0,
+    x: 13,
+    y: 9,
+    z: tiles[9][13].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['torso_aethel_plate', 'weapon_astral_staff']
+  });
+
+  // --- F2. Village Watchtowers, Street Lanterns, Sacred Grove Iron Fences & Rock Cliffs ---
+  const villageWatchtowers = [
+    { id: 'watchtower_south_west', name: 'Baszta Strażnicza Bramy Zachodniej', x: 13, y: 24, v: 1 },
+    { id: 'watchtower_south_east', name: 'Kamienna Baszta Straży Grodowej', x: 18, y: 24, v: 0 }
+  ];
+  for (const wt of villageWatchtowers) {
+    props.push({
+      id: wt.id,
+      name: wt.name,
+      kind: 'watchtower',
+      variant: wt.v,
+      x: wt.x,
+      y: wt.y,
+      z: tiles[wt.y][wt.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 3.4,
+      blocksMovement: true,
+      blocksSight: true,
+      interactive: true,
+      isOpen: true
+    });
+  }
+
+  const villageLanterns = [
+    { id: 'lantern_market_nw', x: 12, y: 15 },
+    { id: 'lantern_market_ne', x: 19, y: 15 },
+    { id: 'lantern_road_south', x: 15, y: 22 }
+  ];
+  for (const vl of villageLanterns) {
+    const lid = `light_${vl.id}`;
+    const lz = tiles[vl.y][vl.x].z;
+    lights.push({
+      id: lid,
+      x: vl.x,
+      y: vl.y,
+      z: lz + 1.5,
+      color: { r: 255, g: 184, b: 76 },
+      intensity: 1.3,
+      radius: 5.8,
+      flickerSpeed: 3.2,
+      enabled: true
+    });
+    props.push({
+      id: vl.id,
+      name: 'Latarnia Grodowa na Słupie',
+      kind: 'torch_sconce',
+      variant: 1,
+      x: vl.x,
+      y: vl.y,
+      z: lz,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.9,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: true,
+      isOpen: true,
+      linkedLightId: lid
+    });
+  }
+
+  const groveIronFences = [
+    { x: 5, y: 10, v: 0 },
+    { x: 6, y: 10, v: 1 },
+    { x: 7, y: 10, v: 2 },
+    { x: 10, y: 8, v: 4 },
+    { x: 10, y: 9, v: 5 }
+  ];
+  for (const gf of groveIronFences) {
+    props.push({
+      id: `vgfence_${gf.x}_${gf.y}`,
+      name: 'Kute Ogrodzenie Świętego Gaju',
+      kind: 'graveyard_fence',
+      variant: gf.v,
+      x: gf.x,
+      y: gf.y,
+      z: tiles[gf.y][gf.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.3,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  const villageCliffs = [
+    { x: 4, y: 11, v: 1 },
+    { x: 11, y: 4, v: 3 },
+    { x: 23, y: 25, v: 5 }
+  ];
+  for (const vc of villageCliffs) {
+    props.push({
+      id: `vcliff_${vc.x}_${vc.y}`,
+      name: 'Skalna Skarpa Nadbrzeżna',
+      kind: 'rock_cliff',
+      variant: vc.v,
+      x: vc.x,
+      y: vc.y,
+      z: tiles[vc.y][vc.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.4,
+      blocksMovement: true,
+      blocksSight: true,
+      interactive: false
+    });
+  }
+
+  // --- G. Surrounding Slavic Forest Perimeter & Wildflowers ---
+  const occupied = new Set<string>([
+    '16,20', // Player spawn
+    '14,14', // NPC Kupiec Dobromir
+    '8,8',   // NPC Żerca Radogost
+    '18,17'  // NPC Strażnik Miłosz
+  ]);
+  for (const p of props) {
+    for (let dy = 0; dy < p.sizeY; dy++) {
+      for (let dx = 0; dx < p.sizeX; dx++) {
+        occupied.add(`${p.x + dx},${p.y + dy}`);
+      }
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (occupied.has(`${x},${y}`)) continue;
+      if (!tiles[y][x].walkable) continue;
+      if (tiles[y][x].terrain === 'dirt_path' || tiles[y][x].terrain === 'mossy_cobble') continue;
+
+      const isOuterBorder = x <= 1 || x >= width - 2 || y <= 1 || y >= height - 2;
+      const distCenter = Math.hypot(x - 16, y - 16);
+      const isOutskirtWoods = distCenter >= 12.2 && (x * 11 + y * 17) % 3 === 0;
+
+      if (isOuterBorder || isOutskirtWoods) {
+        const treeVariant = (x * 7 + y * 13) % 19;
+        const isOak = treeVariant % 2 === 0;
+        props.push({
+          id: `vtree_${x}_${y}`,
+          name: isOak ? 'Dąb Świętego Gaju' : 'Sosna Nadbrzeżna',
+          kind: isOak ? 'ancient_oak' : 'pine_tree',
+          variant: treeVariant,
+          x,
+          y,
+          z: tiles[y][x].z,
+          sizeX: 1,
+          sizeY: 1,
+          heightZ: 3.2,
+          blocksMovement: true,
+          blocksSight: true,
+          interactive: false
+        });
+        occupied.add(`${x},${y}`);
+      } else if ((x * 19 + y * 29) % 8 === 0) {
+        const floraVariant = (x * 13 + y * 23) % 40;
+        props.push({
+          id: `vflora_${x}_${y}`,
+          name: floraVariant < 20 ? 'Słowiańskie Zioła i Kwiaty' : 'Kępa Trawy Łąkowej',
+          kind: 'wildflower_patch',
+          variant: floraVariant,
+          x,
+          y,
+          z: tiles[y][x].z,
+          sizeX: 1,
+          sizeY: 1,
+          heightZ: 0.4,
+          blocksMovement: false,
+          blocksSight: false,
+          interactive: false
+        });
+      }
+    }
+  }
+
+  return {
+    id: 'slavic_village',
+    name: 'Osada Żerców — Targowisko pod Światowidem',
+    subtitle: 'Słowiańska osada (32×32) — Chaty kryte strzechą, Kramy Kupieckie, Studnia i Święty Gaj',
     width,
     height,
     maxElevation: 3,

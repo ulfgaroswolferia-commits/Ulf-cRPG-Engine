@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createForestClearingMap } from '../../src/core/worldMap';
 import { CrpgGameState } from '../../src/rpg/gameLoop';
+import { IsoSceneView } from '../../src/renderer/isoSceneView';
+import { HudOverlay } from '../../src/ui/hudOverlay';
 
 describe('Forest Clearing Test Location ("Polana Wilczego Ognia")', () => {
   it('creates a large multi-screen 32x32 forest clearing map with central campfire, exit path, trees, and lootable items', () => {
@@ -51,5 +53,38 @@ describe('Forest Clearing Test Location ("Polana Wilczego Ognia")', () => {
     game.togglePropInteraction(campfire.id);
     expect(game.inventory.includes('item_raw_sausage')).toBe(false);
     expect(game.inventory.includes('item_roasted_sausage')).toBe(true);
+  });
+
+  it('defaults HudOverlay to playable demo mode (inventory closed, no debug spawn/telemetry) unless devMode is enabled', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const demoHud = new HudOverlay(fakeRoot, game, scene, { devMode: false });
+    demoHud.render();
+    expect(fakeRoot.innerHTML).not.toContain('data-action="spawn-npc"');
+    expect(fakeRoot.innerHTML).not.toContain('Bake:');
+    expect(fakeRoot.innerHTML).not.toContain('class="inventory-drawer"');
+    expect(fakeRoot.innerHTML).not.toContain('data-engage-enemy');
+    expect(fakeRoot.innerHTML).toContain('data-action="toggle-fullscreen"');
+    expect(fakeRoot.innerHTML).toContain('Pełny ekran');
+    expect(fakeRoot.innerHTML).toContain('data-action="toggle-chronicle"');
+    expect(fakeRoot.innerHTML).toContain('Rozwiń');
+
+    demoHud.toggleChronicleExpanded();
+    expect(fakeRoot.innerHTML).toContain('chronicle-log expanded');
+    expect(fakeRoot.innerHTML).toContain('collapse-red');
+    expect(fakeRoot.innerHTML).toContain('Zwiń');
+
+    const devHud = new HudOverlay(fakeRoot, game, scene, { devMode: true });
+    devHud.render();
+    expect(fakeRoot.innerHTML).toContain('data-action="spawn-npc"');
+    expect(fakeRoot.innerHTML).toContain('Bake:');
+    expect(fakeRoot.innerHTML).toContain('editor-status-bar');
+    expect(fakeRoot.innerHTML).not.toContain('class="inventory-drawer"');
   });
 });

@@ -106,7 +106,10 @@ export function findPathAStar3D(
       }
     }
 
-    openSet.splice(bestIdx, 1);
+    const last = openSet.pop()!;
+    if (bestIdx < openSet.length) {
+      openSet[bestIdx] = last;
+    }
 
     if (current === goalKey) {
       const path: PathStepNode[] = [];

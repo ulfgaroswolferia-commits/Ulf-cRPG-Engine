@@ -36,7 +36,8 @@ export function evaluateDeferredPbrLightAtPoint(
   py: number,
   surface: SurfaceNormalMaterialSample,
   lights: ReadonlyArray<ScreenSpacePointLight>,
-  ambientIntensity: number
+  ambientIntensity: number,
+  out?: { r: number; g: number; b: number; specular: number }
 ): { r: number; g: number; b: number; specular: number } {
   const nz = Math.sqrt(Math.max(0.05, 1.0 - surface.nx * surface.nx - surface.ny * surface.ny));
 
@@ -81,6 +82,14 @@ export function evaluateDeferredPbrLightAtPoint(
     totalG += l.g * diffuseTerm + l.g * spec;
     totalB += l.b * diffuseTerm + l.b * spec;
     totalSpec += spec;
+  }
+
+  if (out) {
+    out.r = totalR;
+    out.g = totalG;
+    out.b = totalB;
+    out.specular = totalSpec;
+    return out;
   }
 
   return {
@@ -258,8 +267,8 @@ void main(void) {
 export function createAtmosphericPostFilter(): Filter | null {
   try {
     const glProgram = GlProgram.from({
-      vertex: VERTEX_GLSL,
-      fragment: FRAGMENT_GLSL,
+      vertex: VERTEX_GLSL.trim(),
+      fragment: FRAGMENT_GLSL.trim(),
       name: 'ulf-crpg-engine-post-fx'
     });
     return new Filter({
@@ -308,7 +317,12 @@ export function updateAtmosphericFilterUniforms(
   group.uAmbient = ambient;
   group.uTime = time;
   group.uEnablePbr = enablePbr ? 1.0 : 0.0;
-  group.uCameraOffset = [cameraOffsetX, cameraOffsetY];
+  if (!group.uCameraOffset) {
+    group.uCameraOffset = [cameraOffsetX, cameraOffsetY];
+  } else {
+    group.uCameraOffset[0] = cameraOffsetX;
+    group.uCameraOffset[1] = cameraOffsetY;
+  }
   group.uZoom = zoom;
 
   for (let i = 0; i < 6; i++) {
@@ -318,11 +332,39 @@ export function updateAtmosphericFilterUniforms(
     if (l) {
       const canvasX = cameraOffsetX + l.screenX * zoom;
       const canvasY = cameraOffsetY + (l.screenY - 24) * zoom;
-      group[posKey] = [canvasX, canvasY, l.zHeightPx * zoom, l.radiusPx * zoom];
-      group[colKey] = [l.r, l.g, l.b, l.intensity];
+      if (!group[posKey]) {
+        group[posKey] = [canvasX, canvasY, l.zHeightPx * zoom, l.radiusPx * zoom];
+      } else {
+        group[posKey][0] = canvasX;
+        group[posKey][1] = canvasY;
+        group[posKey][2] = l.zHeightPx * zoom;
+        group[posKey][3] = l.radiusPx * zoom;
+      }
+      if (!group[colKey]) {
+        group[colKey] = [l.r, l.g, l.b, l.intensity];
+      } else {
+        group[colKey][0] = l.r;
+        group[colKey][1] = l.g;
+        group[colKey][2] = l.b;
+        group[colKey][3] = l.intensity;
+      }
     } else {
-      group[posKey] = [0, 0, 0, 0];
-      group[colKey] = [0, 0, 0, 0];
+      if (!group[posKey]) {
+        group[posKey] = [0, 0, 0, 0];
+      } else {
+        group[posKey][0] = 0;
+        group[posKey][1] = 0;
+        group[posKey][2] = 0;
+        group[posKey][3] = 0;
+      }
+      if (!group[colKey]) {
+        group[colKey] = [0, 0, 0, 0];
+      } else {
+        group[colKey][0] = 0;
+        group[colKey][1] = 0;
+        group[colKey][2] = 0;
+        group[colKey][3] = 0;
+      }
     }
   }
 }

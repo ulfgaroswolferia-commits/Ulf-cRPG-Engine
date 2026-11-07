@@ -10,8 +10,10 @@ import {
   Texture
 } from 'pixi.js';
 import {
+  bakeCharacterBuffers,
   BakedCharacterBuffers,
-  bakeCharacterBuffers
+  computeCharacterRecipeHash,
+  generateRandomCharacterRecipe
 } from '../assets/characterBakery';
 import { preloadGlionoxForestAssets } from '../assets/glionoxAtlas';
 import {
@@ -25,6 +27,8 @@ import {
   sortEntitiesTopological
 } from '../core/depthSorter';
 import {
+  computeEdgePanState,
+  EdgePanDirection,
   ELEVATION_STEP_PX,
   gridToScreen,
   pickGridTileAtScreen,
@@ -40,8 +44,13 @@ import {
   toRotatedGrid,
   toWorldGrid
 } from '../core/mapRotation';
-import { findPathAStar3D } from '../core/pathfinding';
+import { findPathAStar3D, PathStepNode } from '../core/pathfinding';
 import { PropKind, TileTerrainType } from '../core/worldMap';
+import {
+  computeAttackPreview,
+  createDefaultProficiencies,
+  EnemyDifficultyTier
+} from '../rpg/combatSystem';
 import { ActorEntity, CrpgGameState } from '../rpg/gameLoop';
 import {
   createAtmosphericPostFilter,
@@ -53,10 +62,19 @@ import {
 
 export type InspectorToolMode =
   | 'interact'
+  | 'paint_terrain'
   | 'raise_elevation'
   | 'lower_elevation'
+  | 'flatten_elevation'
+  | 'place_prop'
+  | 'remove_prop'
   | 'place_torch_light'
-  | 'place_arcane_light';
+  | 'place_arcane_light'
+  | 'remove_light'
+  | 'spawn_npc'
+  | 'spawn_enemy';
+
+export type EditorPropOrientation = '1x1' | '2x1' | '1x2';
 
 interface DualPbrTexturePair {
   albedo: Texture;
@@ -104,15 +122,124 @@ function rgbaBufferToTexture(
   return tex;
 }
 
+/**
+ * Per-frame display-object pool. The scene is redrawn every ticker frame, so instead of
+ * allocating (and leaking) thousands of Sprites / Graphics / Text objects per second we
+ * recycle them. Text objects are cached by (style + content) because re-rasterizing text
+ * into a canvas and uploading it to the GPU every frame is the most expensive operation.
+ */
+class FrameDisplayPool {
+  private readonly sprites: Sprite[] = [];
+  private spriteCursor = 0;
+  private readonly graphicsList: Graphics[] = [];
+  private graphicsCursor = 0;
+  private readonly texts = new Map<string, { text: Text; lastUsedFrame: number }>();
+  private readonly textOccurrences = new Map<string, number>();
+  private readonly styles = new Map<string, TextStyle>();
+  private frame = 0;
+
+  public beginFrame(): void {
+    this.frame++;
+    this.spriteCursor = 0;
+    this.graphicsCursor = 0;
+    this.textOccurrences.clear();
+  }
+
+  public sprite(texture: Texture): Sprite {
+    let sp = this.sprites[this.spriteCursor];
+    if (!sp) {
+      sp = new Sprite(texture);
+      this.sprites.push(sp);
+    } else if (sp.texture !== texture) {
+      sp.texture = texture;
+    }
+    this.spriteCursor++;
+    sp.alpha = 1;
+    sp.tint = 0xffffff;
+    return sp;
+  }
+
+  public graphics(): Graphics {
+    let g = this.graphicsList[this.graphicsCursor];
+    if (!g) {
+      g = new Graphics();
+      this.graphicsList.push(g);
+    } else {
+      g.clear();
+    }
+    this.graphicsCursor++;
+    g.alpha = 1;
+    return g;
+  }
+
+  public text(
+    content: string,
+    styleKey: string,
+    styleFactory: () => ConstructorParameters<typeof TextStyle>[0]
+  ): Text {
+    const baseKey = `${styleKey}\u0000${content}`;
+    const occurrence = this.textOccurrences.get(baseKey) ?? 0;
+    this.textOccurrences.set(baseKey, occurrence + 1);
+    const key = `${baseKey}\u0000${occurrence}`;
+
+    let entry = this.texts.get(key);
+    if (!entry) {
+      let style = this.styles.get(styleKey);
+      if (!style) {
+        style = new TextStyle(styleFactory());
+        this.styles.set(styleKey, style);
+      }
+      entry = { text: new Text({ text: content, style }), lastUsedFrame: this.frame };
+      this.texts.set(key, entry);
+    }
+    entry.lastUsedFrame = this.frame;
+    entry.text.alpha = 1;
+    return entry.text;
+  }
+
+  /** Releases GPU resources of objects that have not been used for a while. */
+  public endFrame(): void {
+    if (this.frame % 60 !== 0) return;
+    for (const [key, entry] of this.texts) {
+      if (this.frame - entry.lastUsedFrame > 120) {
+        entry.text.destroy({ texture: true, textureSource: true });
+        this.texts.delete(key);
+      }
+    }
+    const keepSprites = Math.max(256, this.spriteCursor * 2);
+    while (this.sprites.length > keepSprites) {
+      this.sprites.pop()?.destroy();
+    }
+    const keepGraphics = Math.max(64, this.graphicsCursor * 2);
+    while (this.graphicsList.length > keepGraphics) {
+      this.graphicsList.pop()?.destroy();
+    }
+  }
+}
+
 export class IsoSceneView {
   public readonly app: Application;
   public readonly game: CrpgGameState;
   public rotation: CameraRotation = 0;
   public bufferMode: RenderBufferMode = 'final_pbr';
   public activeTool: InspectorToolMode = 'interact';
+  public editorTerrainType: TileTerrainType = 'forest_grass';
+  public editorTerrainWalkable = true;
+  public editorBrushSize: 1 | 3 = 1;
+  public editorTargetElevation = 0;
+  public editorPropKind: PropKind = 'pine_tree';
+  public editorPropVariant = 0;
+  public editorRandomizeVariant = true;
+  public editorPropOrientation: EditorPropOrientation = '1x1';
+  public editorEnemyDifficulty: EnemyDifficultyTier = 'normal';
   public zoom = 1.0;
   public cameraOffsetX = 0;
   public cameraOffsetY = 140;
+  public edgePanEnabled = true;
+  public edgePanMarginPx = 96;
+  public edgePanSpeed = 520;
+  public activeEdgeDirection: EdgePanDirection | null = null;
+  public forcedEdgeDirection: EdgePanDirection | null = null;
   public hoveredWorldTile: { x: number; y: number; z: number } | null = null;
   public lastBakeDurationMs = 1.2;
   public fps = 60;
@@ -127,13 +254,24 @@ export class IsoSceneView {
   private readonly tileTextureCache = new Map<string, DualPbrTexturePair>();
   private readonly propTextureCache = new Map<string, DualPbrTexturePair>();
   private readonly characterTextureCache = new Map<string, CharacterDualFrameTextures>();
+  private readonly displayPool = new FrameDisplayPool();
+  private readonly scratchPbrLit = { r: 0, g: 0, b: 0, specular: 0 };
+  private readonly scratchSurface = { nx: 0, ny: 0, roughness: 0, metallic: 0 };
+  private cachedHoverPathKey = '';
+  private cachedHoverPath: PathStepNode[] = [];
   private readonly particles: FloatingParticle[] = [];
   private postFilter: Filter | null = null;
 
   private elapsedSeconds = 0;
   private isDraggingCamera = false;
+  private isPaintingWithBrush = false;
+  private lastPaintedTileKey = '';
   private dragLastX = 0;
   private dragLastY = 0;
+  private pointerClientX = 0;
+  private pointerClientY = 0;
+  private isPointerInsideViewport = false;
+  private isPointerOverUi = false;
   private readonly keysDown = new Set<string>();
   private onUiStateChange?: () => void;
 
@@ -148,13 +286,24 @@ export class IsoSceneView {
     this.tileTextureCache.clear();
     this.propTextureCache.clear();
 
-    await this.app.init({
-      resizeTo: containerEl,
-      backgroundColor: 0x0b0e14,
-      antialias: true,
-      resolution: window.devicePixelRatio || 1,
-      autoDensity: true
-    });
+    try {
+      await this.app.init({
+        preference: 'webgl',
+        resizeTo: containerEl,
+        backgroundColor: 0x0b0e14,
+        antialias: true,
+        resolution: window.devicePixelRatio || 1,
+        autoDensity: true
+      });
+    } catch {
+      await this.app.init({
+        preference: 'canvas',
+        resizeTo: containerEl,
+        backgroundColor: 0x0b0e14,
+        resolution: window.devicePixelRatio || 1,
+        autoDensity: true
+      });
+    }
 
     containerEl.innerHTML = '';
     containerEl.appendChild(this.app.canvas);
@@ -178,13 +327,61 @@ export class IsoSceneView {
     this.bindInputEvents(this.app.canvas);
 
     this.app.ticker.add((ticker) => {
-      const dt = Math.min(0.1, ticker.deltaMS / 1000);
-      this.fps = Math.round(ticker.FPS);
-      this.elapsedSeconds += dt;
-      this.handleKeyboardCameraPan(dt);
-      this.game.update(dt);
-      this.updateParticles(dt);
-      this.renderFrame();
+      try {
+        const dt = Math.min(0.1, ticker.deltaMS / 1000);
+        this.fps = Math.round(ticker.FPS);
+        this.elapsedSeconds += dt;
+        const viewportW = this.app.screen?.width || window.innerWidth || 1280;
+        const viewportH = this.app.screen?.height || window.innerHeight || 720;
+        this.handleKeyboardCameraPan(dt);
+        this.stepCameraEdgePan(dt, viewportW, viewportH);
+
+        // Smooth camera follow lerp when player hero is moving along path
+        if (
+          this.game.player.isMoving &&
+          !this.isDraggingCamera &&
+          !this.activeEdgeDirection &&
+          this.keysDown.size === 0
+        ) {
+          const { width: mapW, height: mapH } = this.game.map;
+          const pRot = toRotatedContinuous(
+            this.game.player.x,
+            this.game.player.y,
+            mapW,
+            mapH,
+            this.rotation
+          );
+          const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
+          const targetCamX = viewportW * 0.5 - pScr.x * this.zoom;
+          const targetCamY = viewportH * 0.46 - pScr.y * this.zoom;
+          const lerp = Math.min(1.0, dt * 4.5);
+          this.cameraOffsetX += (targetCamX - this.cameraOffsetX) * lerp;
+          this.cameraOffsetY += (targetCamY - this.cameraOffsetY) * lerp;
+        }
+
+        const prevMapId = this.game.map.id;
+        const prevTopLog = this.game.logs[0];
+        const prevDialogue = this.game.activeDialogue;
+        const prevCombatActive = this.game.combatState.active;
+
+        this.game.update(dt);
+
+        if (this.game.map.id !== prevMapId) {
+          this.centerCameraOnPlayer();
+          this.onUiStateChange?.();
+        } else if (
+          this.game.logs[0] !== prevTopLog ||
+          this.game.activeDialogue !== prevDialogue ||
+          this.game.combatState.active !== prevCombatActive
+        ) {
+          this.onUiStateChange?.();
+        }
+
+        this.updateParticles(dt);
+        this.renderFrame();
+      } catch (err) {
+        console.error('Błąd w pętli renderowania klatki IsoSceneView:', err);
+      }
     });
   }
 
@@ -203,6 +400,436 @@ export class IsoSceneView {
     this.onUiStateChange?.();
   }
 
+  public applyEditorToolAtTile(centerX: number, centerY: number): void {
+    const map = this.game.map;
+    if (centerX < 0 || centerX >= map.width || centerY < 0 || centerY >= map.height) {
+      return;
+    }
+
+    const radius = this.editorBrushSize === 3 ? 1 : 0;
+    const affectedCoords: Array<{ x: number; y: number }> = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const tx = centerX + dx;
+        const ty = centerY + dy;
+        if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height) {
+          affectedCoords.push({ x: tx, y: ty });
+        }
+      }
+    }
+
+    if (this.activeTool === 'paint_terrain') {
+      for (const c of affectedCoords) {
+        map.tiles[c.y][c.x].terrain = this.editorTerrainType;
+        map.tiles[c.y][c.x].walkable =
+          this.editorTerrainType === 'abyss_water' ? false : this.editorTerrainWalkable;
+      }
+      this.game.recomputeFov();
+      this.game.addLog(
+        `[Edytor] Pomalowano teren (${centerX}, ${centerY}) pędzlem ${this.editorBrushSize}×${this.editorBrushSize}: ${this.editorTerrainType}.`
+      );
+      return;
+    }
+
+    if (this.activeTool === 'raise_elevation') {
+      for (const c of affectedCoords) {
+        map.tiles[c.y][c.x].z = Math.min(4, map.tiles[c.y][c.x].z + 1);
+      }
+      for (const prop of map.props) {
+        if (prop.x === centerX && prop.y === centerY) {
+          prop.z = map.tiles[centerY][centerX].z;
+        }
+      }
+      this.game.addLog(
+        `[Edytor] Podniesiono wysokość kafla (${centerX}, ${centerY}) do Z=${map.tiles[centerY][centerX].z}.`
+      );
+      return;
+    }
+
+    if (this.activeTool === 'lower_elevation') {
+      for (const c of affectedCoords) {
+        map.tiles[c.y][c.x].z = Math.max(0, map.tiles[c.y][c.x].z - 1);
+      }
+      for (const prop of map.props) {
+        if (prop.x === centerX && prop.y === centerY) {
+          prop.z = map.tiles[centerY][centerX].z;
+        }
+      }
+      this.game.addLog(
+        `[Edytor] Obniżono wysokość kafla (${centerX}, ${centerY}) do Z=${map.tiles[centerY][centerX].z}.`
+      );
+      return;
+    }
+
+    if (this.activeTool === 'flatten_elevation') {
+      const targetZ = Math.max(0, Math.min(4, Math.round(this.editorTargetElevation)));
+      for (const c of affectedCoords) {
+        map.tiles[c.y][c.x].z = targetZ;
+      }
+      this.game.addLog(
+        `[Edytor] Wyrównano wysokość (${centerX}, ${centerY}) do Z=${targetZ}.`
+      );
+      return;
+    }
+
+    if (this.activeTool === 'remove_prop') {
+      const existing = this.game.getPropAtTile(centerX, centerY);
+      if (existing) {
+        const idx = map.props.findIndex((p) => p.id === existing.id);
+        if (idx >= 0) {
+          map.props.splice(idx, 1);
+        }
+        if (existing.linkedLightId) {
+          const lIdx = map.lights.findIndex((l) => l.id === existing.linkedLightId);
+          if (lIdx >= 0) map.lights.splice(lIdx, 1);
+        }
+        this.game.recomputeFov();
+        this.game.addLog(`[Edytor] Usunięto obiekt „${existing.name}” z (${centerX}, ${centerY}).`);
+        return;
+      }
+      const npcIdx = this.game.npcs.findIndex(
+        (n) => n.tileX === centerX && n.tileY === centerY
+      );
+      if (npcIdx >= 0) {
+        const removedNpc = this.game.npcs.splice(npcIdx, 1)[0];
+        this.game.addLog(`[Edytor] Usunięto postać „${removedNpc.recipe.name}” z (${centerX}, ${centerY}).`);
+      }
+      return;
+    }
+
+    if (this.activeTool === 'place_prop') {
+      const kind = this.editorPropKind;
+      const multiTileKinds: ReadonlyArray<PropKind> = [
+        'slavic_cottage',
+        'market_stall',
+        'ranger_tent',
+        'runic_altar',
+        'sarcophagus',
+        'fallen_log'
+      ];
+      let sizeX = 1;
+      let sizeY = 1;
+      if (multiTileKinds.includes(kind)) {
+        if (this.editorPropOrientation === '2x1') {
+          sizeX = 2;
+          sizeY = 1;
+        } else if (this.editorPropOrientation === '1x2') {
+          sizeX = 1;
+          sizeY = 2;
+        }
+      }
+
+      // Remove any overlapping prop in footprint
+      for (let dy = 0; dy < sizeY; dy++) {
+        for (let dx = 0; dx < sizeX; dx++) {
+          const overlap = this.game.getPropAtTile(centerX + dx, centerY + dy);
+          if (overlap) {
+            const idx = map.props.findIndex((p) => p.id === overlap.id);
+            if (idx >= 0) map.props.splice(idx, 1);
+          }
+        }
+      }
+
+      const passableKinds: ReadonlyArray<PropKind> = ['wildflower_patch', 'ground_loot', 'exit_path'];
+      const sightBlockingKinds: ReadonlyArray<PropKind> = [
+        'wall_block',
+        'pillar',
+        'door',
+        'pine_tree',
+        'ancient_oak',
+        'dead_tree',
+        'slavic_cottage',
+        'watchtower',
+        'rock_cliff'
+      ];
+      const interactiveKinds: ReadonlyArray<PropKind> = [
+        'door',
+        'torch_sconce',
+        'arcane_crystal',
+        'chest',
+        'campfire',
+        'ground_loot',
+        'exit_path',
+        'market_stall',
+        'slavic_shrine',
+        'slavic_well',
+        'travel_signpost',
+        'watchtower'
+      ];
+
+      const z = map.tiles[centerY][centerX].z;
+      const propId = `editor_prop_${kind}_${centerX}_${centerY}_${Date.now()}`;
+      let linkedLightId: string | undefined;
+
+      if (kind === 'campfire' || kind === 'torch_sconce' || kind === 'arcane_crystal') {
+        linkedLightId = `light_${propId}`;
+        const isArcane = kind === 'arcane_crystal';
+        map.lights.push({
+          id: linkedLightId,
+          x: centerX + 0.5,
+          y: centerY + 0.5,
+          z: z + 1.4,
+          color: isArcane ? { r: 72, g: 224, b: 255 } : { r: 255, g: 164, b: 64 },
+          intensity: 1.5,
+          radius: 6.5,
+          flickerSpeed: isArcane ? 1.8 : 4.2,
+          enabled: true
+        });
+      }
+
+      map.props.push({
+        id: propId,
+        name: `${kind} (#${this.editorPropVariant})`,
+        kind,
+        variant: this.editorPropVariant,
+        x: centerX,
+        y: centerY,
+        z,
+        sizeX,
+        sizeY,
+        heightZ: sightBlockingKinds.includes(kind) ? 2.6 : 1.2,
+        blocksMovement: !passableKinds.includes(kind),
+        blocksSight: sightBlockingKinds.includes(kind),
+        interactive: interactiveKinds.includes(kind),
+        isOpen: false,
+        lootItems:
+          kind === 'chest' || kind === 'market_stall' || kind === 'ground_loot'
+            ? ['item_raw_sausage']
+            : undefined,
+        linkedLightId
+      });
+
+      this.game.recomputeFov();
+      this.game.addLog(
+        `[Edytor] Postawiono obiekt „${kind}” (wariant #${this.editorPropVariant}, ${sizeX}×${sizeY}) na (${centerX}, ${centerY}).`
+      );
+      return;
+    }
+
+    if (this.activeTool === 'place_torch_light' || this.activeTool === 'place_arcane_light') {
+      const isArcane = this.activeTool === 'place_arcane_light';
+      const z = map.tiles[centerY][centerX].z + 1.5;
+      map.lights.push({
+        id: `custom_light_${Date.now()}_${Math.random()}`,
+        x: centerX,
+        y: centerY,
+        z,
+        color: isArcane ? { r: 68, g: 228, b: 255 } : { r: 255, g: 168, b: 64 },
+        intensity: 1.45,
+        radius: 6.2,
+        flickerSpeed: isArcane ? 1.8 : 4.2,
+        enabled: true
+      });
+      this.game.addLog(
+        `[Edytor] Dodano źródło światła PBR (${isArcane ? 'Eteryczny Kryształ' : 'Płomień Pochodni'}) na (${centerX}, ${centerY}).`
+      );
+      return;
+    }
+
+    if (this.activeTool === 'remove_light') {
+      let nearestIdx = -1;
+      let nearestDist = 2.5;
+      map.lights.forEach((l, idx) => {
+        const d = Math.hypot(l.x - centerX, l.y - centerY);
+        if (d <= nearestDist) {
+          nearestDist = d;
+          nearestIdx = idx;
+        }
+      });
+      if (nearestIdx >= 0) {
+        const removed = map.lights.splice(nearestIdx, 1)[0];
+        this.game.addLog(`[Edytor] Usunięto źródło światła PBR (${removed.id}) w pobliżu (${centerX}, ${centerY}).`);
+      }
+      return;
+    }
+
+    if (this.activeTool === 'spawn_npc') {
+      const seed = Math.floor(Math.random() * 89000) + 1000;
+      const recipe = generateRandomCharacterRecipe(seed);
+      const z = map.tiles[centerY][centerX].z;
+      this.game.npcs.push({
+        id: `npc_editor_${seed}_${Date.now()}`,
+        recipe,
+        x: centerX + 0.5,
+        y: centerY + 0.5,
+        z,
+        tileX: centerX,
+        tileY: centerY,
+        direction: 4,
+        isMoving: false,
+        animFrame: 0,
+        animTimer: 0,
+        path: [],
+        dialogueId: 'npc_dobromir'
+      });
+      this.game.addLog(`[Edytor] Umieszczono NPC „${recipe.name}” na kaflu (${centerX}, ${centerY}).`);
+      return;
+    }
+
+    if (this.activeTool === 'spawn_enemy') {
+      const diff = this.editorEnemyDifficulty;
+      const seed = Math.floor(Math.random() * 89000) + 2000;
+      const recipe = generateRandomCharacterRecipe(seed);
+      const z = map.tiles[centerY][centerX].z;
+
+      const tierConfig =
+        diff === 'easy'
+          ? {
+              name: 'Zdziczały Maruder Szlaku',
+              label: '🟢 ŁATWY',
+              hp: 48,
+              ap: 8,
+              skill: 56,
+              armorBonus: -2,
+              dmgBonus: -4
+            }
+          : diff === 'very_hard'
+            ? {
+                name: 'Upadły Czempion Pogranicza',
+                label: '🔴 BARDZO TRUDNY',
+                hp: 168,
+                ap: 11,
+                skill: 92,
+                armorBonus: 18,
+                dmgBonus: 8
+              }
+            : {
+                name: 'Najemny Wiarus z Jaru',
+                label: '🟡 NORMALNY',
+                hp: 96,
+                ap: 10,
+                skill: 74,
+                armorBonus: 4,
+                dmgBonus: 2
+              };
+
+      recipe.name = tierConfig.name;
+      recipe.title = `${tierConfig.label} Przeciwnik`;
+
+      this.game.npcs.push({
+        id: `enemy_editor_${diff}_${Date.now()}`,
+        recipe,
+        x: centerX + 0.5,
+        y: centerY + 0.5,
+        z,
+        tileX: centerX,
+        tileY: centerY,
+        direction: 4,
+        isMoving: false,
+        animFrame: 0,
+        animTimer: 0,
+        path: [],
+        combat: {
+          isHostile: true,
+          difficulty: diff,
+          difficultyLabel: tierConfig.label,
+          aggroRadius: 3.5,
+          hp: tierConfig.hp,
+          maxHp: tierConfig.hp,
+          ap: tierConfig.ap,
+          maxAp: tierConfig.ap,
+          proficiencies: createDefaultProficiencies({ blades: tierConfig.skill }),
+          defending: false,
+          dazedHeadTurns: 0,
+          crippledLegsTurns: 0,
+          xpReward: 6,
+          lootTable: ['item_raw_sausage'],
+          isAlive: true,
+          customArmorBonus: tierConfig.armorBonus,
+          customDamageBonus: tierConfig.dmgBonus
+        }
+      });
+      this.game.addLog(
+        `[Edytor] Umieszczono przeciwnika (${tierConfig.label}) na kaflu (${centerX}, ${centerY}).`
+      );
+    }
+  }
+
+  public exportMapToJson(): string {
+    return JSON.stringify(this.game.map, null, 2);
+  }
+
+  public importMapFromJson(jsonText: string): boolean {
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (
+        !parsed ||
+        typeof parsed.width !== 'number' ||
+        typeof parsed.height !== 'number' ||
+        !Array.isArray(parsed.tiles) ||
+        !Array.isArray(parsed.props)
+      ) {
+        this.game.addLog('[Edytor] Błąd importu: nieprawidłowy format JSON mapy.');
+        return false;
+      }
+      this.game.map.width = parsed.width;
+      this.game.map.height = parsed.height;
+      this.game.map.name = parsed.name || this.game.map.name;
+      this.game.map.subtitle = parsed.subtitle || this.game.map.subtitle;
+      this.game.map.tiles = parsed.tiles;
+      this.game.map.props = parsed.props;
+      this.game.map.lights = Array.isArray(parsed.lights) ? parsed.lights : [];
+      this.game.recomputeFov();
+      this.game.addLog(`[Edytor] Wczytano mapę „${this.game.map.name}” (${parsed.width}×${parsed.height}) z pliku JSON.`);
+      this.onUiStateChange?.();
+      return true;
+    } catch {
+      this.game.addLog('[Edytor] Błąd parsowania pliku JSON mapy.');
+      return false;
+    }
+  }
+
+  public fillMapTerrain(
+    terrain: TileTerrainType = this.editorTerrainType,
+    walkable = this.editorTerrainWalkable
+  ): void {
+    const map = this.game.map;
+    const isWalkable = terrain === 'abyss_water' ? false : walkable;
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        map.tiles[y][x].terrain = terrain;
+        map.tiles[y][x].walkable = isWalkable;
+      }
+    }
+    this.game.recomputeFov();
+    this.game.addLog(`[Edytor] Wypełniono całą mapę (${map.width}×${map.height}) terenem: ${terrain}.`);
+    this.onUiStateChange?.();
+  }
+
+  public flattenAllMapElevation(targetZ = 0): void {
+    const map = this.game.map;
+    const clampedZ = Math.max(0, Math.min(4, Math.round(targetZ)));
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        map.tiles[y][x].z = clampedZ;
+      }
+    }
+    for (const p of map.props) {
+      p.z = clampedZ;
+    }
+    for (const n of this.game.npcs) {
+      n.z = clampedZ;
+    }
+    this.game.player.z = clampedZ;
+    this.game.addLog(`[Edytor] Wyrównano wysokość całej mapy do poziomu Z=${clampedZ}.`);
+    this.onUiStateChange?.();
+  }
+
+  public clearMapEntities(): void {
+    this.game.map.props.length = 0;
+    this.game.map.lights.length = 0;
+    this.game.npcs.length = 0;
+    this.game.recomputeFov();
+    this.game.addLog('[Edytor] Wyczyszczono wszystkie obiekty, światła i NPC z mapy (czysta makieta).');
+    this.onUiStateChange?.();
+  }
+
+  public resetCurrentMap(): void {
+    this.game.loadMap(this.game.map.id);
+    this.centerCameraOnPlayer();
+    this.onUiStateChange?.();
+  }
+
   public centerCameraOnPlayer(): void {
     const { width: mapW, height: mapH } = this.game.map;
     const pRot = toRotatedContinuous(
@@ -213,17 +840,37 @@ export class IsoSceneView {
       this.rotation
     );
     const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
-    const screenW = this.app.screen?.width || window.innerWidth || 1280;
-    const screenH = this.app.screen?.height || window.innerHeight || 720;
+    const screenW =
+      (this.app.renderer ? this.app.screen.width : 0) ||
+      (typeof window !== 'undefined' ? window.innerWidth : 0) ||
+      1280;
+    const screenH =
+      (this.app.renderer ? this.app.screen.height : 0) ||
+      (typeof window !== 'undefined' ? window.innerHeight : 0) ||
+      720;
     this.cameraOffsetX = screenW * 0.5 - pScr.x * this.zoom;
     this.cameraOffsetY = screenH * 0.46 - pScr.y * this.zoom;
   }
 
   public getCharacterTextures(actor: ActorEntity): CharacterDualFrameTextures {
+    const fastHash = computeCharacterRecipeHash(actor.recipe);
+    const cached = this.characterTextureCache.get(fastHash);
+    if (cached) return cached;
+
     const t0 = performance.now();
     const baked: BakedCharacterBuffers = bakeCharacterBuffers(actor.recipe);
-    const cached = this.characterTextureCache.get(baked.recipeHash);
-    if (cached) return cached;
+
+    if (typeof document === 'undefined') {
+      const headlessEntry: CharacterDualFrameTextures = {
+        recipeHash: baked.recipeHash,
+        albedoFrames: [],
+        normalFrames: [],
+        portraitDataUrl: 'data:image/png;base64,',
+        bakeDurationMs: 0.5
+      };
+      this.characterTextureCache.set(baked.recipeHash, headlessEntry);
+      return headlessEntry;
+    }
 
     const baseAlbedo = rgbaBufferToTexture(
       baked.albedoRGBA,
@@ -358,6 +1005,18 @@ export class IsoSceneView {
         this.rotateCamera(-1);
       } else if (k === 'e') {
         this.rotateCamera(1);
+      } else if (k === 'r' && this.activeTool === 'place_prop') {
+        this.editorPropOrientation =
+          this.editorPropOrientation === '1x1'
+            ? '2x1'
+            : this.editorPropOrientation === '2x1'
+              ? '1x2'
+              : '1x1';
+        this.onUiStateChange?.();
+      } else if (k === ' ' && this.game.combatState.active) {
+        e.preventDefault();
+        this.game.endPlayerCombatTurn();
+        this.onUiStateChange?.();
       }
     });
 
@@ -391,43 +1050,26 @@ export class IsoSceneView {
         if (!this.hoveredWorldTile) return;
         const { x, y } = this.hoveredWorldTile;
 
-        if (this.activeTool === 'raise_elevation') {
-          this.game.map.tiles[y][x].z = Math.min(4, this.game.map.tiles[y][x].z + 1);
-          this.game.addLog(`Podniesiono wysokość kafla (${x}, ${y}) do Z=${this.game.map.tiles[y][x].z}.`);
-          this.onUiStateChange?.();
-          return;
-        }
-
-        if (this.activeTool === 'lower_elevation') {
-          this.game.map.tiles[y][x].z = Math.max(0, this.game.map.tiles[y][x].z - 1);
-          this.game.addLog(`Obniżono wysokość kafla (${x}, ${y}) do Z=${this.game.map.tiles[y][x].z}.`);
-          this.onUiStateChange?.();
-          return;
-        }
-
-        if (this.activeTool === 'place_torch_light' || this.activeTool === 'place_arcane_light') {
-          const isArcane = this.activeTool === 'place_arcane_light';
-          const z = this.game.map.tiles[y][x].z + 1.5;
-          this.game.map.lights.push({
-            id: `custom_light_${Date.now()}`,
-            x,
-            y,
-            z,
-            color: isArcane ? { r: 68, g: 228, b: 255 } : { r: 255, g: 168, b: 64 },
-            intensity: 1.45,
-            radius: 6.2,
-            flickerSpeed: isArcane ? 1.8 : 4.2,
-            enabled: true
-          });
-          this.game.addLog(
-            `Dodano dynamiczne źródło światła PBR (${isArcane ? 'Eteryczny Kryształ' : 'Płomień Pochodni'}) na (${x}, ${y}).`
-          );
+        if (this.activeTool !== 'interact') {
+          const isContinuousTool =
+            this.activeTool === 'paint_terrain' ||
+            this.activeTool === 'raise_elevation' ||
+            this.activeTool === 'lower_elevation' ||
+            this.activeTool === 'flatten_elevation' ||
+            this.activeTool === 'remove_prop';
+          if (isContinuousTool) {
+            this.isPaintingWithBrush = true;
+            this.lastPaintedTileKey = `${x},${y}`;
+          }
+          this.applyEditorToolAtTile(x, y);
           this.onUiStateChange?.();
           return;
         }
 
         // Standard cRPG interaction / movement
-        const npcAtTile = this.game.npcs.find((n) => n.tileX === x && n.tileY === y);
+        const npcAtTile = this.game.npcs.find(
+          (n) => n.tileX === x && n.tileY === y && (!n.combat || n.combat.isAlive)
+        );
         if (npcAtTile) {
           this.game.commandTalkToNpc(npcAtTile.id);
           this.onUiStateChange?.();
@@ -436,7 +1078,11 @@ export class IsoSceneView {
 
         const propAtTile = this.game.getPropAtTile(x, y);
         if (propAtTile && propAtTile.interactive) {
+          const prevMapId = this.game.map.id;
           this.game.commandInteractWithProp(propAtTile.id);
+          if (this.game.map.id !== prevMapId) {
+            this.centerCameraOnPlayer();
+          }
           this.onUiStateChange?.();
           return;
         }
@@ -446,7 +1092,15 @@ export class IsoSceneView {
       }
     });
 
-    window.addEventListener('pointermove', (e) => {
+    const onPointerOrMouseMove = (e: MouseEvent | PointerEvent): void => {
+      const target = e.target as HTMLElement | null;
+      const overUi = Boolean(
+        target?.closest(
+          '.top-bar button, .hero-card, .chronicle-log, .combat-tactical-bar, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
+        )
+      );
+      this.updateEdgePanPointerState(e.clientX, e.clientY, true, overUi);
+
       if (this.isDraggingCamera) {
         const dx = e.clientX - this.dragLastX;
         const dy = e.clientY - this.dragLastY;
@@ -457,19 +1111,145 @@ export class IsoSceneView {
         return;
       }
       this.updateHoveredTileFromPointer(e.clientX, e.clientY);
-    });
+      if (this.isPaintingWithBrush && this.hoveredWorldTile && !overUi) {
+        const key = `${this.hoveredWorldTile.x},${this.hoveredWorldTile.y}`;
+        if (key !== this.lastPaintedTileKey) {
+          this.lastPaintedTileKey = key;
+          this.applyEditorToolAtTile(this.hoveredWorldTile.x, this.hoveredWorldTile.y);
+          this.onUiStateChange?.();
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      const hasPointer = 'PointerEvent' in (window as object);
+      if (hasPointer) {
+        window.addEventListener('pointermove', onPointerOrMouseMove, { passive: true });
+      } else {
+        window.addEventListener('mousemove', onPointerOrMouseMove, { passive: true });
+      }
+    }
 
     window.addEventListener('pointerup', () => {
       this.isDraggingCamera = false;
+      this.isPaintingWithBrush = false;
+      this.lastPaintedTileKey = '';
     });
+
+    document.documentElement.addEventListener('mouseleave', () => {
+      this.isPointerInsideViewport = false;
+      this.forcedEdgeDirection = null;
+    });
+
+    window.addEventListener('blur', () => {
+      this.isPointerInsideViewport = false;
+      this.forcedEdgeDirection = null;
+      this.keysDown.clear();
+    });
+  }
+
+  public updateEdgePanPointerState(
+    clientX: number,
+    clientY: number,
+    isInside: boolean,
+    isOverUi: boolean
+  ): void {
+    this.pointerClientX = clientX;
+    this.pointerClientY = clientY;
+    this.isPointerInsideViewport = isInside;
+    this.isPointerOverUi = isOverUi;
+  }
+
+  public setForcedEdgeDirection(dir: EdgePanDirection | null): void {
+    this.forcedEdgeDirection = dir;
+  }
+
+  public stepCameraEdgePan(dt: number, viewportW: number, viewportH: number): void {
+    if (this.isDraggingCamera) {
+      if (this.activeEdgeDirection !== null) {
+        this.activeEdgeDirection = null;
+        this.syncEdgeIndicatorDom();
+      }
+      return;
+    }
+
+    const res = computeEdgePanState({
+      pointerX: this.pointerClientX,
+      pointerY: this.pointerClientY,
+      viewportWidth: viewportW,
+      viewportHeight: viewportH,
+      marginPx: this.edgePanMarginPx,
+      enabled: this.edgePanEnabled,
+      isPointerInside: this.isPointerInsideViewport,
+      isOverUi: this.isPointerOverUi,
+      forcedDirection: this.forcedEdgeDirection
+    });
+
+    const prevDir = this.activeEdgeDirection;
+    this.activeEdgeDirection = res.direction;
+    if (prevDir !== this.activeEdgeDirection) {
+      this.syncEdgeIndicatorDom();
+    }
+
+    if (res.direction) {
+      const step = this.edgePanSpeed * dt;
+      this.cameraOffsetX += res.offsetDeltaX * step;
+      this.cameraOffsetY += res.offsetDeltaY * step;
+
+      if (this.app.renderer?.canvas && this.isPointerInsideViewport && !this.isPointerOverUi) {
+        this.updateHoveredTileFromPointer(this.pointerClientX, this.pointerClientY);
+      }
+    }
+  }
+
+  private syncEdgeIndicatorDom(): void {
+    if (typeof document === 'undefined') return;
+    const arrows = document.querySelectorAll<HTMLElement>('.edge-pan-arrow');
+    arrows.forEach((el) => {
+      const dir = el.dataset.edgeDir as EdgePanDirection | undefined;
+      el.classList.toggle('active', Boolean(dir && dir === this.activeEdgeDirection));
+    });
+
+    const canvas = this.app.renderer?.canvas;
+    if (canvas) {
+      const cursorMap: Record<EdgePanDirection, string> = {
+        N: 'n-resize',
+        NE: 'ne-resize',
+        E: 'e-resize',
+        SE: 'se-resize',
+        S: 's-resize',
+        SW: 'sw-resize',
+        W: 'w-resize',
+        NW: 'nw-resize'
+      };
+      canvas.style.cursor = this.activeEdgeDirection
+        ? cursorMap[this.activeEdgeDirection]
+        : 'crosshair';
+    }
   }
 
   private handleKeyboardCameraPan(dt: number): void {
     const panSpeed = 420 * dt;
-    if (this.keysDown.has('w') || this.keysDown.has('arrowup')) this.cameraOffsetY += panSpeed;
-    if (this.keysDown.has('s') || this.keysDown.has('arrowdown')) this.cameraOffsetY -= panSpeed;
-    if (this.keysDown.has('a') || this.keysDown.has('arrowleft')) this.cameraOffsetX += panSpeed;
-    if (this.keysDown.has('d') || this.keysDown.has('arrowright')) this.cameraOffsetX -= panSpeed;
+    let moved = false;
+    if (this.keysDown.has('w') || this.keysDown.has('arrowup')) {
+      this.cameraOffsetY += panSpeed;
+      moved = true;
+    }
+    if (this.keysDown.has('s') || this.keysDown.has('arrowdown')) {
+      this.cameraOffsetY -= panSpeed;
+      moved = true;
+    }
+    if (this.keysDown.has('a') || this.keysDown.has('arrowleft')) {
+      this.cameraOffsetX += panSpeed;
+      moved = true;
+    }
+    if (this.keysDown.has('d') || this.keysDown.has('arrowright')) {
+      this.cameraOffsetX -= panSpeed;
+      moved = true;
+    }
+    if (moved && this.app.renderer?.canvas && this.isPointerInsideViewport && !this.isPointerOverUi) {
+      this.updateHoveredTileFromPointer(this.pointerClientX, this.pointerClientY);
+    }
   }
 
   private updateHoveredTileFromPointer(clientX: number, clientY: number): void {
@@ -616,12 +1396,18 @@ export class IsoSceneView {
       return 0xffffff;
     }
 
+    this.scratchSurface.nx = nx;
+    this.scratchSurface.ny = ny;
+    this.scratchSurface.roughness = roughness;
+    this.scratchSurface.metallic = metallic;
+
     const lit = evaluateDeferredPbrLightAtPoint(
       sx,
       sy,
-      { nx, ny, roughness, metallic },
+      this.scratchSurface,
       lights,
-      this.game.ambientLightIntensity
+      this.game.ambientLightIntensity,
+      this.scratchPbrLit
     );
 
     // Softly compress tint into [0..240] so sprites never blow out when combined with the GLSL shader
@@ -633,6 +1419,8 @@ export class IsoSceneView {
   }
 
   private renderFrame(): void {
+    this.displayPool.beginFrame();
+
     this.worldContainer.position.set(this.cameraOffsetX, this.cameraOffsetY);
     this.worldContainer.scale.set(this.zoom);
 
@@ -658,6 +1446,20 @@ export class IsoSceneView {
       screenLights
     );
 
+    const viewW =
+      (this.app.renderer ? this.app.screen.width : 0) ||
+      (typeof window !== 'undefined' ? window.innerWidth : 0) ||
+      1280;
+    const viewH =
+      (this.app.renderer ? this.app.screen.height : 0) ||
+      (typeof window !== 'undefined' ? window.innerHeight : 0) ||
+      720;
+    const cullPad = 220;
+    const minLocalX = (-this.cameraOffsetX - cullPad) / Math.max(0.25, this.zoom);
+    const maxLocalX = (viewW - this.cameraOffsetX + cullPad) / Math.max(0.25, this.zoom);
+    const minLocalY = (-this.cameraOffsetY - cullPad) / Math.max(0.25, this.zoom);
+    const maxLocalY = (viewH - this.cameraOffsetY + cullPad) / Math.max(0.25, this.zoom);
+
     // 1. Render Isometric Floor Tiles in Painter Order (rx + ry from 0 to rotW + rotH)
     for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
       for (let rx = 0; rx < rotW; rx++) {
@@ -666,10 +1468,19 @@ export class IsoSceneView {
 
         const worldCoord = toWorldGrid(rx, ry, mapW, mapH, this.rotation);
         const cell = this.game.map.tiles[worldCoord.y][worldCoord.x];
-        const texPair = this.getTileTexturePair(cell.terrain, cell.z);
         const scr = gridToScreen(rx + 0.5, ry + 0.5, cell.z);
 
-        const sprite = new Sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
+        if (
+          scr.x < minLocalX ||
+          scr.x > maxLocalX ||
+          scr.y < minLocalY ||
+          scr.y > maxLocalY
+        ) {
+          continue;
+        }
+
+        const texPair = this.getTileTexturePair(cell.terrain, cell.z);
+        const sprite = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
         sprite.anchor.set(texPair.anchorX, texPair.anchorY);
         sprite.position.set(scr.x, scr.y);
 
@@ -720,14 +1531,18 @@ export class IsoSceneView {
       const rotHover = toRotatedGrid(hx, hy, mapW, mapH, this.rotation);
       const hScr = gridToScreen(rotHover.rx + 0.5, rotHover.ry + 0.5, hz);
       const propHover = this.game.getPropAtTile(hx, hy);
-      const npcHover = this.game.npcs.find((n) => n.tileX === hx && n.tileY === hy);
+      const npcHover = this.game.npcs.find(
+        (n) => n.tileX === hx && n.tileY === hy && (!n.combat || n.combat.isAlive)
+      );
 
       const highlightColor =
-        npcHover || (propHover && propHover.interactive)
-          ? 0xf5c451
-          : this.game.isTileWalkable(hx, hy)
-            ? 0x4deeea
-            : 0xff453a;
+        npcHover?.combat?.isHostile
+          ? 0xff453a
+          : npcHover || (propHover && propHover.interactive)
+            ? 0xf5c451
+            : this.game.isTileWalkable(hx, hy)
+              ? 0x4deeea
+              : 0xff453a;
 
       this.cursorAndPathGraphics
         .poly([
@@ -745,27 +1560,59 @@ export class IsoSceneView {
 
       // Preview A* path if in interact mode and hovering walkable tile
       if (this.activeTool === 'interact' && this.game.isTileWalkable(hx, hy)) {
-        const previewPath =
-          this.game.player.path.length > 0
-            ? this.game.player.path
-            : findPathAStar3D(
-                {
-                  width: mapW,
-                  height: mapH,
-                  isWalkable: (tx, ty) => this.game.isTileWalkable(tx, ty, this.game.player.id),
-                  getElevation: (tx, ty) => this.game.map.tiles[ty][tx].z
-                },
-                { x: this.game.player.tileX, y: this.game.player.tileY },
-                { x: hx, y: hy }
-              );
+        let previewPath: PathStepNode[];
+        if (this.game.player.path.length > 0) {
+          previewPath = this.game.player.path;
+        } else {
+          const hoverKey = `${this.game.map.id}:${this.game.player.tileX},${this.game.player.tileY}->${hx},${hy}`;
+          if (hoverKey !== this.cachedHoverPathKey) {
+            this.cachedHoverPathKey = hoverKey;
+            this.cachedHoverPath = findPathAStar3D(
+              {
+                width: mapW,
+                height: mapH,
+                isWalkable: (tx, ty) => this.game.isTileWalkable(tx, ty, this.game.player.id),
+                getElevation: (tx, ty) => this.game.map.tiles[ty][tx].z
+              },
+              { x: this.game.player.tileX, y: this.game.player.tileY },
+              { x: hx, y: hy }
+            ).slice(1);
+          }
+          previewPath = this.cachedHoverPath;
+        }
+
+        const apPerStep =
+          this.game.player.combat && this.game.player.combat.crippledLegsTurns > 0 ? 2 : 1;
+        const availAp = this.game.player.combat?.ap ?? 99;
 
         for (let i = 0; i < previewPath.length; i++) {
           const step = previewPath[i];
           const rStep = toRotatedGrid(step.x, step.y, mapW, mapH, this.rotation);
           const sPt = gridToScreen(rStep.rx + 0.5, rStep.ry + 0.5, step.z);
+          const stepCost = (i + 1) * apPerStep;
+          const canAfford = !this.game.combatState.active || stepCost <= availAp;
           this.cursorAndPathGraphics
             .circle(sPt.x, sPt.y, 5)
-            .fill({ color: 0x4deeea, alpha: 0.78 });
+            .fill({ color: canAfford ? 0x4deeea : 0xff453a, alpha: 0.82 });
+        }
+
+        if (this.game.combatState.active && previewPath.length > 0) {
+          const totalApCost = previewPath.length * apPerStep;
+          const canAfford = totalApCost <= availAp;
+          const apLabel = this.displayPool.text(
+            `👣 Ruch: ${totalApCost} AP`,
+            canAfford ? 'ap_ok' : 'ap_low',
+            () => ({
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 11,
+              fontWeight: '700',
+              fill: canAfford ? 0x4deeea : 0xff5252,
+              stroke: { color: 0x06080c, width: 3.2 }
+            })
+          );
+          apLabel.anchor.set(0.5, 1);
+          apLabel.position.set(hScr.x, hScr.y - 16);
+          this.debugOverlayContainer.addChild(apLabel);
         }
       }
     }
@@ -796,6 +1643,11 @@ export class IsoSceneView {
     const renderables: RenderableNode[] = [];
 
     for (const prop of this.game.map.props) {
+      const vis = this.game.fov.getVisibility(prop.x, prop.y);
+      if (vis === 'unexplored' && this.game.fogOfWarEnabled && this.bufferMode === 'final_pbr') {
+        continue;
+      }
+
       const fp = rotateFootprint(
         prop.x,
         prop.y,
@@ -805,6 +1657,16 @@ export class IsoSceneView {
         mapH,
         this.rotation
       );
+
+      const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
+      if (
+        scr.x < minLocalX - 160 ||
+        scr.x > maxLocalX + 160 ||
+        scr.y < minLocalY - 260 ||
+        scr.y > maxLocalY + 160
+      ) {
+        continue;
+      }
 
       renderables.push({
         id: prop.id,
@@ -817,11 +1679,6 @@ export class IsoSceneView {
         zMax: prop.z + prop.heightZ,
         occludesVision: prop.blocksSight && (!prop.isOpen || prop.kind !== 'door'),
         render: (orderIndex, totalCount, pBox) => {
-          const vis = this.game.fov.getVisibility(prop.x, prop.y);
-          if (vis === 'unexplored' && this.game.fogOfWarEnabled && this.bufferMode === 'final_pbr') {
-            return;
-          }
-
           const texPair = this.getPropTexturePair(
             prop.kind,
             Boolean(prop.isOpen),
@@ -829,12 +1686,16 @@ export class IsoSceneView {
             fp.height,
             prop.variant ?? ((prop.x * 7 + prop.y * 13) % 9)
           );
-          const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
 
-          // Render Dynamic Tree / Pillar Cast Shadow away from nearest firelight
+          // Render Dynamic Tree / Pillar / Watchtower / Rock Cast Shadow away from nearest firelight
           if (
             this.bufferMode === 'final_pbr' &&
-            (prop.kind === 'pine_tree' || prop.kind === 'ancient_oak' || prop.kind === 'pillar')
+            (prop.kind === 'pine_tree' ||
+              prop.kind === 'ancient_oak' ||
+              prop.kind === 'pillar' ||
+              prop.kind === 'dead_tree' ||
+              prop.kind === 'watchtower' ||
+              prop.kind === 'rock_cliff')
           ) {
             let sdx = -16;
             let sdy = 8;
@@ -854,14 +1715,14 @@ export class IsoSceneView {
               sdx = (dx / len) * 26;
               sdy = (dy / len) * 13;
             }
-            const treeShadow = new Graphics();
+            const treeShadow = this.displayPool.graphics();
             treeShadow
               .ellipse(scr.x + sdx * 0.55, scr.y + sdy * 0.55, 32, 16)
               .fill({ color: 0x030508, alpha: 0.42 });
             this.sortedObjectLayer.addChild(treeShadow);
           }
 
-          const sp = new Sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
+          const sp = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
           sp.anchor.set(texPair.anchorX, texPair.anchorY);
           sp.position.set(scr.x, scr.y);
 
@@ -915,7 +1776,7 @@ export class IsoSceneView {
             const flicker1 = Math.sin(this.elapsedSeconds * 11 + prop.x) * 3.5;
             const flicker2 = Math.cos(this.elapsedSeconds * 15 + prop.y) * 2.5;
 
-            const flameGfx = new Graphics();
+            const flameGfx = this.displayPool.graphics();
             flameGfx
               .poly([
                 scr.x - flameRadius,
@@ -949,39 +1810,41 @@ export class IsoSceneView {
             isPropHovered ||
             prop.kind === 'campfire' ||
             prop.kind === 'exit_path' ||
+            prop.kind === 'travel_signpost' ||
+            (prop.kind === 'market_stall' && !prop.isOpen) ||
             (prop.kind === 'ground_loot' && !prop.isOpen);
 
           if (showInteractiveHint && this.bufferMode !== 'depth_dag') {
-            const label = new Text({
-              text: prop.name,
-              style: new TextStyle({
-                fontFamily: 'Inter, sans-serif',
-                fontSize: 11,
-                fontWeight: '600',
-                fill:
-                  prop.kind === 'campfire'
-                    ? 0xffb74d
-                    : prop.kind === 'exit_path'
-                      ? 0xff7043
-                      : 0xffe082,
-                stroke: { color: 0x06080c, width: 3.2 }
-              })
-            });
+            const styleKey =
+              prop.kind === 'campfire'
+                ? 'prop_campfire'
+                : prop.kind === 'exit_path'
+                  ? 'prop_exit'
+                  : 'prop_default';
+            const label = this.displayPool.text(prop.name, styleKey, () => ({
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 11,
+              fontWeight: '600',
+              fill:
+                prop.kind === 'campfire'
+                  ? 0xffb74d
+                  : prop.kind === 'exit_path'
+                    ? 0xff7043
+                    : 0xffe082,
+              stroke: { color: 0x06080c, width: 3.2 }
+            }));
             label.anchor.set(0.5, 1);
             label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
             this.debugOverlayContainer.addChild(label);
           }
 
           if (this.bufferMode === 'depth_dag') {
-            const badge = new Text({
-              text: `#${orderIndex}`,
-              style: new TextStyle({
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 11,
-                fill: 0xffffff,
-                stroke: { color: 0x000000, width: 3 }
-              })
-            });
+            const badge = this.displayPool.text(`#${orderIndex}`, 'dag_badge', () => ({
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 11,
+              fill: 0xffffff,
+              stroke: { color: 0x000000, width: 3 }
+            }));
             badge.anchor.set(0.5);
             badge.position.set(scr.x, scr.y - 36);
             this.debugOverlayContainer.addChild(badge);
@@ -992,7 +1855,32 @@ export class IsoSceneView {
 
     const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
     for (const actor of allActors) {
+      if (actor.combat && !actor.combat.isAlive) {
+        continue;
+      }
+      const isPlayer = actor.id === this.game.player.id;
+      const vis = this.game.fov.getVisibility(actor.tileX, actor.tileY);
+      if (
+        !isPlayer &&
+        vis !== 'visible' &&
+        this.game.fogOfWarEnabled &&
+        this.bufferMode === 'final_pbr'
+      ) {
+        continue;
+      }
+
       const rotPos = toRotatedContinuous(actor.x, actor.y, mapW, mapH, this.rotation);
+      const scr = gridToScreen(rotPos.rx, rotPos.ry, actor.z);
+      if (
+        !isPlayer &&
+        (scr.x < minLocalX - 120 ||
+          scr.x > maxLocalX + 120 ||
+          scr.y < minLocalY - 180 ||
+          scr.y > maxLocalY + 120)
+      ) {
+        continue;
+      }
+
       renderables.push({
         id: actor.id,
         kind: 'actor',
@@ -1003,17 +1891,6 @@ export class IsoSceneView {
         zMin: actor.z,
         zMax: actor.z + 1.9,
         render: (orderIndex, totalCount) => {
-          const vis = this.game.fov.getVisibility(actor.tileX, actor.tileY);
-          if (
-            actor.id !== this.game.player.id &&
-            vis !== 'visible' &&
-            this.game.fogOfWarEnabled &&
-            this.bufferMode === 'final_pbr'
-          ) {
-            return;
-          }
-
-          const scr = gridToScreen(rotPos.rx, rotPos.ry, actor.z);
 
           // Render Dynamic 2.5D Cast Shadow away from nearest point light
           if (this.bufferMode === 'final_pbr') {
@@ -1036,7 +1913,7 @@ export class IsoSceneView {
               shadowOffsetY = (dy / len) * 7;
             }
 
-            const shadowGfx = new Graphics();
+            const shadowGfx = this.displayPool.graphics();
             shadowGfx
               .ellipse(scr.x + shadowOffsetX * 0.45, scr.y + shadowOffsetY * 0.45, 19, 9.5)
               .fill({ color: 0x04060a, alpha: 0.52 });
@@ -1045,6 +1922,21 @@ export class IsoSceneView {
               shadowGfx
                 .ellipse(scr.x, scr.y, 22, 11)
                 .stroke({ color: 0x38ef7d, width: 2, alpha: 0.78 });
+            } else if (actor.combat?.isHostile) {
+              const isSelectedTarget = this.game.combatState.selectedTargetId === actor.id;
+              const ringColor =
+                actor.combat.difficulty === 'easy'
+                  ? 0x4cd964
+                  : actor.combat.difficulty === 'normal'
+                    ? 0xf5c451
+                    : 0xff453a;
+              shadowGfx
+                .ellipse(scr.x, scr.y, isSelectedTarget ? 25 : 22, isSelectedTarget ? 12.5 : 11)
+                .stroke({
+                  color: ringColor,
+                  width: isSelectedTarget ? 2.8 : 1.9,
+                  alpha: isSelectedTarget ? 0.96 : 0.78
+                });
             }
             this.sortedObjectLayer.addChild(shadowGfx);
           }
@@ -1056,7 +1948,7 @@ export class IsoSceneView {
             ? charTex.normalFrames[rotDir][frameIdx]
             : charTex.albedoFrames[rotDir][frameIdx];
 
-          const sp = new Sprite(tex);
+          const sp = this.displayPool.sprite(tex);
           sp.anchor.set(0.5, 82 / 96);
           sp.position.set(scr.x, scr.y);
 
@@ -1078,50 +1970,147 @@ export class IsoSceneView {
 
           this.sortedObjectLayer.addChild(sp);
 
-          // Floating nameplate for story NPCs and Player when hovered or in inspect mode
+          // Render HP Bar & Status Badges above Hostile Enemies & Player in Combat
+          const showHpBar =
+            actor.combat &&
+            (actor.combat.isHostile ||
+              this.game.combatState.active ||
+              actor.combat.hp < actor.combat.maxHp);
+
+          if (showHpBar && actor.combat && this.bufferMode !== 'depth_dag') {
+            const barW = 46;
+            const barH = 5;
+            const barX = scr.x - barW * 0.5;
+            const barY = scr.y - 72;
+            const hpRatio = Math.max(0, Math.min(1, actor.combat.hp / Math.max(1, actor.combat.maxHp)));
+            const barFillCol =
+              actor.id === this.game.player.id
+                ? 0x38ef7d
+                : actor.combat.difficulty === 'easy'
+                  ? 0x4cd964
+                  : actor.combat.difficulty === 'normal'
+                    ? 0xf5c451
+                    : 0xff453a;
+
+            const hpGfx = this.displayPool.graphics();
+            hpGfx
+              .roundRect(barX - 1, barY - 1, barW + 2, barH + 2, 3)
+              .fill({ color: 0x06080c, alpha: 0.88 })
+              .roundRect(barX, barY, Math.max(2, barW * hpRatio), barH, 2)
+              .fill({ color: barFillCol, alpha: 0.95 });
+            this.debugOverlayContainer.addChild(hpGfx);
+          }
+
+          // Floating nameplate for story NPCs, Hostile Enemies, and Player
           const isHovered =
             this.hoveredWorldTile?.x === actor.tileX && this.hoveredWorldTile?.y === actor.tileY;
-          if (isHovered || actor.dialogueId || this.bufferMode === 'depth_dag') {
+          if (
+            isHovered ||
+            actor.dialogueId ||
+            actor.combat?.isHostile ||
+            this.bufferMode === 'depth_dag'
+          ) {
+            const statusIcons = [
+              actor.combat?.defending ? '🛡️' : '',
+              (actor.combat?.dazedHeadTurns ?? 0) > 0 ? '💀' : '',
+              (actor.combat?.crippledLegsTurns ?? 0) > 0 ? '🦵' : ''
+            ]
+              .filter(Boolean)
+              .join('');
+
+            const diffPrefix = actor.combat?.difficultyLabel
+              ? `${actor.combat.difficultyLabel} • `
+              : '';
+            const hpSuffix = actor.combat?.isHostile
+              ? ` (${actor.combat.hp}/${actor.combat.maxHp} HP)${statusIcons ? ' ' + statusIcons : ''}`
+              : statusIcons
+                ? ` ${statusIcons}`
+                : '';
+
             const labelText =
               this.bufferMode === 'depth_dag'
                 ? `#${orderIndex} ${actor.recipe.name}`
-                : actor.recipe.name;
-            const nameTag = new Text({
-              text: labelText,
-              style: new TextStyle({
+                : `${diffPrefix}${actor.recipe.name}${hpSuffix}`;
+
+            const nameFill =
+              actor.id === this.game.player.id
+                ? 0x69f0ae
+                : actor.combat?.isHostile
+                  ? actor.combat.difficulty === 'easy'
+                    ? 0x81c784
+                    : actor.combat.difficulty === 'normal'
+                      ? 0xffd54f
+                      : 0xff6e6e
+                  : 0xf5d77f;
+
+            const nameTag = this.displayPool.text(
+              labelText,
+              `name_${nameFill.toString(16)}`,
+              () => ({
                 fontFamily: 'Cinzel, serif',
-                fontSize: 12,
+                fontSize: 11.5,
                 fontWeight: '700',
-                fill: actor.id === this.game.player.id ? 0x69f0ae : 0xf5d77f,
+                fill: nameFill,
                 stroke: { color: 0x080a0f, width: 3.5 }
               })
-            });
+            );
             nameTag.anchor.set(0.5, 1);
-            nameTag.position.set(scr.x, scr.y - 74);
+            nameTag.position.set(scr.x, scr.y - 79);
             this.debugOverlayContainer.addChild(nameTag);
+
+            // Tactical Hit Chance & Damage Preview when hovering a Hostile Enemy
+            if (isHovered && actor.combat?.isHostile && this.bufferMode !== 'depth_dag') {
+              const pSnap = this.game.getActorCombatant(this.game.player);
+              const eSnap = this.game.getActorCombatant(actor);
+              const dist = Math.hypot(
+                actor.tileX - this.game.player.tileX,
+                actor.tileY - this.game.player.tileY
+              );
+              const preview = computeAttackPreview(
+                pSnap,
+                eSnap,
+                dist,
+                this.game.combatState.selectedAttackMode
+              );
+              const previewTag = this.displayPool.text(
+                `🎯 Szansa: ${preview.hitChancePct}% | ⚔️ ${preview.estimatedMinDamage}-${preview.estimatedMaxDamage} obr. | ⚡ ${preview.apCost} AP${preview.inRange ? '' : ' (Podejdź)'}`,
+                preview.inRange ? 'aim_in' : 'aim_out',
+                () => ({
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 11,
+                  fontWeight: '700',
+                  fill: preview.inRange ? 0xfff176 : 0xffab40,
+                  stroke: { color: 0x05070b, width: 3.5 }
+                })
+              );
+              previewTag.anchor.set(0.5, 1);
+              previewTag.position.set(scr.x, scr.y - 95);
+              this.debugOverlayContainer.addChild(previewTag);
+            }
           }
 
           // Render Floating cRPG Speech Bubble (e.g. "Jeszcze nie czas iść dalej...")
           if (actor.speechBubbleText) {
-            const bubbleText = new Text({
-              text: `„${actor.speechBubbleText}”`,
-              style: new TextStyle({
+            const bubbleText = this.displayPool.text(
+              `„${actor.speechBubbleText}”`,
+              'speech_bubble',
+              () => ({
                 fontFamily: 'Inter, sans-serif',
                 fontSize: 13,
                 fontWeight: '700',
                 fill: 0xfff6d6,
                 stroke: { color: 0x080a0f, width: 4 }
               })
-            });
+            );
             bubbleText.anchor.set(0.5, 1);
             const bx = scr.x;
-            const by = scr.y - 96;
+            const by = scr.y - 104;
             const padX = 12;
             const padY = 7;
             const bw = bubbleText.width + padX * 2;
             const bh = bubbleText.height + padY * 2;
 
-            const bubbleBg = new Graphics();
+            const bubbleBg = this.displayPool.graphics();
             bubbleBg
               .roundRect(bx - bw * 0.5, by - bh + 4, bw, bh, 7)
               .fill({ color: 0x101520, alpha: 0.92 })
@@ -1139,6 +2128,28 @@ export class IsoSceneView {
       sortedNodes[i].render(i, sortedNodes.length, playerDepthBox);
     }
 
+    // Render Floating Combat Popups (Criticals, Damage, Misses, Statuses)
+    for (const ft of this.game.combatState.floatingTexts) {
+      const rotFt = toRotatedContinuous(ft.x, ft.y, mapW, mapH, this.rotation);
+      const scrFt = gridToScreen(rotFt.rx, rotFt.ry, ft.z);
+      const alpha = Math.max(0, Math.min(1, 1 - (ft.elapsed / ft.duration) * 0.75));
+      const popText = this.displayPool.text(
+        ft.text,
+        `pop_${ft.colorHex.toString(16)}`,
+        () => ({
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 13,
+          fontWeight: '800',
+          fill: ft.colorHex,
+          stroke: { color: 0x05070b, width: 3.8 }
+        })
+      );
+      popText.anchor.set(0.5, 1);
+      popText.position.set(scrFt.x, scrFt.y - 68);
+      popText.alpha = alpha;
+      this.debugOverlayContainer.addChild(popText);
+    }
+
     // 4. Render Subtle Atmospheric Ember & Firefly Particles in Final PBR Mode (no blinding giant halos)
     if (this.bufferMode === 'final_pbr') {
       for (const p of this.particles) {
@@ -1150,5 +2161,7 @@ export class IsoSceneView {
           .fill({ color: p.color, alpha });
       }
     }
+
+    this.displayPool.endFrame();
   }
 }

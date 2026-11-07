@@ -180,6 +180,31 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     },
     visualStyle: 'relic_item'
   },
+  ring_wolf_signet: {
+    id: 'ring_wolf_signet',
+    name: 'Sygnet Szarego Wilka',
+    slot: 'relic',
+    description: 'Srebrny pierścień weteranów pogranicza wzmacniający siłę ciosu i odporność.',
+    primaryColor: { r: 186, g: 196, b: 210 },
+    trimColor: { r: 212, g: 164, b: 68 },
+    roughness: 0.2,
+    metallic: 0.92,
+    armorBonus: 1,
+    attackBonus: 2,
+    visualStyle: 'relic_item'
+  },
+  ring_emerald_seal: {
+    id: 'ring_emerald_seal',
+    name: 'Szmaragdowy Pierścień Druidów',
+    slot: 'relic',
+    description: 'Pierścień opleciony żywym korzeniem, wyostrzający zmysły i skupienie runiczne.',
+    primaryColor: { r: 52, g: 188, b: 118 },
+    trimColor: { r: 204, g: 172, b: 84 },
+    roughness: 0.25,
+    metallic: 0.85,
+    loreBonus: 2,
+    visualStyle: 'relic_item'
+  },
 
   // Torso
   torso_warden_brigandine: {
