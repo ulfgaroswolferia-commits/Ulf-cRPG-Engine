@@ -226,14 +226,28 @@ void main(void) {
 
     vec3 N = normalize(vec3((hL - hR) * 2.4, (hU - hD) * 2.4, 1.0));
 
-    // Subtle Bloom only for very bright flame cores (> 0.82)
-    vec3 avgNeighbor = (cL + cR + cU + cD) * 0.25;
-    vec3 bloom = max(vec3(0.0), avgNeighbor - vec3(0.82)) * 0.16;
+    // Multi-tap Bloom with warm scattering for flames, torches, magic crystals and lights
+    vec2 bStep1 = uInputSize.zw * 2.8;
+    vec2 bStep2 = uInputSize.zw * 5.6;
+
+    vec3 s1 = texture(uTexture, vTextureCoord + vec2(-bStep1.x, -bStep1.y)).rgb;
+    vec3 s2 = texture(uTexture, vTextureCoord + vec2( bStep1.x, -bStep1.y)).rgb;
+    vec3 s3 = texture(uTexture, vTextureCoord + vec2(-bStep1.x,  bStep1.y)).rgb;
+    vec3 s4 = texture(uTexture, vTextureCoord + vec2( bStep1.x,  bStep1.y)).rgb;
+
+    vec3 s5 = texture(uTexture, vTextureCoord + vec2(-bStep2.x, 0.0)).rgb;
+    vec3 s6 = texture(uTexture, vTextureCoord + vec2( bStep2.x, 0.0)).rgb;
+    vec3 s7 = texture(uTexture, vTextureCoord + vec2(0.0, -bStep2.y)).rgb;
+    vec3 s8 = texture(uTexture, vTextureCoord + vec2(0.0,  bStep2.y)).rgb;
+
+    vec3 bloomSample = (cL + cR + cU + cD) * 0.12 + (s1 + s2 + s3 + s4) * 0.08 + (s5 + s6 + s7 + s8) * 0.05;
+    vec3 bloomThreshold = max(vec3(0.0), bloomSample - vec3(0.58));
+    vec3 bloomGlow = bloomThreshold * vec3(1.22, 1.02, 0.82) * 0.48;
 
     // Natural ambient illumination preserving dark fantasy contrast & texture details
     float zenith = 0.90 + 0.10 * max(0.0, dot(N, normalize(vec3(-0.35, -0.55, 0.75))));
-    float ambFactor = mix(0.48, 0.92, clamp(uAmbient, 0.1, 1.0));
-    vec3 ambientCol = base.rgb * vec3(0.92, 0.95, 1.04) * (ambFactor * zenith);
+    float ambFactor = mix(0.52, 0.95, clamp(uAmbient, 0.1, 1.0));
+    vec3 ambientCol = base.rgb * vec3(0.95, 0.98, 1.04) * (ambFactor * zenith);
 
     vec3 dynamicLights = vec3(0.0);
     dynamicLights += evalPointLight(uLight0PosRad, uLight0ColInt, vScreenPx, N, base.rgb);
@@ -244,21 +258,21 @@ void main(void) {
     dynamicLights += evalPointLight(uLight5PosRad, uLight5ColInt, vScreenPx, N, base.rgb);
 
     // Energy-conserving soft-knee compression so overlapping lights never blind or wash out textures
-    dynamicLights = dynamicLights / (vec3(1.0) + dynamicLights * 1.35);
+    dynamicLights = dynamicLights / (vec3(1.0) + dynamicLights * 1.25);
 
-    // Subtle drifting woodland mist
+    // Subtle drifting woodland mist (soft continuous atmosphere without tile stepping)
     vec2 worldCoord = (vScreenPx - uCameraOffset) / max(0.2, uZoom);
-    float mist = fbmMist(worldCoord * 0.0045 + vec2(uTime * 0.04, -uTime * 0.02));
-    float mistMask = smoothstep(0.55, 0.85, mist) * 0.045;
-    vec3 mistCol = (vec3(0.10, 0.15, 0.22) + dynamicLights * 0.25) * mistMask;
+    float mist = fbmMist(worldCoord * 0.0035 + vec2(uTime * 0.03, -uTime * 0.015));
+    float mistMask = smoothstep(0.50, 0.82, mist) * 0.040;
+    vec3 mistCol = (vec3(0.12, 0.16, 0.22) + dynamicLights * 0.22) * mistMask;
 
-    vec3 col = ambientCol + dynamicLights + bloom + mistCol;
+    vec3 col = ambientCol + dynamicLights + bloomGlow + mistCol;
 
     // Gentle vignette & soft shoulder roll-off without over-brightening midtones
     vec2 centered = vTextureCoord * 2.0 - 1.0;
-    float vig = clamp(1.0 - dot(centered, centered) * 0.16, 0.68, 1.0);
+    float vig = clamp(1.0 - dot(centered, centered) * 0.14, 0.72, 1.0);
     col *= vig;
-    col = col / (vec3(1.0) + max(vec3(0.0), col - vec3(0.75)) * 0.65);
+    col = col / (vec3(1.0) + max(vec3(0.0), col - vec3(0.72)) * 0.55);
 
     finalColor = vec4(clamp(col, 0.0, 1.0), base.a);
 }

@@ -1484,7 +1484,9 @@ export class IsoSceneView {
         sprite.anchor.set(texPair.anchorX, texPair.anchorY);
         sprite.position.set(scr.x, scr.y);
 
-        const fovFactor = this.game.fov.getLightFactor(cell.x, cell.y);
+        const fovFactor = this.game.fogOfWarEnabled
+          ? this.game.fov.getLightFactor(cell.x, cell.y)
+          : 1.0;
         sprite.tint = this.computeRgbTintForScreenPoint(
           scr.x,
           scr.y,
@@ -1742,7 +1744,9 @@ export class IsoSceneView {
             sp.alpha = 0.34;
           }
 
-          const fovFactor = this.game.fov.getLightFactor(prop.x, prop.y);
+          const fovFactor = this.game.fogOfWarEnabled
+            ? this.game.fov.getLightFactor(prop.x, prop.y)
+            : 1.0;
           if (this.bufferMode === 'depth_dag') {
             const t = orderIndex / Math.max(1, totalCount - 1);
             const r = Math.round(45 + t * 210);

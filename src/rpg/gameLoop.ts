@@ -84,7 +84,7 @@ export class CrpgGameState {
   };
   public readonly logs: string[] = [];
   public activeDialogue: { actorId: string; node: DialogueNode } | null = null;
-  public fogOfWarEnabled = true;
+  public fogOfWarEnabled = false;
   public wallCutawayEnabled = true;
   public ambientLightIntensity = 0.46;
 
