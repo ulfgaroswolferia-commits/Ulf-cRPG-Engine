@@ -1,4 +1,5 @@
 import { generateRandomCharacterRecipe } from '../assets/characterBakery';
+import { getSlavicPortrait } from '../assets/slavicPortraits';
 import { EdgePanDirection } from '../core/isoMath';
 import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
@@ -36,6 +37,9 @@ const HAIR_OPTIONS: ReadonlyArray<{ id: HairStyle; label: string }> = [
   { id: 'short_crop', label: 'Krótkie Cięcie' },
   { id: 'long_braids', label: 'Długie Warkocze' },
   { id: 'tonsure', label: 'Tonsura Mnicha' },
+  { id: 'slavic_parted', label: 'Przedziałek Słowiański' },
+  { id: 'elder_beard', label: 'Siwa Broda Żercy' },
+  { id: 'wreath_braids', label: 'Wianek i Warkocze' },
   { id: 'none', label: 'Brak (Ogolenie)' }
 ];
 
@@ -789,30 +793,47 @@ export class HudOverlay {
         `
         : '';
 
+    const activeActorId = this.game.activeDialogue?.actorId ?? '';
+    const activeSpeakerPortrait = this.game.activeDialogue
+      ? getSlavicPortrait(activeActorId)
+      : '';
+
     const dialogueHtml = this.game.activeDialogue
       ? `
       <div class="dialogue-backdrop">
-        <div class="dialogue-modal">
-          <div class="dialogue-header">
-            <span class="dialogue-speaker">${this.game.activeDialogue.node.speakerName}</span>
-            <span class="dialogue-title">${this.game.activeDialogue.node.speakerTitle}</span>
-          </div>
-          <p class="dialogue-body">„${this.game.activeDialogue.node.text}”</p>
-          ${kolapsyAccordionHtml}
-          <div class="dialogue-choices">
-            ${this.game.activeDialogue.node.choices
-              .map((c, idx) => {
-                const req = c.requiredAttribute;
-                const currentStat = req ? attrs[req.stat] : 99;
-                const canPick = !req || currentStat >= req.minValue;
-                return `
-                  <button class="dialogue-choice-btn ${canPick ? '' : 'disabled'}" data-choice-idx="${idx}" ${canPick ? '' : 'disabled'}>
-                    <span class="choice-index">${idx + 1}.</span>
-                    <span>${c.text}</span>
-                  </button>
-                `;
-              })
-              .join('')}
+        <div class="dialogue-modal dark-fantasy-frame">
+          <div class="dialogue-inner">
+            <div class="dialogue-portrait-col">
+              <div class="dialogue-portrait-box">
+                <img src="${activeSpeakerPortrait}" alt="${this.game.activeDialogue.node.speakerName}" class="dialogue-portrait-img" />
+                <div class="portrait-name-ribbon">${this.game.activeDialogue.node.speakerName.split(' ')[0]}</div>
+              </div>
+            </div>
+            <div class="dialogue-content-col">
+              <div class="dialogue-header">
+                <span class="dialogue-speaker">${this.game.activeDialogue.node.speakerName}</span>
+                <span class="dialogue-title">${this.game.activeDialogue.node.speakerTitle}</span>
+              </div>
+              <div class="dialogue-body-wrap">
+                <p class="dialogue-body">„${this.game.activeDialogue.node.text}”</p>
+                ${kolapsyAccordionHtml}
+              </div>
+              <div class="dialogue-choices">
+                ${this.game.activeDialogue.node.choices
+                  .map((c, idx) => {
+                    const req = c.requiredAttribute;
+                    const currentStat = req ? attrs[req.stat] : 99;
+                    const canPick = !req || currentStat >= req.minValue;
+                    return `
+                      <button class="dialogue-choice-btn ${canPick ? '' : 'disabled'}" data-choice-idx="${idx}" ${canPick ? '' : 'disabled'}>
+                        <span class="choice-index">${idx + 1}.</span>
+                        <span class="choice-text">${c.text}</span>
+                      </button>
+                    `;
+                  })
+                  .join('')}
+              </div>
+            </div>
           </div>
         </div>
       </div>

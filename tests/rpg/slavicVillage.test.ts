@@ -8,6 +8,7 @@ import { CrpgGameState } from '../../src/rpg/gameLoop';
 import { IsoSceneView } from '../../src/renderer/isoSceneView';
 import { HudOverlay } from '../../src/ui/hudOverlay';
 import { bakeCharacterBuffers } from '../../src/assets/characterBakery';
+import { getSlavicPortrait } from '../../src/assets/slavicPortraits';
 
 describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () => {
   it('creates a 32x32 Slavic settlement map with cottages, market stalls, shrine of Światowid, well, and wattle fences', () => {
@@ -233,5 +234,33 @@ describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () =
 
     const bakedSambor = bakeCharacterBuffers(sambor!.recipe);
     expect(bakedSambor.albedoRGBA.length).toBeGreaterThan(0);
+
+    // Verify Slavic dark fantasy portraits are generated and embedded in dialogues
+    const portraits = [
+      getSlavicPortrait('npc_gniewko'),
+      getSlavicPortrait('npc_radogost'),
+      getSlavicPortrait('npc_wislawa'),
+      getSlavicPortrait('npc_dobromir'),
+      getSlavicPortrait('npc_bozydar'),
+      getSlavicPortrait('npc_sambor'),
+      getSlavicPortrait('npc_milosz_patrol')
+    ];
+    for (const p of portraits) {
+      expect(p).toContain('data:image/svg+xml');
+      expect(p).toContain('frameGold');
+    }
+
+    // Verify HudOverlay renders the ornate dark fantasy dialogue layout with portrait
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+    const hud = new HudOverlay(fakeRoot, game, scene, { devMode: false });
+    hud.render();
+    expect(fakeRoot.innerHTML).toContain('dark-fantasy-frame');
+    expect(fakeRoot.innerHTML).toContain('dialogue-portrait-img');
+    expect(fakeRoot.innerHTML).toContain('portrait-name-ribbon');
   });
 });
