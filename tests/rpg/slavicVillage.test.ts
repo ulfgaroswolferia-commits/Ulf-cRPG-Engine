@@ -7,6 +7,7 @@ import {
 import { CrpgGameState } from '../../src/rpg/gameLoop';
 import { IsoSceneView } from '../../src/renderer/isoSceneView';
 import { HudOverlay } from '../../src/ui/hudOverlay';
+import { bakeCharacterBuffers } from '../../src/assets/characterBakery';
 
 describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () => {
   it('creates a 32x32 Slavic settlement map with cottages, market stalls, shrine of Światowid, well, and wattle fences', () => {
@@ -188,5 +189,49 @@ describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () =
     expect(utopiec?.combat?.isHostile).toBe(true);
     expect(utopiec?.combat?.lootTable).toContain('item_dziurawiec_herb');
     expect(utopiec?.combat?.lootTable).toContain('trinket_lunula');
+  });
+
+  it('implements Section 1 Slavic PC/NPC visuals (elder beard, wreath braids, parted hair, kłobuk, giezło z krajką)', () => {
+    const game = new CrpgGameState('slavic_village');
+
+    // 1. Radogost with elder beard
+    const radogost = game.npcs.find((n) => n.id === 'npc_radogost');
+    expect(radogost).toBeDefined();
+    expect(radogost?.recipe.hairStyle).toBe('elder_beard');
+    expect(radogost?.recipe.equipment.torso).toBe('torso_slavic_giezlo');
+    expect(radogost?.recipe.equipment.legs).toBe('legs_lapcie');
+
+    // 2. Wisława with flower wreath and braids
+    const wislawa = game.npcs.find((n) => n.id === 'npc_wislawa');
+    expect(wislawa).toBeDefined();
+    expect(wislawa?.recipe.hairStyle).toBe('wreath_braids');
+    expect(wislawa?.recipe.equipment.torso).toBe('torso_slavic_giezlo');
+
+    // 3. Sambor with felt kłobuk and parted hair
+    const sambor = game.npcs.find((n) => n.id === 'npc_sambor');
+    expect(sambor).toBeDefined();
+    expect(sambor?.recipe.hairStyle).toBe('slavic_parted');
+    expect(sambor?.recipe.equipment.head).toBe('helm_klobuk');
+    expect(sambor?.recipe.equipment.torso).toBe('torso_slavic_giezlo');
+
+    // Test dialogue interactions for new Slavic villagers
+    game.startDialogueWithNpc('npc_wislawa');
+    expect(game.activeDialogue?.node.speakerName).toBe('Zielarka Wisława');
+    expect(game.activeDialogue?.node.text).toContain('wianki');
+
+    game.startDialogueWithNpc('npc_sambor');
+    expect(game.activeDialogue?.node.speakerName).toBe('Kmieć Sambor');
+    expect(game.activeDialogue?.node.text).toContain('kłobukiem');
+
+    // Verify bakery buffers bake cleanly for all new Slavic hairstyles and equipment
+    const bakedRadogost = bakeCharacterBuffers(radogost!.recipe);
+    expect(bakedRadogost.albedoRGBA.length).toBeGreaterThan(0);
+    expect(bakedRadogost.normalMaterialRGBA.length).toBeGreaterThan(0);
+
+    const bakedWisława = bakeCharacterBuffers(wislawa!.recipe);
+    expect(bakedWisława.albedoRGBA.length).toBeGreaterThan(0);
+
+    const bakedSambor = bakeCharacterBuffers(sambor!.recipe);
+    expect(bakedSambor.albedoRGBA.length).toBeGreaterThan(0);
   });
 });

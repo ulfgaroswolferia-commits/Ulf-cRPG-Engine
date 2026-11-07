@@ -36,6 +36,9 @@ const HAIR_STYLES: ReadonlyArray<HairStyle> = [
   'long_braids',
   'noble_crest',
   'tonsure',
+  'slavic_parted',
+  'elder_beard',
+  'wreath_braids',
   'none'
 ];
 
@@ -83,24 +86,30 @@ export function generateRandomCharacterRecipe(
     'torso_warden_brigandine',
     'torso_aethel_plate',
     'torso_archmage_robes',
-    'torso_linen_tunic'
+    'torso_linen_tunic',
+    'torso_slavic_giezlo',
+    'torso_przeszywanica'
   ];
   const heads: Array<string | null> = [
     null,
     'helm_dread_plate',
     'helm_shadow_hood',
-    'helm_arcane_circlet'
+    'helm_arcane_circlet',
+    'helm_szyszak',
+    'helm_klobuk'
   ];
   const cloaks: Array<string | null> = [null, 'cloak_crimson_mantle', 'cloak_steel_pauldrons'];
-  const legs = ['legs_steel_greaves', 'legs_leather_boots'];
+  const legs = ['legs_steel_greaves', 'legs_leather_boots', 'legs_lapcie'];
   const weapons: Array<string | null> = [
     'weapon_sunblade_longsword',
     'weapon_Executioner_axe',
-    'weapon_astral_staff'
+    'weapon_astral_staff',
+    'weapon_slavic_axe'
   ];
   const offhands: Array<string | null> = [
     null,
     'offhand_heraldic_shield',
+    'offhand_slavic_shield',
     'offhand_torch',
     'offhand_grimoire'
   ];
@@ -491,6 +500,45 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
         );
       }
 
+      // Slavic folk krajka embroidery (crimson-and-white geometric sash & placket)
+      const isSlavicTorso =
+        layers.torsoItem.id === 'torso_slavic_giezlo' ||
+        layers.torsoItem.id === 'torso_przeszywanica';
+      if (isSlavicTorso && facingY > -0.2) {
+        for (let py = -8; py <= 4; py++) {
+          const krajkaColor =
+            py % 2 === 0 ? layers.torsoItem.trimColor : { r: 248, g: 244, b: 236 };
+          setPixelWithNormal(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx + facingX * 2,
+            groundY - 42 - bobY + py,
+            krajkaColor,
+            1.0,
+            0,
+            0,
+            0.85,
+            0.02
+          );
+        }
+        drawShadedEllipse(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          cx,
+          groundY - 27 - bobY,
+          10.8,
+          2.0,
+          layers.torsoItem.trimColor,
+          { r: 248, g: 244, b: 236 },
+          0.85,
+          0.02
+        );
+      }
+
       // Layered Shoulder Pauldrons & Arms
       const pauldronColor = layers.cloakItem?.trimColor ?? layers.torsoItem.trimColor;
       drawShadedEllipse(
@@ -605,45 +653,201 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           0.72,
           0.08
         );
-      }
 
-      // Helmet / Hood / Circlet
-      if (layers.headItem) {
-        const isCirclet = layers.headItem.visualStyle === 'circlet';
-        const helmRy = isCirclet ? 3.0 : 9.4;
-        const helmCy = isCirclet ? headY - 3.8 : headY - 1.2;
-        drawShadedEllipse(
-          albedoRGBA,
-          normalMaterialRGBA,
-          sheetWidth,
-          sheetHeight,
-          cx,
-          helmCy,
-          8.8,
-          helmRy,
-          layers.headItem.primaryColor,
-          layers.headItem.trimColor,
-          layers.headItem.roughness,
-          layers.headItem.metallic
-        );
-
-        // Dark T-visor slit on full plate helmet
-        if (layers.headItem.visualStyle === 'full_helm' && facingY > 0) {
-          for (let vx = -4; vx <= 4; vx++) {
+        // Slavic parted bowl-cut styling
+        if (recipe.hairStyle === 'slavic_parted') {
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx - facingX * 1.2,
+            headY - 2.8,
+            8.8,
+            6.5,
+            recipe.hairColor,
+            null,
+            0.76,
+            0.08
+          );
+          if (facingY > 0.1) {
             setPixelWithNormal(
               albedoRGBA,
               normalMaterialRGBA,
               sheetWidth,
               sheetHeight,
-              cx + facingX * 2 + vx,
-              headY - 1,
-              { r: 16, g: 20, b: 28 },
+              cx + facingX * 1.8,
+              headY - 5,
+              recipe.skinTone,
+              0.85,
+              0,
+              0,
+              0.6,
+              0.05
+            );
+          }
+        }
+
+        // Patriarchal flowing beard for Żercy & Wołchwowie
+        if (recipe.hairStyle === 'elder_beard' && facingY > -0.25) {
+          for (let by = 0; by <= 12; by++) {
+            const bt = by / 12;
+            const bWidth = Math.max(1.8, 5.4 * (1.0 - bt * 0.62));
+            drawShadedEllipse(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              cx + facingX * 2.6,
+              headY + 5 + by,
+              bWidth,
+              1.8,
+              recipe.hairColor,
+              null,
+              0.85,
+              0.05
+            );
+          }
+        }
+
+        // Twin braids and flower wreath (wianek) for Slavic maidens & herbalists
+        if (recipe.hairStyle === 'wreath_braids') {
+          // Left & right draped braids
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx - 6,
+            headY + 3,
+            cx - 6 + facingX * 1.5,
+            headY + 15,
+            2.5,
+            1.5,
+            recipe.hairColor,
+            null,
+            0.78,
+            0.06
+          );
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx + 6,
+            headY + 3,
+            cx + 6 + facingX * 1.5,
+            headY + 15,
+            2.5,
+            1.5,
+            recipe.hairColor,
+            null,
+            0.78,
+            0.06
+          );
+
+          // Floral & herb wreath around the crown
+          const wreathRadius = 7.5;
+          const flowerPalette: RGBAColor[] = [
+            { r: 235, g: 60, b: 60 },
+            { r: 245, g: 215, b: 50 },
+            { r: 65, g: 140, b: 245 },
+            { r: 70, g: 160, b: 70 }
+          ];
+          for (let wa = 0; wa < Math.PI * 2; wa += 0.45) {
+            const wx = cx + Math.cos(wa) * wreathRadius;
+            const wy = headY - 4 + Math.sin(wa) * 3.0;
+            const fColor =
+              flowerPalette[
+                Math.floor(Math.abs(Math.sin(wa * 3.5)) * flowerPalette.length) % flowerPalette.length
+              ];
+            setPixelWithNormal(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              sheetHeight,
+              wx,
+              wy,
+              fColor,
               1.0,
               0,
               0,
-              0.1,
-              0.9
+              0.65,
+              0.05
             );
+          }
+        }
+      }
+
+      // Helmet / Hood / Circlet / Kłobuk
+      if (layers.headItem) {
+        if (layers.headItem.id === 'helm_klobuk') {
+          // Conical Slavic felt hat with rolled brim
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx,
+            headY - 6.5,
+            6.5,
+            6.0,
+            layers.headItem.primaryColor,
+            layers.headItem.trimColor,
+            0.92,
+            0.0
+          );
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx,
+            headY - 2.5,
+            9.2,
+            3.0,
+            layers.headItem.trimColor,
+            layers.headItem.primaryColor,
+            0.95,
+            0.0
+          );
+        } else {
+          const isCirclet = layers.headItem.visualStyle === 'circlet';
+          const helmRy = isCirclet ? 3.0 : 9.4;
+          const helmCy = isCirclet ? headY - 3.8 : headY - 1.2;
+          drawShadedEllipse(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx,
+            helmCy,
+            8.8,
+            helmRy,
+            layers.headItem.primaryColor,
+            layers.headItem.trimColor,
+            layers.headItem.roughness,
+            layers.headItem.metallic
+          );
+
+          // Dark T-visor slit on full plate helmet
+          if (layers.headItem.visualStyle === 'full_helm' && facingY > 0) {
+            for (let vx = -4; vx <= 4; vx++) {
+              setPixelWithNormal(
+                albedoRGBA,
+                normalMaterialRGBA,
+                sheetWidth,
+                sheetHeight,
+                cx + facingX * 2 + vx,
+                headY - 1,
+                { r: 16, g: 20, b: 28 },
+                1.0,
+                0,
+                0,
+                0.1,
+                0.9
+              );
+            }
           }
         }
       }

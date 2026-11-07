@@ -577,5 +577,112 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
         }
       ]
     }
+  },
+  npc_wislawa: {
+    root: {
+      id: 'root',
+      speakerName: 'Zielarka Wisława',
+      speakerTitle: 'Uzdrowicielka i Plecionkarka',
+      text: 'Bądź pozdrowiony, wędrowcze. Moje wianki i suszone zioła z uroczysk odpędzają nocne mary i gorączkę. Czy potrzebujesz piołunu na żołądek lub ochronnej lalki motanki?',
+      choices: [
+        {
+          id: 'c_wislawa_herbs',
+          text: 'Chętnie dowiem się więcej o Twoich ziołach i motankach.',
+          nextNodeId: 'wislawa_lore'
+        },
+        {
+          id: 'c_wislawa_gift',
+          text: '[Percepcja 12] Zauważam doskonale uwitą lalkę motankę ze świeżym lnem.',
+          requiredAttribute: { stat: 'perception', minValue: 12 },
+          nextNodeId: 'wislawa_reward',
+          grantsItemId: 'trinket_motanka',
+          logMessage: 'Zielarka Wisława podarowała Ci Lalkę Motankę z Lnu i Chrustu!'
+        },
+        {
+          id: 'c_wislawa_leave',
+          text: 'Niechaj bory obficie rodzą zioła, Wisławo.',
+          nextNodeId: null
+        }
+      ]
+    },
+    wislawa_lore: {
+      id: 'wislawa_lore',
+      speakerName: 'Zielarka Wisława',
+      speakerTitle: 'Uzdrowicielka i Plecionkarka',
+      text: 'Piołun zbieram o zmierzchu, a świętojański dziurawiec w samo południe, gdy słońce stoi najwyżej na nieboskłonie. Motankę zaś mota się z jednego kawałka lnu, nie dotykając jej żelazną igłą, by nie zranić dobrego ducha opiekuńczego.',
+      choices: [
+        {
+          id: 'c_wislawa_back',
+          text: 'Dziękuję za mądrość przodków.',
+          nextNodeId: null
+        }
+      ]
+    },
+    wislawa_reward: {
+      id: 'wislawa_reward',
+      speakerName: 'Zielarka Wisława',
+      speakerTitle: 'Uzdrowicielka i Plecionkarka',
+      text: 'Masz bystre oko i czyste serce! Weź tę motankę — noś ją w torbie, a żaden urok i otępienie nie dosięgną Twego umysłu.',
+      choices: [
+        {
+          id: 'c_wislawa_accept',
+          text: 'Niech Swaróg Ci sprzyja, Wisławo.',
+          nextNodeId: null
+        }
+      ]
+    }
+  },
+  npc_sambor: {
+    root: {
+      id: 'root',
+      speakerName: 'Kmieć Sambor',
+      speakerTitle: 'Gospodarz Spichlerza',
+      text: 'Witaj, panie. Ziarno suche w spichlerzu leży, a w kuźni Bożydara topory kują. Ciężkie czasy idą, na uroczyskach wilcy i utopce się panoszą, więc każdy kmieć pod kłobukiem ma głowę na karku.',
+      choices: [
+        {
+          id: 'c_sambor_klobuk',
+          text: 'Zacny ten kłobuk, dobrze chroni przed deszczem i chłodem.',
+          nextNodeId: 'sambor_gift',
+          grantsItemId: 'helm_klobuk',
+          logMessage: 'Kmieć Sambor wręczył Ci zapasowy Filcowy Kłobuk Kmiecia!'
+        },
+        {
+          id: 'c_sambor_village',
+          text: 'Jak wam się żyje pod opieką żercy Radogosta?',
+          nextNodeId: 'sambor_radogost'
+        },
+        {
+          id: 'c_sambor_leave',
+          text: 'Oby zbiory były obfite, gospodarzu.',
+          nextNodeId: null
+        }
+      ]
+    },
+    sambor_gift: {
+      id: 'sambor_gift',
+      speakerName: 'Kmieć Sambor',
+      speakerTitle: 'Gospodarz Spichlerza',
+      text: 'Z owczej wełny go ubiłem, deszcz po nim spływa jak po gęsi! Weź zapasowy, w borze przyda się bardziej niż w komorze.',
+      choices: [
+        {
+          id: 'c_sambor_thanks',
+          text: 'Dziękuję, Samborze. Będę go nosił z dumą.',
+          nextNodeId: null
+        }
+      ]
+    },
+    sambor_radogost: {
+      id: 'sambor_radogost',
+      speakerName: 'Kmieć Sambor',
+      speakerTitle: 'Gospodarz Spichlerza',
+      text: 'Dziad Radogost z siwą brodą to mądry człek. Ogień na kurhanie podtrzymuje, bogom ofiary z miodu i kołacza składa. Dopóki Światowid na wzgórzu stoi, żaden bies wioski nie spali.',
+      choices: [
+        {
+          id: 'c_sambor_back',
+          text: 'Dobrze wiedzieć. Zaglądnę do świętego gaju.',
+          nextNodeId: null
+        }
+      ]
+    }
   }
 };

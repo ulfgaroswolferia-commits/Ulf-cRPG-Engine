@@ -341,12 +341,13 @@ export class CrpgGameState {
     const bozydarRecipe = generateRandomCharacterRecipe(576, 'npc_bozydar');
     bozydarRecipe.name = 'Płatnerz Bożydar';
     bozydarRecipe.title = 'Kowal Grodowy';
+    bozydarRecipe.hairStyle = 'slavic_parted';
     bozydarRecipe.equipment = {
       head: null,
-      torso: 'torso_warden_brigandine',
-      cloak: 'cloak_steel_pauldrons',
-      legs: 'legs_steel_greaves',
-      mainHand: 'weapon_Executioner_axe',
+      torso: 'torso_przeszywanica',
+      cloak: null,
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_slavic_axe',
       offHand: null
     };
     this.npcs.push({
@@ -369,11 +370,13 @@ export class CrpgGameState {
     const radogostRecipe = generateRandomCharacterRecipe(618, 'npc_radogost');
     radogostRecipe.name = 'Żerca Radogost';
     radogostRecipe.title = 'Strażnik Świętego Gaju Światowida';
+    radogostRecipe.hairStyle = 'elder_beard';
+    radogostRecipe.hairColor = { r: 215, g: 220, b: 226 };
     radogostRecipe.equipment = {
-      head: 'helm_arcane_circlet',
-      torso: 'torso_archmage_robes',
+      head: null,
+      torso: 'torso_slavic_giezlo',
       cloak: 'cloak_crimson_mantle',
-      legs: 'legs_leather_boots',
+      legs: 'legs_lapcie',
       mainHand: 'weapon_astral_staff',
       offHand: null
     };
@@ -393,17 +396,76 @@ export class CrpgGameState {
       dialogueId: 'npc_radogost'
     });
 
-    // 3. Town Guard Miłosz patrolling the marketplace and cottages
+    // 4. Herbalist Wisława at the western marketplace stall
+    const wislawaRecipe = generateRandomCharacterRecipe(642, 'npc_wislawa');
+    wislawaRecipe.name = 'Zielarka Wisława';
+    wislawaRecipe.title = 'Uzdrowicielka i Plecionkarka';
+    wislawaRecipe.hairStyle = 'wreath_braids';
+    wislawaRecipe.hairColor = { r: 178, g: 132, b: 68 };
+    wislawaRecipe.equipment = {
+      head: null,
+      torso: 'torso_slavic_giezlo',
+      cloak: null,
+      legs: 'legs_lapcie',
+      mainHand: null,
+      offHand: 'offhand_grimoire'
+    };
+    this.npcs.push({
+      id: 'npc_wislawa',
+      recipe: wislawaRecipe,
+      x: 17.5,
+      y: 12.5,
+      z: this.map.tiles[12][17].z,
+      tileX: 17,
+      tileY: 12,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_wislawa'
+    });
+
+    // 5. Peasant Sambor guarding the village granary
+    const samborRecipe = generateRandomCharacterRecipe(684, 'npc_sambor');
+    samborRecipe.name = 'Kmieć Sambor';
+    samborRecipe.title = 'Gospodarz Spichlerza';
+    samborRecipe.hairStyle = 'slavic_parted';
+    samborRecipe.equipment = {
+      head: 'helm_klobuk',
+      torso: 'torso_slavic_giezlo',
+      cloak: null,
+      legs: 'legs_lapcie',
+      mainHand: null,
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'npc_sambor',
+      recipe: samborRecipe,
+      x: 9.5,
+      y: 12.5,
+      z: this.map.tiles[12][9].z,
+      tileX: 9,
+      tileY: 12,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_sambor'
+    });
+
+    // 6. Town Guard Miłosz patrolling the marketplace and cottages
     const miloszRecipe = generateRandomCharacterRecipe(724, 'npc_milosz_patrol');
     miloszRecipe.name = 'Drużynnik Miłosz';
     miloszRecipe.title = 'Strażnik Grodowy';
     miloszRecipe.equipment = {
-      head: 'helm_dread_plate',
-      torso: 'torso_aethel_plate',
+      head: 'helm_szyszak',
+      torso: 'torso_przeszywanica',
       cloak: 'cloak_steel_pauldrons',
       legs: 'legs_steel_greaves',
-      mainHand: 'weapon_sunblade_longsword',
-      offHand: 'offhand_heraldic_shield'
+      mainHand: 'weapon_slavic_axe',
+      offHand: 'offhand_slavic_shield'
     };
     this.npcs.push({
       id: 'npc_milosz_patrol',

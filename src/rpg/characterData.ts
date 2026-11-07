@@ -8,7 +8,15 @@ export type EquipmentSlot =
   | 'consumable'
   | 'relic';
 
-export type HairStyle = 'none' | 'short_crop' | 'long_braids' | 'noble_crest' | 'tonsure';
+export type HairStyle =
+  | 'none'
+  | 'short_crop'
+  | 'long_braids'
+  | 'noble_crest'
+  | 'tonsure'
+  | 'slavic_parted'
+  | 'elder_beard'
+  | 'wreath_braids';
 
 export interface RGBAColor {
   r: number;
@@ -350,6 +358,18 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     armorBonus: 4,
     visualStyle: 'brigandine'
   },
+  torso_slavic_giezlo: {
+    id: 'torso_slavic_giezlo',
+    name: 'Lniane Giezło z Czerwoną Krajką',
+    slot: 'torso',
+    description: 'Bielona lniana szata słowiańska przepasana krajką tkaną na bardku w tradycyjne czerwone motywy solarne.',
+    primaryColor: { r: 236, g: 230, b: 216 },
+    trimColor: { r: 196, g: 32, b: 32 },
+    roughness: 0.88,
+    metallic: 0.02,
+    armorBonus: 2,
+    visualStyle: 'tunic'
+  },
 
   // Head
   helm_szyszak: {
@@ -364,6 +384,19 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     hidesHair: true,
     armorBonus: 3,
     visualStyle: 'full_helm'
+  },
+  helm_klobuk: {
+    id: 'helm_klobuk',
+    name: 'Filcowy Kłobuk Kmiecia',
+    slot: 'head',
+    description: 'Tradycyjne słowiańskie nakrycie głowy z gęstego szarego filcu o stożkowatym kształcie z wywiniętym rondem.',
+    primaryColor: { r: 142, g: 136, b: 128 },
+    trimColor: { r: 96, g: 88, b: 80 },
+    roughness: 0.95,
+    metallic: 0.0,
+    hidesHair: false,
+    armorBonus: 1,
+    visualStyle: 'hood'
   },
   helm_dread_plate: {
     id: 'helm_dread_plate',

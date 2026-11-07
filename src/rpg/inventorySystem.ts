@@ -297,6 +297,15 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
       { targetStat: StatType.MovementSpeed, value: 2, type: ModifierType.Flat }
     ]
   },
+  torso_slavic_giezlo: {
+    rarity: 'Common',
+    weight: 1.6,
+    extraModifiers: [
+      { targetStat: StatType.ArmorRating, value: 1, type: ModifierType.Flat },
+      { targetStat: StatType.Agility, value: 1, type: ModifierType.Flat },
+      { targetStat: StatType.MovementSpeed, value: 5, type: ModifierType.Flat }
+    ]
+  },
   helm_szyszak: {
     rarity: 'Rare',
     weight: 2.9,
@@ -304,6 +313,15 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
       { targetStat: StatType.ArmorRating, value: 2, type: ModifierType.Flat },
       { targetStat: StatType.Resolve, value: 1, type: ModifierType.Flat },
       { targetStat: StatType.HealthMax, value: 8, type: ModifierType.Flat }
+    ]
+  },
+  helm_klobuk: {
+    rarity: 'Common',
+    weight: 0.7,
+    extraModifiers: [
+      { targetStat: StatType.ArmorRating, value: 1, type: ModifierType.Flat },
+      { targetStat: StatType.Resolve, value: 1, type: ModifierType.Flat },
+      { targetStat: StatType.Perception, value: 1, type: ModifierType.Flat }
     ]
   },
   helm_dread_plate: {
