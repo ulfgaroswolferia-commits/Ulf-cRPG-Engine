@@ -1440,6 +1440,163 @@ body,
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
+/* Merchant Shop Showcase (High-End Grind Wares) */
+.merchant-shop-panel {
+  margin-top: 10px;
+  background: rgba(14, 18, 26, 0.92);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.6);
+}
+
+.merchant-shop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+  padding-bottom: 5px;
+  margin-bottom: 7px;
+  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.merchant-shop-title {
+  color: #ffd875;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.merchant-shop-wallet {
+  background: rgba(212, 175, 55, 0.15);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: #ffe07a;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.merchant-wares-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.merchant-ware-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(22, 27, 38, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 5px 8px;
+  transition: all 0.14s ease;
+}
+
+.merchant-ware-card:hover {
+  border-color: rgba(212, 175, 55, 0.35);
+  background: rgba(30, 36, 50, 0.95);
+}
+
+.merchant-ware-card.can-afford {
+  border-left: 3px solid #ffd700;
+}
+
+.merchant-ware-card.too-expensive {
+  border-left: 3px solid rgba(255, 80, 80, 0.4);
+  opacity: 0.85;
+}
+
+.ware-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ware-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ware-name {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.ware-desc {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ware-buy-action {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.ware-price {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ware-price.afford {
+  color: #ffe07a;
+}
+
+.ware-price.costly {
+  color: #ff7b72;
+}
+
+.btn-buy-ware {
+  background: linear-gradient(135deg, rgba(200, 150, 40, 0.4), rgba(60, 45, 20, 0.85));
+  border: 1px solid #d4af37;
+  border-radius: 4px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn-buy-ware:hover:not(.disabled):not(:disabled) {
+  background: linear-gradient(135deg, rgba(220, 170, 50, 0.7), rgba(90, 65, 25, 0.95));
+  border-color: #ffe89e;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-buy-ware.disabled,
+.btn-buy-ware:disabled {
+  background: rgba(30, 32, 40, 0.6);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #777;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .dialogue-choices {
   display: flex;
   flex-direction: column;

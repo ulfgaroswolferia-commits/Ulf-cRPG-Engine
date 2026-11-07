@@ -11,7 +11,7 @@ import {
   PROFICIENCY_META,
   WeaponProficiencyCategory
 } from '../rpg/combatSystem';
-import { getPrzasneKolapsyForNpc } from '../rpg/dialogueSystem';
+import { getMerchantWares, getPrzasneKolapsyForNpc } from '../rpg/dialogueSystem';
 import { CrpgGameState } from '../rpg/gameLoop';
 import {
   clearSave,
@@ -799,6 +799,61 @@ export class HudOverlay {
       ? getSlavicPortrait(activeActorId)
       : '';
 
+    const isMerchantDialogue = ['npc_dobromir', 'npc_bogusz', 'npc_gniewosz'].includes(activeActorId);
+    const merchantWares = isMerchantDialogue ? getMerchantWares(activeActorId) : [];
+
+    const merchantShopHtml =
+      isMerchantDialogue && merchantWares.length > 0
+        ? `
+        <div class="merchant-shop-panel">
+          <div class="merchant-shop-header">
+            <span class="merchant-shop-title">💎 Drogocenne towary kupca (Wymagają grindu i siekańców):</span>
+            <span class="merchant-shop-wallet">Twój trzos: 💰 <strong>${this.game.siekance}</strong> siek.</span>
+          </div>
+          <div class="merchant-wares-list">
+            ${merchantWares
+              .map((ware) => {
+                const def = getItemDefinition(ware.id);
+                const rarity = def ? RARITY_META[def.rarity] : { label: 'Rzadki', colorHex: '#ffd700' };
+                const canAfford = this.game.siekance >= ware.priceSiekance;
+                const swatch = def
+                  ? `rgb(${def.visualDef.primaryColor.r}, ${def.visualDef.primaryColor.g}, ${def.visualDef.primaryColor.b})`
+                  : '#555';
+                const trim = def
+                  ? `rgb(${def.visualDef.trimColor.r}, ${def.visualDef.trimColor.g}, ${def.visualDef.trimColor.b})`
+                  : '#999';
+
+                return `
+                <div class="merchant-ware-card ${canAfford ? 'can-afford' : 'too-expensive'}">
+                  <div class="ware-swatch" style="background: linear-gradient(135deg, ${swatch} 55%, ${trim} 100%);">
+                    <span class="slot-badge">${def?.equipSlot?.toUpperCase().slice(0, 3) ?? 'PRZ'}</span>
+                  </div>
+                  <div class="ware-info">
+                    <div class="ware-name" style="color: ${rarity.colorHex}">${ware.title}</div>
+                    <div class="ware-desc">${ware.description}</div>
+                  </div>
+                  <div class="ware-buy-action">
+                    <span class="ware-price ${canAfford ? 'afford' : 'costly'}">💰 ${ware.priceSiekance} siek.</span>
+                    <button
+                      type="button"
+                      class="btn-buy-ware ${canAfford ? '' : 'disabled'}"
+                      data-buy-item-id="${ware.id}"
+                      data-merchant-id="${activeActorId}"
+                      ${canAfford ? '' : 'disabled'}
+                      title="${canAfford ? `Kup ${ware.title} za ${ware.priceSiekance} siekańców` : `Brakuje Ci ${ware.priceSiekance - this.game.siekance} siekańców (wymaga grindu!)`}"
+                    >
+                      ${canAfford ? 'Kup' : 'Za drogo'}
+                    </button>
+                  </div>
+                </div>
+              `;
+              })
+              .join('')}
+          </div>
+        </div>
+      `
+        : '';
+
     const dialogueHtml = this.game.activeDialogue
       ? `
       <div class="dialogue-backdrop">
@@ -818,6 +873,7 @@ export class HudOverlay {
               <div class="dialogue-body-wrap">
                 <p class="dialogue-body">„${this.game.activeDialogue.node.text}”</p>
                 ${kolapsyAccordionHtml}
+                ${merchantShopHtml}
               </div>
               <div class="dialogue-choices">
                 ${this.game.activeDialogue.node.choices
@@ -863,11 +919,6 @@ export class HudOverlay {
             </div>
           </div>
           <div class="compact-header-right">
-            ${
-              isNearMerchant
-                ? `<button type="button" class="btn-sell-duplicates" data-action="sell-duplicates" title="Kupiec w zasięgu: Odkup jednym przyciskiem wszystkie zdublowane przedmioty w ekwipunku za siekańce">💰 Sprzedaj duplikaty</button>`
-                : `<button type="button" class="btn-sell-duplicates disabled" disabled title="Sprzedaż możliwa tylko u handlarza (podejdź i porozmawiaj z Kupcem Dobromirem, Kramarzem Boguszem lub Paserem Gniewoszem)">🏪 Sprzedaż tylko u kupca</button>`
-            }
             <button type="button" class="sort-btn" data-bag-sort="rarity" title="Uporządkuj przedmioty w plecaku">⇅ Uporządkuj</button>
             <button class="btn-icon" data-action="toggle-inventory" title="Zamknij plecak (I lub Esc)">✕</button>
           </div>
@@ -1165,9 +1216,6 @@ export class HudOverlay {
               <button class="hud-btn ${this.isInventoryOpen ? 'active' : ''}" data-action="toggle-inventory" title="Otwórz Plecak (Klawisz I)">
                 🎒 Plecak (${occupiedCount}/${this.game.backpack.capacity})
               </button>
-              <div class="hud-wallet-pill" data-action="toggle-inventory" title="Twój trzos: Słowiańskie Siekańce (kliknij, by otworzyć plecak)">
-                💰 <strong>${this.game.siekance}</strong> siek.
-              </div>
               <button class="hud-btn" data-action="use-campfire" title="Podejdź do ogniska i upiecz kiełbasę">
                 🔥 ${hasRawSausage ? 'Upiecz Kiełbasę!' : 'Ognisko'}
               </button>
@@ -1525,6 +1573,18 @@ export class HudOverlay {
         if (this.draggedSlotIndex !== null && this.draggedSlotIndex !== slotIdx) {
           this.game.backpack.swapSlots(this.draggedSlotIndex, slotIdx);
           this.draggedSlotIndex = null;
+          this.render();
+        }
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>('.btn-buy-ware').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const itemId = btn.dataset.buyItemId;
+        const merchantId = btn.dataset.merchantId;
+        if (itemId && merchantId) {
+          this.game.buyItemFromMerchant(merchantId, itemId);
           this.render();
         }
       });

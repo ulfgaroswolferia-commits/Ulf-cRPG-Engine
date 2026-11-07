@@ -27,7 +27,7 @@ import {
   resolveCombatAttack,
   TurnBasedCombatSession
 } from './combatSystem';
-import { DIALOGUE_TREES, DialogueChoice, DialogueNode } from './dialogueSystem';
+import { DIALOGUE_TREES, DialogueChoice, DialogueNode, getMerchantWares } from './dialogueSystem';
 import {
   CharacterStatSheet,
   createItemInstance,
@@ -2015,14 +2015,62 @@ export class CrpgGameState {
     return { success: true, earned: price, itemName };
   }
 
+  public buyItemFromMerchant(merchantId: string, definitionId: string): { success: boolean; reason?: string } {
+    if (!this.isNearMerchant()) {
+      this.addLog('⚠️ Zakupy możliwe tylko u kupca! Podejdź do handlarza.');
+      this.sayPlayerBark('Mogę kupować przedmioty tylko u kupca.', 2.5);
+      return { success: false, reason: 'not_near_merchant' };
+    }
+
+    const wares = getMerchantWares(merchantId);
+    const item = wares.find((w) => w.id === definitionId);
+    if (!item) {
+      this.addLog('⚠️ Kupiec nie posiada tego towaru w ofercie.');
+      return { success: false, reason: 'item_not_found' };
+    }
+
+    if (this.siekance < item.priceSiekance) {
+      const missing = item.priceSiekance - this.siekance;
+      this.addLog(
+        `⚠️ Brakuje Ci siekańców! Potrzebujesz ${item.priceSiekance} siek., a masz ${this.siekance} (brakuje ${missing} siekańców).`
+      );
+      this.sayPlayerBark(`Brakuje mi jeszcze ${missing} siekańców! Ruszam na grind.`, 3.0);
+      return { success: false, reason: 'insufficient_funds' };
+    }
+
+    if (this.backpack.isFull) {
+      this.addLog('⚠️ Twój plecak jest pełny! Zwolnij miejsce na zakupiony ekwipunek.');
+      this.sayPlayerBark('Mój plecak jest pełny!', 2.5);
+      return { success: false, reason: 'inventory_full' };
+    }
+
+    const instance = createItemInstance(definitionId, 1);
+    const added = this.backpack.tryAddItem(instance, true);
+    if (!added) {
+      this.addLog('⚠️ Nie udało się umieścić przedmiotu w plecaku (zbyt duży ciężar).');
+      this.sayPlayerBark('Ten rynsztunek jest dla mnie za ciężki!', 2.5);
+      return { success: false, reason: 'too_heavy' };
+    }
+
+    this.siekance -= item.priceSiekance;
+    const def = getItemDefinition(definitionId);
+    const itemName = def?.name ?? item.title;
+
+    this.addLog(`🛒 Zakupiono u kupca: ${itemName} za ${item.priceSiekance} siekańców.`);
+    this.sayPlayerBark(`Kupiono: ${itemName} (-${item.priceSiekance} siekańców)`, 3.0);
+
+    return { success: true };
+  }
+
   public sellAllDuplicatesForSiekance(): {
     soldCount: number;
     earnedTotal: number;
     itemsSold: Array<{ name: string; count: number; earned: number }>;
   } {
-    if (!this.isNearMerchant()) {
-      this.addLog('⚠️ Sprzedaż możliwa tylko u kupca! Podejdź i porozmawiaj z handlarzem.');
-      this.sayPlayerBark('Mogę sprzedawać przedmioty tylko u kupca.', 2.5);
+    // Sprzedaż duplikatów jest dostępna TYLKO w rozmowie z handlarzem!
+    if (!this.activeDialogue || !MERCHANT_ACTOR_IDS.includes(this.activeDialogue.actorId)) {
+      this.addLog('⚠️ Odkup duplikatów jest dostępny wyłącznie podczas rozmowy z kupcem!');
+      this.sayPlayerBark('Mogę sprzedać duplikaty tylko podczas rozmowy z kupcem.', 2.5);
       return { soldCount: 0, earnedTotal: 0, itemsSold: [] };
     }
 

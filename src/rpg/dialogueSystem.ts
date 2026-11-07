@@ -1,5 +1,115 @@
 import { CharacterAttributes } from './characterData';
 
+export interface MerchantWaresItem {
+  id: string; // definitionId
+  title: string;
+  priceSiekance: number;
+  description: string;
+}
+
+export const MERCHANT_WARES: Record<string, MerchantWaresItem[]> = {
+  npc_dobromir: [
+    {
+      id: 'weapon_Executioner_axe',
+      title: 'Topór Runiczny Katowski z Grodu',
+      priceSiekance: 460,
+      description: 'Potężny dwuręczny oręż zadający druzgocące obrażenia (+6 OBR, 140% przelicznik krytyka).'
+    },
+    {
+      id: 'torso_slavic_lamellar',
+      title: 'Słowiańska Zbroja Łuskowa Drużynnika',
+      priceSiekance: 440,
+      description: 'Elitarny ciężki pancerz z hartowanych żelaznych łusek (+7 Pancerza, +10 HP).'
+    },
+    {
+      id: 'trinket_kolowrot',
+      title: 'Złoty Amulet Kołowrotu Swaroga',
+      priceSiekance: 590,
+      description: 'Legendarny słoneczny talizman przodków (+2 SIŁ, +12 Zdrowia, +2 OBR).'
+    },
+    {
+      id: 'offhand_slavic_shield',
+      title: 'Tarcza Deszczułkowa z Kołowrotem',
+      priceSiekance: 190,
+      description: 'Lekka, zwrotna tarcza lipowa z żelaznym umbem (+3 PANC, +14 HP).'
+    },
+    {
+      id: 'item_dzban_miodu',
+      title: 'Dzban Staropolskiego Miodu Żerców',
+      priceSiekance: 75,
+      description: 'Krzepiący napój przywracający siły i determinację w boju.'
+    }
+  ],
+  npc_bogusz: [
+    {
+      id: 'weapon_hunting_bow',
+      title: 'Kompozytowy Łuk Pradawnego Myśliwego',
+      priceSiekance: 290,
+      description: 'Cisowy łuk o naciągu ze ścięgien jelenia, niezrównany na dystans (+5 OBR).'
+    },
+    {
+      id: 'cloak_ranger_quiver',
+      title: 'Opończa Czatownika z Kołczanem',
+      priceSiekance: 310,
+      description: 'Kamuflaż leśny i wzmocniony kołczan z brzechwami gęsich piór (+1 Pancerza).'
+    },
+    {
+      id: 'helm_druid_antlers',
+      title: 'Wieniec Żercy z Rogami Jelenia',
+      priceSiekance: 480,
+      description: 'Rytualna korona puszczańska wzmacniająca wiedzę tajemną (+3 WIE) i harmonię z lasem.'
+    },
+    {
+      id: 'item_runic_compass',
+      title: 'Astralny Kompas Leśnych Wędrowców',
+      priceSiekance: 550,
+      description: 'Magiczny artefakt nawigacyjny podnoszący szansę na trafienie krytyczne (+5% KRYT, +2 PER).'
+    },
+    {
+      id: 'item_moon_herbs',
+      title: 'Pęczek Ziół Księżycowych z Uroczyska',
+      priceSiekance: 80,
+      description: 'Zbierane przy pełni leśne zioła o potężnych właściwościach leczniczych.'
+    }
+  ],
+  npc_gniewosz: [
+    {
+      id: 'torso_aethel_plate',
+      title: 'Czarne Płyty Zakonu Aethelgardu',
+      priceSiekance: 680,
+      description: 'Mistrzowska zbroja płytowa wykradziona z krypt sanktuarium (+9 Pancerza, +15 Zdrowia).'
+    },
+    {
+      id: 'weapon_astral_staff',
+      title: 'Kostur Płomienia Pierwszych Archontów',
+      priceSiekance: 620,
+      description: 'Pradawny runiczny kostur czerpiący moc z eteru (+4 OBR, +3 WIE, +35 Many).'
+    },
+    {
+      id: 'offhand_grimoire',
+      title: 'Grimuar Zapomnianych Pieczęci',
+      priceSiekance: 440,
+      description: 'Starożytna księga zakazanych inkantacji obronnych (+2 WIE, +24 Many, +4% KRYT).'
+    },
+    {
+      id: 'helm_dread_plate',
+      title: 'Stalowy Hełm Mrocznego Strażnika',
+      priceSiekance: 390,
+      description: 'Masywny stalowy czerep z wąską wizjerą (+10 Zdrowia, +2 Determinacji).'
+    },
+    {
+      id: 'ring_wolf_signet',
+      title: 'Sygnet Wilczego Szlaku z Krwawym Okiem',
+      priceSiekance: 350,
+      description: 'Cenny pierścień z rubinem zrabowany z grobowca archonta (+2 FIN, +1 OBR).'
+    }
+  ]
+};
+
+export function getMerchantWares(merchantId: string): MerchantWaresItem[] {
+  return MERCHANT_WARES[merchantId] ?? [];
+}
+
 export interface DialogueChoice {
   id: string;
   text: string;
@@ -463,8 +573,13 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
       id: 'root',
       speakerName: 'Kupiec Dobromir',
       speakerTitle: 'Starszy Targowiska pod Światowidem',
-      text: 'Sława, wędrowcze! Rozgość się na naszym rynku. Mamy tu sukno, bursztyn i świeżą dziczyznę. Chętnie odkupię też wszystko, co zalega ci w plecaku — płacę twardymi, brzęczącymi siekańcami!',
+      text: 'Sława, wędrowcze! Rozgość się na naszym rynku. Mamy tu sukno, bursztyn i świeżą dziczyznę. Posiadam też rzadkie, kute rynsztunki dla zasłużonych wojów — choć za takie skarby liczę sobie sporo siekańców!',
       choices: [
+        {
+          id: 'c_dobromir_shop',
+          text: '🏪 [Kram] Pokaż swoje najcenniejsze towary na sprzedaż.',
+          nextNodeId: 'dobromir_shop'
+        },
         {
           id: 'c_dobromir_sell_duplicates',
           text: '💰 [Kupiec] Odkup jednym kliknięciem wszystkie moje zdublowane przedmioty za siekańce!',
@@ -498,6 +613,24 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
         {
           id: 'c_dobromir_bye',
           text: 'Niech handel idzie pomyślnie, Dobromirze.',
+          nextNodeId: null
+        }
+      ]
+    },
+    dobromir_shop: {
+      id: 'dobromir_shop',
+      speakerName: 'Kupiec Dobromir',
+      speakerTitle: 'Starszy Targowiska pod Światowidem',
+      text: 'Oto moje najcenniejsze towary, przywiezione z książęcych grodów i od mistrzów płatnerskich! Każdy z nich wymaga sporego wysiłku i uzbierania solidnej sakwy siekańców. Wybierz co cię interesuje poniżej:',
+      choices: [
+        {
+          id: 'c_dobromir_shop_back',
+          text: 'Wróćmy do innych tematów.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_dobromir_shop_bye',
+          text: 'Muszę jeszcze dozbierać siekańców. Bywaj!',
           nextNodeId: null
         }
       ]
@@ -596,8 +729,13 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
       id: 'root',
       speakerName: 'Wędrowny Kramarz Bogusz',
       speakerTitle: 'Kupiec Szlaku Puszczańskiego',
-      text: 'Niech leśne duchy ci sprzyjają, wędrowcze! Rozstawiłem kram na tym rozstaju przy polanie. Skupię od ciebie każde znalezisko: żelastwo, trofea, zioła i pancerze — płacę twardą słowiańską monetą, czystymi siekańcami!',
+      text: 'Niech leśne duchy ci sprzyjają, wędrowcze! Rozstawiłem kram na tym rozstaju przy polanie. Skupię od ciebie każde znalezisko, ale mam też specjalny rynsztunek leśnych mistrzów — rzadkie kompozytowe łuki i artefakty, które wymagają solidnej zapłaty w siekańcach!',
       choices: [
+        {
+          id: 'c_bogusz_shop',
+          text: '🏪 [Kram] Pokaż swoje najcenniejsze towary na sprzedaż.',
+          nextNodeId: 'bogusz_shop'
+        },
         {
           id: 'c_bogusz_sell_duplicates',
           text: '💰 [Kupiec] Odkup jednym kliknięciem wszystkie moje zdublowane przedmioty za siekańce!',
@@ -618,6 +756,24 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
         {
           id: 'c_bogusz_bye',
           text: 'Muszę ruszać dalej traktem. Bywaj, Boguszu.',
+          nextNodeId: null
+        }
+      ]
+    },
+    bogusz_shop: {
+      id: 'bogusz_shop',
+      speakerName: 'Wędrowny Kramarz Bogusz',
+      speakerTitle: 'Kupiec Szlaku Puszczańskiego',
+      text: 'Te przyrządy i łuki to kunszt leśnych mistrzów. W borze każdy punkt celności i dodatkowy pancerz ratuje życie. Zbieraj siekańce z potworów i skrzyń — z takim sprzętem puszcza będzie twoja! Zobacz ofertę poniżej:',
+      choices: [
+        {
+          id: 'c_bogusz_shop_back',
+          text: 'Wróćmy do rozmowy.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_bogusz_shop_bye',
+          text: 'Idę polować na siekańce. Do zobaczenia!',
           nextNodeId: null
         }
       ]
@@ -677,8 +833,13 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
       id: 'root',
       speakerName: 'Paser Gniewosz',
       speakerTitle: 'Handlarz z Mrocznych Katakumb',
-      text: 'Sss... Ciszej, mury mają uszy. W tych kryptach strażnicy i duchy nie wybaczają hałasu. Szukasz kogoś, kto nie pyta o pochodzenie towaru? Trafiłeś idealnie. Płacę od ręki w brzęczących siekańcach za każdą relikwię, miecz czy pancerz wygrzebany ze starożytnych lochów.',
+      text: 'Sss... Ciszej, mury mają uszy. W tych kryptach strażnicy i duchy nie wybaczają hałasu. Skupuję fanty bez pytań, ale jeśli masz pełną sakwę siekańców, mogę odstąpić ci legendarne płyty Aethelgardu lub astralne kostury wyciągnięte prosto ze skarbca archontów!',
       choices: [
+        {
+          id: 'c_gniewosz_shop',
+          text: '🏪 [Kram] Pokaż swoje najcenniejsze towary na sprzedaż.',
+          nextNodeId: 'gniewosz_shop'
+        },
         {
           id: 'c_gniewosz_sell_duplicates',
           text: '💰 [Kupiec] Odkup jednym kliknięciem wszystkie moje zdublowane przedmioty za siekańce!',
@@ -699,6 +860,24 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
         {
           id: 'c_gniewosz_bye',
           text: 'Będę miał cię na oku. Żegnaj.',
+          nextNodeId: null
+        }
+      ]
+    },
+    gniewosz_shop: {
+      id: 'gniewosz_shop',
+      speakerName: 'Paser Gniewosz',
+      speakerTitle: 'Handlarz z Mrocznych Katakumb',
+      text: 'Prawdziwe relikwie Pierwszych Archontów i czarne płyty gwardii. Taki sprzęt nie trafia w ręce byle kogo. Ceny są wysokie, bo i ryzyko było śmiertelne. Wybierz co chcesz kupić z oferty poniżej, a siekańce zostaw u mnie:',
+      choices: [
+        {
+          id: 'c_gniewosz_shop_back',
+          text: 'Wróćmy do innych spraw.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_gniewosz_shop_bye',
+          text: 'Zejdę głębiej do lochów po więcej łupów. Żegnaj.',
           nextNodeId: null
         }
       ]

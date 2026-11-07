@@ -801,6 +801,10 @@ export class InventoryContainer {
     return Number(sum.toFixed(2));
   }
 
+  public get isFull(): boolean {
+    return this.getOccupiedSlots().length >= this.capacity;
+  }
+
   public getSlots(): ReadonlyArray<ItemInstance | null> {
     return this.slots;
   }
