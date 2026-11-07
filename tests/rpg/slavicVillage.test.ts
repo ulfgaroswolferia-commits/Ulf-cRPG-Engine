@@ -21,11 +21,27 @@ describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () =
     const wells = map.props.filter((p) => p.kind === 'slavic_well');
     const fences = map.props.filter((p) => p.kind === 'wattle_fence');
 
-    expect(cottages.length).toBeGreaterThanOrEqual(4);
+    expect(cottages.length).toBe(12);
     expect(stalls.length).toBeGreaterThanOrEqual(3);
     expect(shrines.length).toBeGreaterThanOrEqual(1);
     expect(wells.length).toBeGreaterThanOrEqual(1);
-    expect(fences.length).toBeGreaterThanOrEqual(6);
+    expect(fences.length).toBeGreaterThanOrEqual(12);
+
+    // Verify showcase features: Ancestral Kurhan & Burial Mound, Watchtowers, Pier and Lights
+    const sarcophagus = map.props.filter((p) => p.kind === 'sarcophagus');
+    const arcaneCrystal = map.props.filter((p) => p.kind === 'arcane_crystal');
+    const watchtowers = map.props.filter((p) => p.kind === 'watchtower');
+    const graveyardFences = map.props.filter((p) => p.kind === 'graveyard_fence');
+    const deadTrees = map.props.filter((p) => p.kind === 'dead_tree');
+    const cliffs = map.props.filter((p) => p.kind === 'rock_cliff');
+
+    expect(sarcophagus.length).toBeGreaterThanOrEqual(1);
+    expect(arcaneCrystal.length).toBeGreaterThanOrEqual(1);
+    expect(watchtowers.length).toBeGreaterThanOrEqual(3); // 2 gate watchtowers + 1 kurhan spire
+    expect(graveyardFences.length).toBeGreaterThanOrEqual(10);
+    expect(deadTrees.length).toBeGreaterThanOrEqual(4);
+    expect(cliffs.length).toBeGreaterThanOrEqual(5);
+    expect(map.lights.length).toBeGreaterThanOrEqual(18); // 12 cottages + campfire + shrine + kurhan + lanterns
   });
 
   it('spawns Slavic NPCs (Król Gniewomir, Kupiec Dobromir, Płatnerz Bożydar, Żerca Radogost) and supports interacting with market stalls, well, and Światowid shrine', () => {

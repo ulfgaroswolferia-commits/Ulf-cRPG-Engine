@@ -861,7 +861,23 @@ export function createSlavicVillageMap(): IsometricWorldMap {
         terrain = 'stairs_stone';
       }
 
-      // 2. Central Marketplace Plaza (Rynek Osady, x: 12..20, y: 12..20)
+      // 2. Ancestral Kurhan & Burial Mound in North-East (x: 23..29, y: 3..8)
+      if (x >= 23 && x <= 29 && y >= 3 && y <= 8) {
+        z = 1;
+        terrain = 'forest_soil';
+        if (x >= 25 && x <= 27 && y >= 5 && y <= 7) {
+          z = 2;
+          terrain = 'arcane_inlay';
+        }
+      }
+
+      // Stone steps ascending to the Ancestral Kurhan
+      if ((x === 23 || x === 24) && (y === 5 || y === 6)) {
+        z = 1;
+        terrain = 'stairs_stone';
+      }
+
+      // 3. Central Marketplace Plaza (Rynek Osady, x: 12..20, y: 12..20)
       if (x >= 12 && x <= 20 && y >= 12 && y <= 20) {
         const distCenter = Math.hypot(x - 16, y - 16);
         if (distCenter <= 4.3) {
@@ -871,23 +887,38 @@ export function createSlavicVillageMap(): IsometricWorldMap {
         }
       }
 
-      // 3. Village Roads connecting cottages, market square, and southern gate
+      // 4. Village Roads connecting cottages, market square, kurhan, wharf and southern gate
       const isSouthRoad = x >= 15 && x <= 17 && y >= 16 && y < height;
       const isEastRoad = y >= 15 && y <= 17 && x >= 16 && x <= 27;
       const isWestRoad = y >= 15 && y <= 16 && x >= 7 && x <= 16;
       const isNorthRoad = x >= 15 && x <= 16 && y >= 6 && y <= 16;
-      if ((isSouthRoad || isEastRoad || isWestRoad || isNorthRoad) && z === 0) {
+      const isKurhanRoad = x >= 22 && x <= 23 && y >= 7 && y <= 15;
+      const isWharfRoad = x >= 21 && x <= 22 && y >= 18 && y <= 22;
+      if (
+        (isSouthRoad || isEastRoad || isWestRoad || isNorthRoad || isKurhanRoad || isWharfRoad) &&
+        z === 0
+      ) {
         if (terrain !== 'mossy_cobble') {
           terrain = 'dirt_path';
         }
       }
 
-      // 4. Scenic Stream / Mill Pond in South-East (x: 23..28, y: 21..26)
+      // 5. Scenic Stream, Mill Pond & Fisherman's Wharf in South-East (x: 22..29, y: 20..27)
       const pondDist = Math.hypot((x - 25.5) * 0.9, (y - 23.5) * 1.1);
-      if (pondDist <= 2.7) {
+      const isPier = (x === 22 || x === 23) && (y === 22 || y === 23);
+      const isMillFoundation = (x === 26 || x === 27) && y === 26;
+      if (isPier) {
+        z = 0;
+        terrain = 'dungeon_stone';
+        walkable = true;
+      } else if (isMillFoundation) {
+        z = 0;
+        terrain = 'forest_soil';
+        walkable = true;
+      } else if (pondDist <= 2.5) {
         terrain = 'abyss_water';
         walkable = false;
-      } else if (pondDist <= 3.6 && terrain === 'forest_grass') {
+      } else if (pondDist <= 3.8 && terrain === 'forest_grass') {
         terrain = 'forest_soil';
       }
 
@@ -997,7 +1028,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     lootItems: ['weapon_Executioner_axe', 'legs_steel_greaves']
   });
 
-  // --- C. Six Slavic Log Cabins & Thatched Cottages (OpenGameArt Isometric Log Cabins 0..15) ---
+  // --- C. Twelve Slavic Log Cabins & Thatched Cottages (OpenGameArt Isometric Log Cabins 0..15) ---
   const cottages: ReadonlyArray<{
     id: string;
     name: string;
@@ -1024,6 +1055,15 @@ export function createSlavicVillageMap(): IsometricWorldMap {
       sizeX: 2,
       sizeY: 1,
       variant: 5
+    },
+    {
+      id: 'cottage_blacksmith_bozydar',
+      name: 'Kuźnia Płatnerza Bożydara (Dymarka i Kowadło)',
+      x: 21,
+      y: 14,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 7
     },
     {
       id: 'cottage_herbalist_hut',
@@ -1060,6 +1100,51 @@ export function createSlavicVillageMap(): IsometricWorldMap {
       sizeX: 2,
       sizeY: 1,
       variant: 14
+    },
+    {
+      id: 'cottage_granary',
+      name: 'Spichlerz Zbożowy i Magazyn Kupiecki',
+      x: 9,
+      y: 11,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 4
+    },
+    {
+      id: 'cottage_potter_weaver',
+      name: 'Chata Garncarki i Tkaczki',
+      x: 8,
+      y: 23,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 1
+    },
+    {
+      id: 'cottage_woodcutter',
+      name: 'Chata Drwala i Smolarza',
+      x: 5,
+      y: 14,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    {
+      id: 'cottage_gatekeeper',
+      name: 'Wartownia Strażników Bramy Południowej',
+      x: 12,
+      y: 22,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 3
+    },
+    {
+      id: 'cottage_watermill',
+      name: 'Młyn Wodny Nadbrzeżny z Kołem Młyńskim',
+      x: 26,
+      y: 26,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 8
     }
   ];
 
@@ -1126,6 +1211,149 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     linkedLightId: shrineLightId
   });
 
+  // --- D2. Ancestral Kurhan & Burial Mound of Ancient Kniaz (North-East) ---
+  const kurhanLightId = 'light_ancestral_kurhan';
+  lights.push({
+    id: kurhanLightId,
+    x: 25.5,
+    y: 5.5,
+    z: tiles[5][25].z + 1.8,
+    color: { r: 168, g: 92, b: 255 },
+    intensity: 1.6,
+    radius: 7.0,
+    flickerSpeed: 3.8,
+    enabled: true
+  });
+
+  props.push({
+    id: 'prop_kurhan_sarcophagus',
+    name: 'Kamienny Sarkofag Dawnego Kniazia na Kurhanie',
+    kind: 'sarcophagus',
+    variant: 0,
+    x: 26,
+    y: 6,
+    z: tiles[6][26].z,
+    sizeX: 1,
+    sizeY: 2,
+    heightZ: 1.8,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['torso_aethel_plate', 'ring_emerald_seal']
+  });
+
+  props.push({
+    id: 'prop_kurhan_arcane_crystal',
+    name: 'Runiczny Monolit Duszy Przodków',
+    kind: 'arcane_crystal',
+    variant: 0,
+    x: 25,
+    y: 5,
+    z: tiles[5][25].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.2,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true,
+    linkedLightId: kurhanLightId
+  });
+
+  const kurhanPillars = [
+    { id: 'kurhan_pillar_nw', x: 24, y: 4, v: 1 },
+    { id: 'kurhan_pillar_sw', x: 24, y: 7, v: 3 },
+    { id: 'kurhan_pillar_ne', x: 28, y: 4, v: 5 },
+    { id: 'kurhan_pillar_se', x: 28, y: 7, v: 7 }
+  ];
+  for (const kp of kurhanPillars) {
+    props.push({
+      id: kp.id,
+      name: 'Starożytny Obelisk Kurhanu',
+      kind: 'pillar',
+      variant: kp.v,
+      x: kp.x,
+      y: kp.y,
+      z: tiles[kp.y][kp.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.3,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  props.push({
+    id: 'watchtower_kurhan',
+    name: 'Baszta Cmentarna i Obserwacyjna Kurhanu',
+    kind: 'watchtower',
+    variant: 2,
+    x: 28,
+    y: 5,
+    z: tiles[5][28].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 3.6,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: true
+  });
+
+  const kurhanFences = [
+    { x: 24, y: 3, v: 0 },
+    { x: 25, y: 3, v: 1 },
+    { x: 26, y: 3, v: 2 },
+    { x: 27, y: 3, v: 3 },
+    { x: 29, y: 4, v: 4 },
+    { x: 29, y: 5, v: 5 },
+    { x: 29, y: 6, v: 4 },
+    { x: 25, y: 8, v: 0 },
+    { x: 26, y: 8, v: 1 },
+    { x: 27, y: 8, v: 2 }
+  ];
+  for (const kf of kurhanFences) {
+    props.push({
+      id: `kfence_${kf.x}_${kf.y}`,
+      name: 'Kute Ogrodzenie Cmentarne Kurhanu',
+      kind: 'graveyard_fence',
+      variant: kf.v,
+      x: kf.x,
+      y: kf.y,
+      z: tiles[kf.y][kf.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.3,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  const kurhanDeadTrees = [
+    { x: 23, y: 3, v: 1 },
+    { x: 29, y: 7, v: 3 }
+  ];
+  for (const dt of kurhanDeadTrees) {
+    props.push({
+      id: `kdeadtree_${dt.x}_${dt.y}`,
+      name: 'Uschnięte Drzewo Kurhanu',
+      kind: 'dead_tree',
+      variant: dt.v,
+      x: dt.x,
+      y: dt.y,
+      z: tiles[dt.y][dt.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.7,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
   // --- E. Woven Willow Wattle Fences (Plecione Płoty Wiklinowe) around Cottages ---
   const fenceCoords: ReadonlyArray<{ x: number; y: number; v: number }> = [
     { x: 13, y: 8, v: 0 },
@@ -1138,7 +1366,11 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     { x: 7, y: 19, v: 1 },
     { x: 7, y: 20, v: 1 },
     { x: 19, y: 21, v: 0 },
-    { x: 22, y: 21, v: 0 }
+    { x: 22, y: 21, v: 0 },
+    { x: 4, y: 14, v: 1 },
+    { x: 4, y: 15, v: 1 },
+    { x: 8, y: 11, v: 0 },
+    { x: 11, y: 11, v: 0 }
   ];
 
   for (const f of fenceCoords) {
@@ -1194,6 +1426,65 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     lootItems: ['torso_aethel_plate', 'weapon_astral_staff']
   });
 
+  // --- Wharf, Fisher's Pier & Deep Water Props (South-East) ---
+  props.push({
+    id: 'village_chest_wharf_1',
+    name: 'Skrzynia Rybacka z Narzędziami',
+    kind: 'chest',
+    variant: 1,
+    x: 22,
+    y: 22,
+    z: tiles[22][22].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['item_raw_sausage', 'legs_leather_boots']
+  });
+
+  props.push({
+    id: 'village_chest_wharf_2',
+    name: 'Beczka i Skrzynia Towarowa Przystani',
+    kind: 'chest',
+    variant: 2,
+    x: 23,
+    y: 23,
+    z: tiles[23][23].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['ring_emerald_seal']
+  });
+
+  const wharfDeadTrees = [
+    { x: 24, y: 20, v: 0 },
+    { x: 28, y: 23, v: 2 }
+  ];
+  for (const wdt of wharfDeadTrees) {
+    props.push({
+      id: `wdeadtree_${wdt.x}_${wdt.y}`,
+      name: 'Pochylona Sosna Bagienna nad Wodą',
+      kind: 'dead_tree',
+      variant: wdt.v,
+      x: wdt.x,
+      y: wdt.y,
+      z: tiles[wdt.y][wdt.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.8,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
   // --- F2. Village Watchtowers, Street Lanterns, Sacred Grove Iron Fences & Rock Cliffs ---
   const villageWatchtowers = [
     { id: 'watchtower_south_west', name: 'Baszta Strażnicza Bramy Zachodniej', x: 13, y: 24, v: 1 },
@@ -1221,7 +1512,10 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   const villageLanterns = [
     { id: 'lantern_market_nw', x: 12, y: 15 },
     { id: 'lantern_market_ne', x: 19, y: 15 },
-    { id: 'lantern_road_south', x: 15, y: 22 }
+    { id: 'lantern_road_south', x: 15, y: 22 },
+    { id: 'lantern_wharf', x: 21, y: 22 },
+    { id: 'lantern_kurhan_approach', x: 22, y: 9 },
+    { id: 'lantern_sacred_steps', x: 10, y: 11 }
   ];
   for (const vl of villageLanterns) {
     const lid = `light_${vl.id}`;
@@ -1284,7 +1578,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   const villageCliffs = [
     { x: 4, y: 11, v: 1 },
     { x: 11, y: 4, v: 3 },
-    { x: 23, y: 25, v: 5 }
+    { x: 21, y: 24, v: 0 },
+    { x: 23, y: 25, v: 4 },
+    { x: 28, y: 26, v: 6 }
   ];
   for (const vc of villageCliffs) {
     props.push({
@@ -1307,7 +1603,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   // --- G. Surrounding Slavic Forest Perimeter & Wildflowers ---
   const occupied = new Set<string>([
     '16,20', // Player spawn
+    '15,18', // NPC Król Gniewomir
     '14,14', // NPC Kupiec Dobromir
+    '18,14', // NPC Płatnerz Bożydar
     '8,8',   // NPC Żerca Radogost
     '18,17'  // NPC Strażnik Miłosz
   ]);
@@ -1372,7 +1670,8 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   return {
     id: 'slavic_village',
     name: 'Osada Żerców — Targowisko pod Światowidem',
-    subtitle: 'Słowiańska osada (32×32) — Chaty kryte strzechą, Kramy Kupieckie, Studnia i Święty Gaj',
+    subtitle:
+      'Słowiańska osada (32×32) — 12 chat zrębowych, Kurhan Kniazia z runami, Przystań i Młyn, Baszty oraz Święty Gaj Światowida',
     width,
     height,
     maxElevation: 3,
