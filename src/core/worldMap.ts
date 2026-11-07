@@ -318,7 +318,7 @@ export function createForestClearingMap(): IsometricWorldMap {
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['item_raw_sausage', 'item_old_mead']
+    lootItems: ['item_raw_sausage', 'item_old_mead', 'item_dzban_miodu']
   });
 
   props.push({
@@ -374,7 +374,14 @@ export function createForestClearingMap(): IsometricWorldMap {
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['item_moon_herbs', 'weapon_astral_staff', 'torso_archmage_robes']
+    lootItems: [
+      'item_moon_herbs',
+      'weapon_astral_staff',
+      'torso_archmage_robes',
+      'item_piolun_herb',
+      'item_dziurawiec_herb',
+      'trinket_motanka'
+    ]
   });
 
   props.push({
@@ -1065,7 +1072,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['item_raw_sausage', 'cloak_crimson_mantle']
+    lootItems: ['item_raw_sausage', 'cloak_crimson_mantle', 'trinket_lunula', 'item_dzban_miodu']
   });
 
   props.push({
@@ -1083,7 +1090,13 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['ring_emerald_seal', 'helm_arcane_circlet']
+    lootItems: [
+      'ring_emerald_seal',
+      'helm_arcane_circlet',
+      'item_piolun_herb',
+      'item_dziurawiec_herb',
+      'trinket_motanka'
+    ]
   });
 
   props.push({
@@ -1101,7 +1114,13 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['weapon_Executioner_axe', 'legs_steel_greaves']
+    lootItems: [
+      'weapon_slavic_axe',
+      'offhand_slavic_shield',
+      'helm_szyszak',
+      'torso_przeszywanica',
+      'legs_lapcie'
+    ]
   });
 
   // --- C. Twelve Slavic Log Cabins & Thatched Cottages (OpenGameArt Isometric Log Cabins 0..15) ---
@@ -1316,7 +1335,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['torso_aethel_plate', 'ring_emerald_seal']
+    lootItems: ['torso_aethel_plate', 'trinket_kolowrot', 'trinket_lunula', 'weapon_slavic_axe']
   });
 
   props.push({

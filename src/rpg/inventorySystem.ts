@@ -164,6 +164,62 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
     itemType: 'Consumable',
     equipSlot: null
   },
+  item_piolun_herb: {
+    rarity: 'Common',
+    weight: 0.1,
+    maxStack: 10,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
+  item_dziurawiec_herb: {
+    rarity: 'Common',
+    weight: 0.1,
+    maxStack: 10,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
+  item_dzban_miodu: {
+    rarity: 'Uncommon',
+    weight: 0.9,
+    maxStack: 5,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
+  trinket_lunula: {
+    rarity: 'Rare',
+    weight: 0.2,
+    maxStack: 1,
+    itemType: 'Trinket',
+    equipSlot: 'ring2',
+    extraModifiers: [
+      { targetStat: StatType.Perception, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.ManaMax, value: 15, type: ModifierType.Flat },
+      { targetStat: StatType.Resolve, value: 1, type: ModifierType.Flat }
+    ]
+  },
+  trinket_kolowrot: {
+    rarity: 'Epic',
+    weight: 0.3,
+    maxStack: 1,
+    itemType: 'Trinket',
+    equipSlot: 'ring1',
+    extraModifiers: [
+      { targetStat: StatType.Strength, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.HealthMax, value: 12, type: ModifierType.Flat },
+      { targetStat: StatType.PhysicalDamage, value: 2, type: ModifierType.Flat }
+    ]
+  },
+  trinket_motanka: {
+    rarity: 'Uncommon',
+    weight: 0.1,
+    maxStack: 1,
+    itemType: 'Trinket',
+    equipSlot: 'ring2',
+    extraModifiers: [
+      { targetStat: StatType.Resolve, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.HealthMax, value: 8, type: ModifierType.Flat }
+    ]
+  },
   item_runic_compass: {
     rarity: 'Epic',
     weight: 0.5,
@@ -232,6 +288,24 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
       { targetStat: StatType.MovementSpeed, value: 4, type: ModifierType.Flat }
     ]
   },
+  torso_przeszywanica: {
+    rarity: 'Common',
+    weight: 4.5,
+    extraModifiers: [
+      { targetStat: StatType.ArmorRating, value: 3, type: ModifierType.Flat },
+      { targetStat: StatType.HealthMax, value: 10, type: ModifierType.Flat },
+      { targetStat: StatType.MovementSpeed, value: 2, type: ModifierType.Flat }
+    ]
+  },
+  helm_szyszak: {
+    rarity: 'Rare',
+    weight: 2.9,
+    extraModifiers: [
+      { targetStat: StatType.ArmorRating, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.Resolve, value: 1, type: ModifierType.Flat },
+      { targetStat: StatType.HealthMax, value: 8, type: ModifierType.Flat }
+    ]
+  },
   helm_dread_plate: {
     rarity: 'Rare',
     weight: 3.8,
@@ -285,6 +359,24 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
       { targetStat: StatType.Agility, value: 1, type: ModifierType.Flat }
     ]
   },
+  legs_lapcie: {
+    rarity: 'Common',
+    weight: 0.8,
+    extraModifiers: [
+      { targetStat: StatType.MovementSpeed, value: 5, type: ModifierType.Flat },
+      { targetStat: StatType.Agility, value: 1, type: ModifierType.Flat }
+    ]
+  },
+  weapon_slavic_axe: {
+    rarity: 'Uncommon',
+    weight: 2.8,
+    isTwoHanded: false,
+    extraModifiers: [
+      { targetStat: StatType.Strength, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.PhysicalDamage, value: 3, type: ModifierType.Flat },
+      { targetStat: StatType.CriticalStrikeChance, value: 4, type: ModifierType.Flat }
+    ]
+  },
   weapon_sunblade_longsword: {
     rarity: 'Rare',
     weight: 3.2,
@@ -312,6 +404,15 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
     extraModifiers: [
       { targetStat: StatType.ManaMax, value: 35, type: ModifierType.Flat },
       { targetStat: StatType.CriticalStrikeChance, value: 6, type: ModifierType.Flat }
+    ]
+  },
+  offhand_slavic_shield: {
+    rarity: 'Uncommon',
+    weight: 3.4,
+    extraModifiers: [
+      { targetStat: StatType.HealthMax, value: 14, type: ModifierType.Flat },
+      { targetStat: StatType.ArmorRating, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.Resolve, value: 1, type: ModifierType.Flat }
     ]
   },
   offhand_heraldic_shield: {

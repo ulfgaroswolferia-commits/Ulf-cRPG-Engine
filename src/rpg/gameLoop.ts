@@ -427,6 +427,59 @@ export class CrpgGameState {
       patrolIndex: 0,
       patrolWaitTimer: 1.5
     });
+
+    // 5. SLAVIC BESTIARY: Zardzewiały Woj Mogił (Ancestral Kurhan, x=27, y=6, Z=2)
+    const wojKurhanRecipe = generateRandomCharacterRecipe(915, 'enemy_kurhan_skeleton');
+    wojKurhanRecipe.name = 'Zardzewiały Woj Mogił';
+    wojKurhanRecipe.title = '💀 [KURHAN] Ożywieńczy Tarczownik Kniazia';
+    wojKurhanRecipe.attributes = {
+      might: 17,
+      finesse: 13,
+      resolve: 16,
+      lore: 10,
+      perception: 13
+    };
+    wojKurhanRecipe.equipment = {
+      head: 'helm_szyszak',
+      torso: 'torso_przeszywanica',
+      cloak: 'cloak_steel_pauldrons',
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_slavic_axe',
+      offHand: 'offhand_slavic_shield'
+    };
+    this.npcs.push({
+      id: 'enemy_kurhan_skeleton',
+      recipe: wojKurhanRecipe,
+      x: 27.5,
+      y: 6.5,
+      z: this.map.tiles[6][27].z,
+      tileX: 27,
+      tileY: 6,
+      direction: 6,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'very_hard',
+        difficultyLabel: '🔴 UMARŁY WOJ',
+        aggroRadius: 3.8,
+        hp: 135,
+        maxHp: 135,
+        ap: 10,
+        maxAp: 10,
+        proficiencies: createDefaultProficiencies({ axes_blunt: 85, unarmed_shield: 80 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 8,
+        lootTable: ['weapon_slavic_axe', 'offhand_slavic_shield', 'trinket_kolowrot'],
+        isAlive: true,
+        customArmorBonus: 12,
+        customDamageBonus: 6
+      }
+    });
   }
 
   private initForestClearingNpcs(): void {
@@ -669,6 +722,112 @@ export class CrpgGameState {
         isAlive: true,
         customArmorBonus: 18,
         customDamageBonus: 8
+      }
+    });
+
+    // 7. SLAVIC BESTIARY: Leszy — Leśne Licho z Puszczy (Druid Hill, x=8, y=5, Z=2)
+    const leszyRecipe = generateRandomCharacterRecipe(911, 'enemy_leszy');
+    leszyRecipe.name = 'Leszy — Duch Puszczy';
+    leszyRecipe.title = '🌲 [PAN BORU] Pradawny Duch Matecznika';
+    leszyRecipe.attributes = {
+      might: 16,
+      finesse: 14,
+      resolve: 18,
+      lore: 18,
+      perception: 16
+    };
+    leszyRecipe.equipment = {
+      head: 'helm_shadow_hood',
+      torso: 'torso_archmage_robes',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_lapcie',
+      mainHand: 'weapon_astral_staff',
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'enemy_leszy',
+      recipe: leszyRecipe,
+      x: 8.5,
+      y: 5.5,
+      z: this.map.tiles[5][8].z,
+      tileX: 8,
+      tileY: 5,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'very_hard',
+        difficultyLabel: '🔴 DUCH PUSZCZY',
+        aggroRadius: 4.0,
+        hp: 140,
+        maxHp: 140,
+        ap: 10,
+        maxAp: 10,
+        proficiencies: createDefaultProficiencies({ runic_staffs: 88 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 9,
+        lootTable: ['trinket_motanka', 'item_piolun_herb', 'item_dziurawiec_herb'],
+        isAlive: true,
+        customArmorBonus: 6,
+        customDamageBonus: 6
+      }
+    });
+
+    // 8. SLAVIC BESTIARY: Utopiec Moczarowy (South-West Pond shore, x=8, y=24, Z=0)
+    const utopiecRecipe = generateRandomCharacterRecipe(912, 'enemy_utopiec');
+    utopiecRecipe.name = 'Utopiec Moczarowy';
+    utopiecRecipe.title = '🌊 [POTWÓR] Zmora z Rzęsy Wodnej';
+    utopiecRecipe.attributes = {
+      might: 12,
+      finesse: 15,
+      resolve: 11,
+      lore: 7,
+      perception: 14
+    };
+    utopiecRecipe.equipment = {
+      head: null,
+      torso: 'torso_linen_tunic',
+      cloak: null,
+      legs: 'legs_lapcie',
+      mainHand: null,
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'enemy_utopiec',
+      recipe: utopiecRecipe,
+      x: 8.5,
+      y: 24.5,
+      z: this.map.tiles[24][8].z,
+      tileX: 8,
+      tileY: 24,
+      direction: 0,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'normal',
+        difficultyLabel: '🟡 POTWÓR',
+        aggroRadius: 3.5,
+        hp: 75,
+        maxHp: 75,
+        ap: 9,
+        maxAp: 9,
+        proficiencies: createDefaultProficiencies({ unarmed_shield: 72 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 5,
+        lootTable: ['item_dziurawiec_herb', 'trinket_lunula'],
+        isAlive: true,
+        customArmorBonus: 2,
+        customDamageBonus: 2
       }
     });
   }

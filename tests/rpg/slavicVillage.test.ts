@@ -150,4 +150,43 @@ describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () =
     game.togglePropInteraction(returnSignpost.id);
     expect(game.map.id).toBe('forest_clearing');
   });
+
+  it('spawns Slavic Bestiary (Leszy, Utopiec, Woj Mogił) and authentic folkloric items in stalls, kurhan and drops', () => {
+    const villageGame = new CrpgGameState('slavic_village');
+    const skeletonWoj = villageGame.npcs.find((n) => n.id === 'enemy_kurhan_skeleton');
+    expect(skeletonWoj).toBeDefined();
+    expect(skeletonWoj?.combat?.isHostile).toBe(true);
+    expect(skeletonWoj?.combat?.lootTable).toContain('weapon_slavic_axe');
+    expect(skeletonWoj?.combat?.lootTable).toContain('trinket_kolowrot');
+
+    // Market stalls contain Slavic items from docs/zestawienie_asset_w_rpg_2d.md
+    const smithStall = villageGame.map.props.find((p) => p.id === 'stall_smith_bozydar');
+    expect(smithStall?.lootItems).toContain('weapon_slavic_axe');
+    expect(smithStall?.lootItems).toContain('offhand_slavic_shield');
+    expect(smithStall?.lootItems).toContain('helm_szyszak');
+    expect(smithStall?.lootItems).toContain('torso_przeszywanica');
+    expect(smithStall?.lootItems).toContain('legs_lapcie');
+
+    const herbalistStall = villageGame.map.props.find((p) => p.id === 'stall_herbalist_wislawa');
+    expect(herbalistStall?.lootItems).toContain('item_piolun_herb');
+    expect(herbalistStall?.lootItems).toContain('item_dziurawiec_herb');
+    expect(herbalistStall?.lootItems).toContain('trinket_motanka');
+
+    const kurhanSarcophagus = villageGame.map.props.find((p) => p.id === 'prop_kurhan_sarcophagus');
+    expect(kurhanSarcophagus?.lootItems).toContain('trinket_kolowrot');
+    expect(kurhanSarcophagus?.lootItems).toContain('trinket_lunula');
+
+    // Forest Clearing bestiary: Leszy and Utopiec
+    const forestGame = new CrpgGameState('forest_clearing');
+    const leszy = forestGame.npcs.find((n) => n.id === 'enemy_leszy');
+    const utopiec = forestGame.npcs.find((n) => n.id === 'enemy_utopiec');
+    expect(leszy).toBeDefined();
+    expect(leszy?.combat?.isHostile).toBe(true);
+    expect(leszy?.combat?.lootTable).toContain('trinket_motanka');
+
+    expect(utopiec).toBeDefined();
+    expect(utopiec?.combat?.isHostile).toBe(true);
+    expect(utopiec?.combat?.lootTable).toContain('item_dziurawiec_herb');
+    expect(utopiec?.combat?.lootTable).toContain('trinket_lunula');
+  });
 });

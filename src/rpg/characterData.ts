@@ -205,6 +205,88 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     loreBonus: 2,
     visualStyle: 'relic_item'
   },
+  trinket_lunula: {
+    id: 'trinket_lunula',
+    name: 'Srebrna Lunula z Krzemieniem',
+    slot: 'relic',
+    description: 'Tradycyjny słowiański wisiorek w kształcie młodego księżyca. Chroni przed biesami i zmorami (+2 Percepcja, +15 Mana).',
+    primaryColor: { r: 216, g: 226, b: 236 },
+    trimColor: { r: 72, g: 184, b: 228 },
+    roughness: 0.2,
+    metallic: 0.92,
+    loreBonus: 2,
+    visualStyle: 'relic_item'
+  },
+  trinket_kolowrot: {
+    id: 'trinket_kolowrot',
+    name: 'Amulet Kołowrotu Swaroga',
+    slot: 'relic',
+    description: 'Kuty w brązie ośmioramienny symbol świętego słońca i ognia domowego (+2 Siła, +12 Zdrowie).',
+    primaryColor: { r: 228, g: 164, b: 52 },
+    trimColor: { r: 148, g: 42, b: 26 },
+    roughness: 0.25,
+    metallic: 0.88,
+    attackBonus: 2,
+    visualStyle: 'relic_item'
+  },
+  trinket_motanka: {
+    id: 'trinket_motanka',
+    name: 'Lalka Motanka z Lnu i Chrustu',
+    slot: 'relic',
+    description: 'Słowiańska rytualna lalka bez twarzy, motana z lnu bez użycia igły. Chroni przed otępieniem i urokiem (+2 Determinacja).',
+    primaryColor: { r: 204, g: 188, b: 164 },
+    trimColor: { r: 178, g: 42, b: 40 },
+    roughness: 0.88,
+    metallic: 0.02,
+    visualStyle: 'relic_item'
+  },
+  item_piolun_herb: {
+    id: 'item_piolun_herb',
+    name: 'Piołun z Uroczyska',
+    slot: 'consumable',
+    description: 'Gorzkie leśne ziele o srebrzystych liściach. Odpędza leśne zmory i wzmacnia hart ducha (+2 Determinacja).',
+    primaryColor: { r: 112, g: 132, b: 96 },
+    trimColor: { r: 164, g: 184, b: 148 },
+    roughness: 0.75,
+    metallic: 0.05,
+    consumableEffect: {
+      resolve: 2,
+      barkText: 'Piołunowy wywar rozgrzewa wnętrze i odpędza leśne uroki!'
+    },
+    visualStyle: 'food'
+  },
+  item_dziurawiec_herb: {
+    id: 'item_dziurawiec_herb',
+    name: 'Świętojański Dziurawiec',
+    slot: 'consumable',
+    description: 'Złote ziele słońca. Goi rany, odpędza zwątpienie i przywraca siły witalne (+1 Siła, +1 Percepcja).',
+    primaryColor: { r: 228, g: 184, b: 42 },
+    trimColor: { r: 252, g: 224, b: 84 },
+    roughness: 0.65,
+    metallic: 0.08,
+    consumableEffect: {
+      might: 1,
+      perception: 1,
+      barkText: 'Złocisty dziurawiec przywraca siły i męstwo!'
+    },
+    visualStyle: 'food'
+  },
+  item_dzban_miodu: {
+    id: 'item_dzban_miodu',
+    name: 'Gliniany Dzban Miodu Czwórniaka',
+    slot: 'consumable',
+    description: 'Staropolski sycony miód pitny z leśnej pasieki w glinianym dzbanku (+2 Siła, +1 Determinacja).',
+    primaryColor: { r: 196, g: 118, b: 52 },
+    trimColor: { r: 236, g: 178, b: 64 },
+    roughness: 0.55,
+    metallic: 0.1,
+    consumableEffect: {
+      might: 2,
+      resolve: 1,
+      barkText: 'Łyk miodu pitnego rozgrzewa krew i dodaje żeru do walki!'
+    },
+    visualStyle: 'food'
+  },
 
   // Torso
   torso_warden_brigandine: {
@@ -256,8 +338,33 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     armorBonus: 2,
     visualStyle: 'tunic'
   },
+  torso_przeszywanica: {
+    id: 'torso_przeszywanica',
+    name: 'Przeszywanica i Giezło z Krajką',
+    slot: 'torso',
+    description: 'Pikowany kaftan z bielonego lnu obszyty tradycyjną czerwono-białą krajką i przewiązany sznurem.',
+    primaryColor: { r: 220, g: 214, b: 198 },
+    trimColor: { r: 188, g: 38, b: 36 },
+    roughness: 0.82,
+    metallic: 0.05,
+    armorBonus: 4,
+    visualStyle: 'brigandine'
+  },
 
   // Head
+  helm_szyszak: {
+    id: 'helm_szyszak',
+    name: 'Słowiański Szyszak z Nosalem',
+    slot: 'head',
+    description: 'Spiczasty wczesnośredniowieczny szyszak z profilowaną czaszą, nitowanym nosalem i czepcem kolczym.',
+    primaryColor: { r: 132, g: 140, b: 152 },
+    trimColor: { r: 198, g: 156, b: 64 },
+    roughness: 0.28,
+    metallic: 0.9,
+    hidesHair: true,
+    armorBonus: 3,
+    visualStyle: 'full_helm'
+  },
   helm_dread_plate: {
     id: 'helm_dread_plate',
     name: 'Zamknięty Przyłbicowy Hełm Inkwizytora',
@@ -349,8 +456,32 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     armorBonus: 1,
     visualStyle: 'boots'
   },
+  legs_lapcie: {
+    id: 'legs_lapcie',
+    name: 'Łapcie z Łyka i Onuce',
+    slot: 'legs',
+    description: 'Tradycyjne słowiańskie obuwie wyplatane z lipowego łyka, z wełnianymi onucami wokół łydek.',
+    primaryColor: { r: 168, g: 128, b: 82 },
+    trimColor: { r: 122, g: 88, b: 52 },
+    roughness: 0.85,
+    metallic: 0.02,
+    armorBonus: 1,
+    visualStyle: 'boots'
+  },
 
   // Main Hand
+  weapon_slavic_axe: {
+    id: 'weapon_slavic_axe',
+    name: 'Wąsaty Topór Bojowy Woja',
+    slot: 'mainHand',
+    description: 'Wczesnośredniowieczny żelazny topór z wąsatym żeleźcem i jesionowym toporzyskiem. Przebija tarcze i pancerze.',
+    primaryColor: { r: 154, g: 160, b: 168 },
+    trimColor: { r: 104, g: 68, b: 42 },
+    roughness: 0.35,
+    metallic: 0.85,
+    attackBonus: 5,
+    visualStyle: 'battleaxe'
+  },
   weapon_sunblade_longsword: {
     id: 'weapon_sunblade_longsword',
     name: 'Miecz Długi „Ostrze Przysięgi”',
@@ -391,6 +522,18 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
   },
 
   // Off Hand
+  offhand_slavic_shield: {
+    id: 'offhand_slavic_shield',
+    name: 'Okrągła Tarcza z Kołowrotem',
+    slot: 'offHand',
+    description: 'Drewniana deszczułkowa tarcza lipowa z kutym żelaznym umbem, malowana w słoneczny Kołowrót Swaroga.',
+    primaryColor: { r: 168, g: 44, b: 36 },
+    trimColor: { r: 218, g: 168, b: 54 },
+    roughness: 0.55,
+    metallic: 0.45,
+    armorBonus: 3,
+    visualStyle: 'kiteshield'
+  },
   offhand_heraldic_shield: {
     id: 'offhand_heraldic_shield',
     name: 'Tarcza Rycerska z Gryfem',
