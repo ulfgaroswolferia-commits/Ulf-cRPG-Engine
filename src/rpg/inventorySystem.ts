@@ -61,6 +61,7 @@ export interface ItemDefinition {
   rarity: ItemRarity;
   maxStack: number;
   weight: number;
+  priceSiekance: number;
   baseModifiers: StatModifier[];
   requirements: EquipRequirement[];
   visualDef: EquipmentItemDef;
@@ -127,6 +128,7 @@ export const EQUIP_SLOT_LABELS: Record<EquipSlot, { label: string; icon: string 
 interface ExtendedItemMeta {
   rarity: ItemRarity;
   weight: number;
+  priceSiekance?: number;
   maxStack?: number;
   isTwoHanded?: boolean;
   itemType?: ItemType;
@@ -139,6 +141,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_raw_sausage: {
     rarity: 'Common',
     weight: 0.4,
+    priceSiekance: 6,
     maxStack: 10,
     itemType: 'Consumable',
     equipSlot: null
@@ -146,6 +149,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_roasted_sausage: {
     rarity: 'Uncommon',
     weight: 0.35,
+    priceSiekance: 14,
     maxStack: 10,
     itemType: 'Consumable',
     equipSlot: null
@@ -153,6 +157,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_old_mead: {
     rarity: 'Uncommon',
     weight: 0.8,
+    priceSiekance: 20,
     maxStack: 5,
     itemType: 'Consumable',
     equipSlot: null
@@ -160,6 +165,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_moon_herbs: {
     rarity: 'Rare',
     weight: 0.15,
+    priceSiekance: 25,
     maxStack: 10,
     itemType: 'Consumable',
     equipSlot: null
@@ -167,6 +173,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_piolun_herb: {
     rarity: 'Common',
     weight: 0.1,
+    priceSiekance: 10,
     maxStack: 10,
     itemType: 'Consumable',
     equipSlot: null
@@ -174,6 +181,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_dziurawiec_herb: {
     rarity: 'Common',
     weight: 0.1,
+    priceSiekance: 10,
     maxStack: 10,
     itemType: 'Consumable',
     equipSlot: null
@@ -181,6 +189,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   item_dzban_miodu: {
     rarity: 'Uncommon',
     weight: 0.9,
+    priceSiekance: 22,
     maxStack: 5,
     itemType: 'Consumable',
     equipSlot: null
@@ -188,6 +197,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   trinket_lunula: {
     rarity: 'Rare',
     weight: 0.2,
+    priceSiekance: 85,
     maxStack: 1,
     itemType: 'Trinket',
     equipSlot: 'ring2',
@@ -200,6 +210,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   trinket_kolowrot: {
     rarity: 'Epic',
     weight: 0.3,
+    priceSiekance: 175,
     maxStack: 1,
     itemType: 'Trinket',
     equipSlot: 'ring1',
@@ -212,6 +223,7 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
   trinket_motanka: {
     rarity: 'Uncommon',
     weight: 0.1,
+    priceSiekance: 35,
     maxStack: 1,
     itemType: 'Trinket',
     equipSlot: 'ring2',
@@ -527,6 +539,29 @@ export function getItemDefinition(definitionId: string): ItemDefinition | undefi
     equipSlot = 'ring1';
   }
 
+  let priceSiekance = meta?.priceSiekance ?? raw.priceSiekance;
+  if (!priceSiekance || priceSiekance <= 0) {
+    const rarity = meta?.rarity ?? 'Common';
+    switch (rarity) {
+      case 'Legendary':
+        priceSiekance = 350;
+        break;
+      case 'Epic':
+        priceSiekance = 150;
+        break;
+      case 'Rare':
+        priceSiekance = 75;
+        break;
+      case 'Uncommon':
+        priceSiekance = itemType === 'Consumable' ? 18 : 35;
+        break;
+      case 'Common':
+      default:
+        priceSiekance = itemType === 'Consumable' ? 6 : 14;
+        break;
+    }
+  }
+
   const def: ItemDefinition = {
     id: raw.id,
     name: raw.name,
@@ -537,6 +572,7 @@ export function getItemDefinition(definitionId: string): ItemDefinition | undefi
     rarity: meta?.rarity ?? 'Common',
     maxStack: meta?.maxStack ?? (itemType === 'Consumable' ? 5 : 1),
     weight: meta?.weight ?? 2.0,
+    priceSiekance,
     baseModifiers,
     requirements: meta?.requirements ?? [],
     visualDef: raw
@@ -544,6 +580,25 @@ export function getItemDefinition(definitionId: string): ItemDefinition | undefi
 
   flyweightDefinitionCache.set(definitionId, def);
   return def;
+}
+
+export function getItemPriceInSiekance(
+  target: ItemInstance | ItemDefinition | string
+): number {
+  let def: ItemDefinition | undefined;
+  let count = 1;
+
+  if (typeof target === 'string') {
+    def = getItemDefinition(target);
+  } else if ('instanceId' in target) {
+    def = getItemDefinition(target.definitionId);
+    count = target.stackCount || 1;
+  } else {
+    def = target;
+  }
+
+  if (!def) return Math.max(1, 5 * count);
+  return Math.max(1, def.priceSiekance * count);
 }
 
 let nextInstanceCounter = 1;

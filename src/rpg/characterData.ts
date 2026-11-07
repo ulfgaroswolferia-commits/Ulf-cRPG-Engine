@@ -38,6 +38,7 @@ export interface EquipmentItemDef {
   armorBonus?: number;
   attackBonus?: number;
   loreBonus?: number;
+  priceSiekance?: number;
   consumableEffect?: {
     might?: number;
     resolve?: number;

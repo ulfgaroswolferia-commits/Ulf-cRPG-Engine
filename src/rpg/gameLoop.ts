@@ -36,6 +36,7 @@ import {
   EquipSlot,
   getAllItemModifiers,
   getItemDefinition,
+  getItemPriceInSiekance,
   InventoryContainer,
   StatType
 } from './inventorySystem';
@@ -84,6 +85,12 @@ export class CrpgGameState {
   };
   public readonly logs: string[] = [];
   public activeDialogue: { actorId: string; node: DialogueNode } | null = null;
+  public siekance: number = 45;
+  public lastDuplicateSaleResult: {
+    soldCount: number;
+    earnedTotal: number;
+    itemsSold: Array<{ name: string; count: number; earned: number }>;
+  } | null = null;
   public fogOfWarEnabled = false;
   public wallCutawayEnabled = true;
   public ambientLightIntensity = 0.46;
@@ -605,6 +612,35 @@ export class CrpgGameState {
       dialogueId: 'npc_lyra'
     });
 
+    // 2b. Wandering Merchant Bogusz by the forest market stall (tile 17, 17)
+    const boguszRecipe = generateRandomCharacterRecipe(731, 'npc_bogusz');
+    boguszRecipe.name = 'Wędrowny Kramarz Bogusz';
+    boguszRecipe.title = 'Kupiec Szlaku Puszczańskiego';
+    boguszRecipe.hairStyle = 'slavic_parted';
+    boguszRecipe.equipment = {
+      head: 'helm_ranger_cowl',
+      torso: 'torso_slavic_lamellar',
+      cloak: 'cloak_ranger_quiver',
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_hunting_bow',
+      offHand: 'offhand_torch'
+    };
+    this.npcs.push({
+      id: 'npc_bogusz',
+      recipe: boguszRecipe,
+      x: 17.5,
+      y: 17.5,
+      z: this.map.tiles[17][17].z,
+      tileX: 17,
+      tileY: 17,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_bogusz'
+    });
+
     // 3. Patrolling Forest Ranger walking across the clearing & hill stairs
     const patrolRecipe = generateRandomCharacterRecipe(408, 'npc_warden_patrol');
     patrolRecipe.name = 'Tropiciell Aldric';
@@ -951,6 +987,35 @@ export class CrpgGameState {
       animTimer: 0,
       path: [],
       dialogueId: 'npc_lyra'
+    });
+
+    // 3. Shady Merchant / Fence Gniewosz in the catacombs alcove (tile 14, 7)
+    const gniewoszRecipe = generateRandomCharacterRecipe(842, 'npc_gniewosz');
+    gniewoszRecipe.name = 'Paser Gniewosz';
+    gniewoszRecipe.title = 'Handlarz z Mrocznych Katakumb';
+    gniewoszRecipe.hairStyle = 'short_crop';
+    gniewoszRecipe.equipment = {
+      head: 'helm_shadow_hood',
+      torso: 'torso_warden_brigandine',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_sunblade_longsword',
+      offHand: 'offhand_grimoire'
+    };
+    this.npcs.push({
+      id: 'npc_gniewosz',
+      recipe: gniewoszRecipe,
+      x: 14.5,
+      y: 7.5,
+      z: this.map.tiles[7][14].z,
+      tileX: 14,
+      tileY: 7,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_gniewosz'
     });
   }
 
@@ -1872,8 +1937,108 @@ export class CrpgGameState {
     };
   }
 
+  public sellItemForSiekance(instanceId: string): { success: boolean; earned: number; itemName: string } {
+    const found = this.backpack.findByInstanceId(instanceId);
+    if (!found || !found.item) {
+      return { success: false, earned: 0, itemName: '' };
+    }
+
+    const item = found.item;
+    const def = getItemDefinition(item.definitionId);
+    const itemName = def?.name ?? item.definitionId;
+    const price = getItemPriceInSiekance(item);
+
+    const removed = this.backpack.removeItem(instanceId, item.stackCount);
+    if (!removed) {
+      return { success: false, earned: 0, itemName: '' };
+    }
+
+    this.siekance += price;
+    const countText = item.stackCount > 1 ? ` (×${item.stackCount})` : '';
+    this.addLog(`💰 Sprzedano: ${itemName}${countText} za ${price} siekańców.`);
+    this.sayPlayerBark(`Sprzedano: ${itemName} (+${price} siekańców)`, 2.5);
+
+    return { success: true, earned: price, itemName };
+  }
+
+  public sellAllDuplicatesForSiekance(): {
+    soldCount: number;
+    earnedTotal: number;
+    itemsSold: Array<{ name: string; count: number; earned: number }>;
+  } {
+    const result = {
+      soldCount: 0,
+      earnedTotal: 0,
+      itemsSold: [] as Array<{ name: string; count: number; earned: number }>
+    };
+
+    // 1. All equipped items are considered already owned
+    const equippedDefs = new Set<string>();
+    for (const eq of Object.values(this.equipmentManager.getAllEquipped())) {
+      if (eq) {
+        equippedDefs.add(eq.definitionId);
+      }
+    }
+
+    // 2. Track definitions seen in backpack. If an item is not equipped, the first backpack slot is kept.
+    const keptDefs = new Set<string>();
+    const occupied = this.backpack.getOccupiedSlots();
+
+    for (const entry of occupied) {
+      const item = entry.item;
+      if (!item) continue;
+
+      const defId = item.definitionId;
+      const isEquipped = equippedDefs.has(defId);
+      const isAlreadyKeptInBag = keptDefs.has(defId);
+
+      if (isEquipped || isAlreadyKeptInBag) {
+        // It's an excess duplicate! Sell it!
+        const price = getItemPriceInSiekance(item);
+        const def = getItemDefinition(defId);
+        const itemName = def?.name ?? defId;
+
+        const removed = this.backpack.removeItem(item.instanceId, item.stackCount);
+        if (removed) {
+          result.soldCount += item.stackCount;
+          result.earnedTotal += price;
+          result.itemsSold.push({
+            name: itemName,
+            count: item.stackCount,
+            earned: price
+          });
+        }
+      } else {
+        // First copy preserved in backpack
+        keptDefs.add(defId);
+      }
+    }
+
+    this.siekance += result.earnedTotal;
+    this.lastDuplicateSaleResult = result;
+
+    if (result.soldCount > 0) {
+      this.addLog(
+        `💰 Kupiec odkupił ${result.soldCount} zdublowanych przedmiotów za łączną sumę ${result.earnedTotal} siekańców!`
+      );
+      this.sayPlayerBark(
+        `Sprzedano ${result.soldCount} zdublowanych przedmiotów (+${result.earnedTotal} siekańców)!`,
+        3.5
+      );
+    } else {
+      this.addLog('ℹ️ Kupiec: „Nie masz przy sobie żadnych zdublowanych przedmiotów w plecaku.”');
+      this.sayPlayerBark('Nie mam żadnych zdublowanych przedmiotów.', 2.8);
+    }
+
+    return result;
+  }
+
   public selectDialogueChoice(choice: DialogueChoice): void {
     if (!this.activeDialogue) return;
+
+    if (choice.action === 'sell_duplicates') {
+      this.sellAllDuplicatesForSiekance();
+    }
 
     if (choice.unlocksDoorId) {
       const door = this.map.props.find((p) => p.id === choice.unlocksDoorId);
@@ -1903,7 +2068,16 @@ export class CrpgGameState {
     const tree = npc?.dialogueId ? DIALOGUE_TREES[npc.dialogueId] : undefined;
     const nextNode = tree?.[choice.nextNodeId];
     if (nextNode) {
-      this.activeDialogue = { actorId: this.activeDialogue.actorId, node: nextNode };
+      let nodeToDisplay = nextNode;
+      if (choice.action === 'sell_duplicates' && this.lastDuplicateSaleResult) {
+        const s = this.lastDuplicateSaleResult;
+        const text =
+          s.soldCount > 0
+            ? `${nodeToDisplay.speakerName}: „Ubiłem z tobą wyborny interes! Odkupiłem ${s.soldCount} sztuk zdublowanych gratów za łączną sumę ${s.earnedTotal} siekańców. Twoje srebro jest już w sakwie!”`
+            : `${nodeToDisplay.speakerName}: „Przejrzałem dokładnie twój plecak... Nie masz przy sobie ani jednego zdublowanego przedmiotu. Wszystko co niesiesz to pojedyncze unikaty lub rzeczy, które masz na sobie!”`;
+        nodeToDisplay = { ...nextNode, text };
+      }
+      this.activeDialogue = { actorId: this.activeDialogue.actorId, node: nodeToDisplay };
     } else {
       this.activeDialogue = null;
     }

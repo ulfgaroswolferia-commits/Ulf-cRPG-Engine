@@ -88,6 +88,7 @@ export interface SerializedGameState {
     combat?: ActorCombatComponent;
   };
   baseAttributes: CharacterAttributes;
+  siekance?: number;
   backpack: Array<{ slotIndex: number; item: ItemInstance | null }>;
   equipment: Record<EquipSlot, ItemInstance | null>;
   mapProps: SerializedPropState[];
@@ -175,6 +176,7 @@ export function serializeGameState(
       combat: game.player.combat ? JSON.parse(JSON.stringify(game.player.combat)) : undefined
     },
     baseAttributes: game.statSheet.getBaseAttributes(),
+    siekance: game.siekance,
     backpack: backpackSlots,
     equipment: serializedEquipped,
     mapProps,
@@ -291,7 +293,10 @@ export function deserializeGameState(
       }
     }
 
-    // 5. Restore Inventory & Equipment
+    // 5. Restore Inventory, Currency & Equipment
+    if (typeof data.siekance === 'number') {
+      game.siekance = data.siekance;
+    }
     game.equipmentManager.clearAllEquipped();
     game.backpack.clearAllSlots();
 

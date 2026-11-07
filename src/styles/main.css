@@ -926,6 +926,118 @@ body,
   flex-shrink: 0;
 }
 
+.bag-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.bag-sell-btn {
+  background: rgba(180, 130, 30, 0.22);
+  border: 1px solid rgba(220, 180, 70, 0.45);
+  color: #ffd875;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.bag-sell-btn:hover {
+  background: rgba(220, 160, 40, 0.5);
+  border-color: #ffe682;
+  color: #fff;
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+.item-price-tag {
+  color: #ffdc73;
+  font-weight: 600;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+}
+
+.siekance-wallet-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.22), rgba(18, 22, 32, 0.95));
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  border-radius: 5px;
+  padding: 2px 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.siekance-wallet-badge .wallet-icon {
+  font-size: 11px;
+}
+
+.siekance-wallet-badge .wallet-val {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: #ffe07a;
+  font-weight: 700;
+}
+
+.siekance-wallet-badge .wallet-label {
+  font-size: 9.5px;
+  color: #c9b085;
+}
+
+.btn-sell-duplicates {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, rgba(160, 115, 20, 0.45), rgba(40, 30, 15, 0.9));
+  border: 1px solid #d4af37;
+  border-radius: 5px;
+  color: #ffe89e;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 3px 9px;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.25);
+  transition: all 0.15s ease;
+}
+
+.btn-sell-duplicates:hover {
+  background: linear-gradient(135deg, rgba(200, 145, 30, 0.65), rgba(60, 45, 20, 0.95));
+  border-color: #fff0a0;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-sell-duplicates:active {
+  transform: translateY(1px);
+}
+
+.hud-wallet-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(18, 22, 32, 0.9);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 5px;
+  color: #ffe07a;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.hud-wallet-pill:hover {
+  background: rgba(212, 175, 55, 0.2);
+  border-color: #d4af37;
+}
+
 /* Compact Live Comparison Bar (Bottom of Inventory Drawer) */
 .live-comparison-box {
   background: rgba(10, 13, 21, 0.94);

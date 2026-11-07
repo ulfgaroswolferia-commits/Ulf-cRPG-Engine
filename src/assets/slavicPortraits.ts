@@ -282,6 +282,78 @@ export function getSlavicPortrait(actorId: string): string {
       );
       break;
 
+    case 'npc_bogusz':
+      // Wędrowny Kramarz Bogusz: wandering forest merchant, green ranger hood, silver hacksilver pouch
+      dataUrl = buildPortraitSvg(
+        '#1a2a1a',
+        '#081208',
+        `
+        <!-- Forest Fireflies & Spores -->
+        <circle cx="35" cy="50" r="2" fill="#88d868" opacity="0.65" />
+        <circle cx="125" cy="70" r="1.6" fill="#d4e878" opacity="0.6" />
+        <!-- Rugged Forester Coat & Leather Straps -->
+        <path d="M 18 200 C 24 148 46 132 80 132 C 114 132 136 148 142 200 Z" fill="#2a3e28" />
+        <path d="M 36 170 L 124 170 L 118 200 L 42 200 Z" fill="#443222" />
+        <!-- Hacksilver / Siekańce Pouch with Silver Ring -->
+        <ellipse cx="80" cy="158" rx="10" ry="12" fill="#5a422e" stroke="#c4d2dc" stroke-width="1.8" />
+        <circle cx="80" cy="156" r="3" fill="#e8f0f8" />
+        <!-- Weathered Face -->
+        <path d="M 52 75 C 50 115 62 135 80 135 C 98 135 110 115 108 75 Z" fill="#c09472" />
+        <!-- Friendly Slavic Mustache & Stubble -->
+        <path d="M 62 108 Q 80 118 98 108 Q 80 102 62 108 Z" fill="#584230" />
+        <!-- Warm Amber Eyes -->
+        <ellipse cx="68" cy="85" rx="5" ry="2.6" fill="#18120c" />
+        <ellipse cx="92" cy="85" rx="5" ry="2.6" fill="#18120c" />
+        <circle cx="68" cy="85" r="2.2" fill="#885c34" />
+        <circle cx="92" cy="85" r="2.2" fill="#885c34" />
+        <circle cx="69" cy="84" r="0.8" fill="#fff" />
+        <circle cx="93" cy="84" r="0.8" fill="#fff" />
+        <!-- Traveler Cowl / Hood -->
+        <path d="M 40 68 C 40 28 60 18 80 18 C 100 18 120 28 120 68 C 108 58 52 58 40 68 Z" fill="#345034" />
+        <path d="M 40 68 C 34 85 46 112 52 118 C 50 85 45 72 40 68 Z" fill="#283e28" />
+        <path d="M 120 68 C 126 85 114 112 108 118 C 110 85 115 72 120 68 Z" fill="#283e28" />
+        `,
+        '#68b448'
+      );
+      break;
+
+    case 'npc_gniewosz':
+      // Paser Gniewosz: shady fence in catacombs, dark cowl, sharp eyes, silver hacksilver dirhams
+      dataUrl = buildPortraitSvg(
+        '#221820',
+        '#0e0a10',
+        `
+        <!-- Motes of Dungeon Dust & Torch Glow -->
+        <circle cx="28" cy="45" r="2" fill="#ff7834" opacity="0.6" />
+        <circle cx="132" cy="65" r="1.8" fill="#ff9c50" opacity="0.5" />
+        <!-- Dark Smuggler Brigandine & Iron Buckles -->
+        <path d="M 18 200 C 24 146 44 132 80 132 C 116 132 136 146 142 200 Z" fill="#24222a" />
+        <path d="M 44 145 L 80 168 L 116 145 Z" fill="#3e3848" />
+        <!-- Bag of Hacksilver / Siekańce with Clinking Coins -->
+        <ellipse cx="80" cy="162" rx="11" ry="13" fill="#322822" stroke="#d4af37" stroke-width="1.6" />
+        <circle cx="76" cy="160" r="3.2" fill="#dce6f0" />
+        <circle cx="83" cy="161" r="2.8" fill="#b0c0d0" />
+        <!-- Sharp Catacombs Inhabitant Face -->
+        <path d="M 52 74 C 50 114 62 134 80 134 C 98 134 110 114 108 74 Z" fill="#a48c7c" />
+        <!-- Goatee & Slanted Smirk -->
+        <path d="M 74 118 L 80 132 L 86 118 Z" fill="#221a20" />
+        <path d="M 72 112 Q 80 114 88 110" stroke="#382024" stroke-width="2.5" stroke-linecap="round" fill="none" />
+        <!-- Calculating Torch-Lit Eyes -->
+        <ellipse cx="68" cy="85" rx="5" ry="2.2" fill="#120c12" />
+        <ellipse cx="92" cy="85" rx="5" ry="2.2" fill="#120c12" />
+        <circle cx="68" cy="85" r="2" fill="#ff7834" />
+        <circle cx="92" cy="85" r="2" fill="#ff7834" />
+        <circle cx="69" cy="84" r="0.8" fill="#fff" />
+        <circle cx="93" cy="84" r="0.8" fill="#fff" />
+        <!-- Shadowy Assassin / Thief Hood -->
+        <path d="M 38 72 C 38 25 58 14 80 14 C 102 14 122 25 122 72 C 108 56 52 56 38 72 Z" fill="#1c1822" />
+        <path d="M 38 72 C 32 92 46 122 52 124 C 48 88 44 76 38 72 Z" fill="#141018" />
+        <path d="M 122 72 C 128 92 114 122 108 124 C 112 88 116 76 122 72 Z" fill="#141018" />
+        `,
+        '#9d5bd8'
+      );
+      break;
+
     case 'npc_bozydar':
       // Płatnerz Bożydar: burly Slavic blacksmith, forge sparks, walrus mustache, leather apron
       dataUrl = buildPortraitSvg(

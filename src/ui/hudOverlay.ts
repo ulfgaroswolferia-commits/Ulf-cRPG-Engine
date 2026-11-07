@@ -24,6 +24,7 @@ import {
   EquipSlot,
   getAllItemModifiers,
   getItemDefinition,
+  getItemPriceInSiekance,
   ItemComparisonEngine,
   ItemComparisonReport,
   ItemInstance,
@@ -848,6 +849,11 @@ export class HudOverlay {
         <div class="panel-header">
           <div class="compact-header-left">
             <h3>🎒 Plecak (${occupiedCount}/${this.game.backpack.capacity})</h3>
+            <div class="siekance-wallet-badge" title="Twój trzos: Słowiańskie Siekańce (waluta handlowa)">
+              <span class="wallet-icon">💰</span>
+              <strong class="wallet-val">${this.game.siekance}</strong>
+              <span class="wallet-label">siekańców</span>
+            </div>
             <div class="weight-meter" title="Udźwig całkowity (Plecak + Założony rynsztunek)">
               <span class="weight-pill-text">⚖️ ${totalWeight} / ${maxWeight} kg</span>
               <div class="weight-bar-track">
@@ -856,6 +862,7 @@ export class HudOverlay {
             </div>
           </div>
           <div class="compact-header-right">
+            <button type="button" class="btn-sell-duplicates" data-action="sell-duplicates" title="Odkup jednym przyciskiem wszystkie zdublowane przedmioty w ekwipunku za siekańce">💰 Sprzedaj duplikaty</button>
             <button type="button" class="sort-btn" data-bag-sort="rarity" title="Uporządkuj przedmioty w plecaku">⇅ Uporządkuj</button>
             <button class="btn-icon" data-action="toggle-inventory" title="Zamknij plecak (I lub Esc)">✕</button>
           </div>
@@ -970,6 +977,8 @@ export class HudOverlay {
                     actionLabel = '🍖 Użyj';
                   }
 
+                  const itemPrice = getItemPriceInSiekance(slotItem);
+
                   return `
                     <div
                       class="backpack-slot occupied rarity-${def.rarity.toLowerCase()} ${isNetUpgrade ? 'is-upgrade' : ''}"
@@ -977,7 +986,7 @@ export class HudOverlay {
                       data-slot-index="${slotIdx}"
                       data-bag-instance-id="${slotItem.instanceId}"
                       data-equip-id="${def.id}"
-                      title="Kliknij LPM, aby: ${actionLabel} (${def.name})"
+                      title="Kliknij LPM, aby: ${actionLabel} (${def.name}) • Kliknij 'Sprzedaj', aby zbyć za ${itemPrice} siekańców"
                     >
                       <div class="item-swatch" style="background: linear-gradient(135deg, ${swatch} 60%, ${trim} 100%);">
                         <span class="slot-badge">${def.isTwoHanded ? '2H' : (def.equipSlot ?? 'BAG').toUpperCase().slice(0, 3)}</span>
@@ -988,9 +997,13 @@ export class HudOverlay {
                         <div class="bag-item-sub">
                           <span>${primaryDeltaText || rarity.label}</span>
                           <span>• ${(def.weight * slotItem.stackCount).toFixed(1)} kg</span>
+                          <span class="item-price-tag" title="Cena skupu u kupca w siekańcach">💰 ${itemPrice} siek.</span>
                         </div>
                       </div>
-                      <span class="equip-state">${actionLabel}</span>
+                      <div class="bag-item-actions">
+                        <span class="equip-state">${actionLabel}</span>
+                        <button type="button" class="bag-sell-btn" data-action="sell-single" data-instance-id="${slotItem.instanceId}" title="Sprzedaj kupcowi za ${itemPrice} siekańców">💰 Sprzedaj</button>
+                      </div>
                     </div>
                   `;
                 })
@@ -1143,6 +1156,9 @@ export class HudOverlay {
               <button class="hud-btn ${this.isInventoryOpen ? 'active' : ''}" data-action="toggle-inventory" title="Otwórz Plecak (Klawisz I)">
                 🎒 Plecak (${occupiedCount}/${this.game.backpack.capacity})
               </button>
+              <div class="hud-wallet-pill" data-action="toggle-inventory" title="Twój trzos: Słowiańskie Siekańce (kliknij, by otworzyć plecak)">
+                💰 <strong>${this.game.siekance}</strong> siek.
+              </div>
               <button class="hud-btn" data-action="use-campfire" title="Podejdź do ogniska i upiecz kiełbasę">
                 🔥 ${hasRawSausage ? 'Upiecz Kiełbasę!' : 'Ognisko'}
               </button>
@@ -1223,6 +1239,16 @@ export class HudOverlay {
           this.scene.rotateCamera(-1);
         } else if (action === 'rot-cw') {
           this.scene.rotateCamera(1);
+        } else if (action === 'sell-duplicates') {
+          this.game.sellAllDuplicatesForSiekance();
+          this.render();
+        } else if (action === 'sell-single') {
+          const instId = btn.dataset.instanceId;
+          if (instId) {
+            this.game.sellItemForSiekance(instId);
+            this.hoveredBagInstanceId = null;
+            this.render();
+          }
         } else if (action === 'toggle-inventory') {
           this.isInventoryOpen = !this.isInventoryOpen;
           this.hoveredBagInstanceId = null;
@@ -1460,7 +1486,10 @@ export class HudOverlay {
           }
         });
 
-        slotEl.addEventListener('click', () => {
+        slotEl.addEventListener('click', (e) => {
+          if ((e.target as HTMLElement)?.closest('.bag-sell-btn')) {
+            return;
+          }
           if (this.game.useOrEquipInstance(instanceId)) {
             this.hoveredBagInstanceId = null;
             this.render();
@@ -1497,6 +1526,9 @@ export class HudOverlay {
         const idx = Number(btn.dataset.choiceIdx);
         const choice = this.game.activeDialogue?.node.choices[idx];
         if (choice) {
+          if (choice.action === 'open_trade') {
+            this.isInventoryOpen = true;
+          }
           this.game.selectDialogueChoice(choice);
           this.render();
         }

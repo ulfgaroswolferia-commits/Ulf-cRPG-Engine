@@ -4,6 +4,7 @@ export interface DialogueChoice {
   id: string;
   text: string;
   nextNodeId: string | null;
+  action?: 'sell_duplicates' | 'open_trade';
   requiredAttribute?: {
     stat: keyof CharacterAttributes;
     minValue: number;
@@ -462,8 +463,20 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
       id: 'root',
       speakerName: 'Kupiec Dobromir',
       speakerTitle: 'Starszy Targowiska pod Światowidem',
-      text: 'Sława, wędrowcze! Rozgość się na naszym rynku. Mamy tu sukno, bursztyn i świeżą dziczyznę. Tylko pamiętaj: nie dziel wilka z lasu, póki skóra jeszcze w gawrze siedzi!',
+      text: 'Sława, wędrowcze! Rozgość się na naszym rynku. Mamy tu sukno, bursztyn i świeżą dziczyznę. Chętnie odkupię też wszystko, co zalega ci w plecaku — płacę twardymi, brzęczącymi siekańcami!',
       choices: [
+        {
+          id: 'c_dobromir_sell_duplicates',
+          text: '💰 [Kupiec] Odkup jednym kliknięciem wszystkie moje zdublowane przedmioty za siekańce!',
+          action: 'sell_duplicates',
+          nextNodeId: 'dobromir_sold_duplicates'
+        },
+        {
+          id: 'c_dobromir_open_trade',
+          text: '🪙 [Handel] Otwórz mój plecak — chcę przejrzeć i sprzedać wybrane towary za siekańce.',
+          action: 'open_trade',
+          nextNodeId: 'dobromir_trade_opened'
+        },
         {
           id: 'c_dobromir_kolaps1',
           text: 'Skóry na niedźwiedziu, gospodarzu...',
@@ -485,6 +498,42 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
         {
           id: 'c_dobromir_bye',
           text: 'Niech handel idzie pomyślnie, Dobromirze.',
+          nextNodeId: null
+        }
+      ]
+    },
+    dobromir_sold_duplicates: {
+      id: 'dobromir_sold_duplicates',
+      speakerName: 'Kupiec Dobromir',
+      speakerTitle: 'Starszy Targowiska pod Światowidem',
+      text: 'Ubiłem z tobą wyborny targ! Odkupiłem wszystkie twoje zdublowane przedmioty za brzęczące siekańce. Srebro jest już w twojej sakwie!',
+      choices: [
+        {
+          id: 'c_dobromir_sold_dup_back',
+          text: 'Pokaż mi jeszcze resztę spraw.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_dobromir_sold_dup_bye',
+          text: 'Dzięki za uczciwy handel. Bywaj!',
+          nextNodeId: null
+        }
+      ]
+    },
+    dobromir_trade_opened: {
+      id: 'dobromir_trade_opened',
+      speakerName: 'Kupiec Dobromir',
+      speakerTitle: 'Starszy Targowiska pod Światowidem',
+      text: 'Otwórz śmiało plecak! Przy każdym przedmiocie masz podaną cenę w siekańcach. Kliknij „Sprzedaj”, a natychmiast wypłacę brzęczącą monetę!',
+      choices: [
+        {
+          id: 'c_dobromir_trade_opened_back',
+          text: 'Wróćmy do rozmowy.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_dobromir_trade_opened_bye',
+          text: 'Zajmę się teraz tobołkami. Do zobaczenia.',
           nextNodeId: null
         }
       ]
@@ -538,6 +587,168 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           id: 'c_dobromir_back',
           text: 'Odwiedzę Święty Gaj i obejrzę stragany.',
           nextNodeId: null
+        }
+      ]
+    }
+  },
+  npc_bogusz: {
+    root: {
+      id: 'root',
+      speakerName: 'Wędrowny Kramarz Bogusz',
+      speakerTitle: 'Kupiec Szlaku Puszczańskiego',
+      text: 'Niech leśne duchy ci sprzyjają, wędrowcze! Rozstawiłem kram na tym rozstaju przy polanie. Skupię od ciebie każde znalezisko: żelastwo, trofea, zioła i pancerze — płacę twardą słowiańską monetą, czystymi siekańcami!',
+      choices: [
+        {
+          id: 'c_bogusz_sell_duplicates',
+          text: '💰 [Kupiec] Odkup jednym kliknięciem wszystkie moje zdublowane przedmioty za siekańce!',
+          action: 'sell_duplicates',
+          nextNodeId: 'bogusz_sold_duplicates'
+        },
+        {
+          id: 'c_bogusz_open_trade',
+          text: '🪙 [Handel] Chcę przejrzeć plecak i sprzedać wybrane przedmioty za siekańce.',
+          action: 'open_trade',
+          nextNodeId: 'bogusz_trade_opened'
+        },
+        {
+          id: 'c_bogusz_lore',
+          text: 'Jak ci się handluje samotnie na tym leśnym pustkowiu?',
+          nextNodeId: 'bogusz_lore'
+        },
+        {
+          id: 'c_bogusz_bye',
+          text: 'Muszę ruszać dalej traktem. Bywaj, Boguszu.',
+          nextNodeId: null
+        }
+      ]
+    },
+    bogusz_sold_duplicates: {
+      id: 'bogusz_sold_duplicates',
+      speakerName: 'Wędrowny Kramarz Bogusz',
+      speakerTitle: 'Kupiec Szlaku Puszczańskiego',
+      text: 'Znakomity interes! Odkupiłem od ciebie wszystkie nadmiarowe przedmioty. Twoje siekańce są już bezpieczne w sakwie!',
+      choices: [
+        {
+          id: 'c_bogusz_sold_dup_back',
+          text: 'Wróćmy do oferty.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_bogusz_sold_dup_bye',
+          text: 'Dzięki za uczciwy handel. Bywaj!',
+          nextNodeId: null
+        }
+      ]
+    },
+    bogusz_trade_opened: {
+      id: 'bogusz_trade_opened',
+      speakerName: 'Wędrowny Kramarz Bogusz',
+      speakerTitle: 'Kupiec Szlaku Puszczańskiego',
+      text: 'Zajrzyj do tobołka! Każdy fant ma swoją wartość w siekańcach. Sprzedaj co zbędne, a waga twojego rynsztunku od razu spadnie.',
+      choices: [
+        {
+          id: 'c_bogusz_trade_opened_back',
+          text: 'Wróćmy do rozmowy.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_bogusz_trade_opened_bye',
+          text: 'Zaraz przejrzę plecak. Do widzenia.',
+          nextNodeId: null
+        }
+      ]
+    },
+    bogusz_lore: {
+      id: 'bogusz_lore',
+      speakerName: 'Wędrowny Kramarz Bogusz',
+      speakerTitle: 'Kupiec Szlaku Puszczańskiego',
+      text: 'Szlak bywa niebezpieczny, ale wokół ogniska czuwają zwiadowcy pod wodzą kapitana Vaelena. Wojowie chętnie kupują zioła i pieczyste, a mnie nie brakuje siekańców na odkupienie łupów od śmiałków takich jak ty!',
+      choices: [
+        {
+          id: 'c_bogusz_lore_back',
+          text: 'Rozumiem. Pokaż mi jeszcze towary.',
+          nextNodeId: 'root'
+        }
+      ]
+    }
+  },
+  npc_gniewosz: {
+    root: {
+      id: 'root',
+      speakerName: 'Paser Gniewosz',
+      speakerTitle: 'Handlarz z Mrocznych Katakumb',
+      text: 'Sss... Ciszej, mury mają uszy. W tych kryptach strażnicy i duchy nie wybaczają hałasu. Szukasz kogoś, kto nie pyta o pochodzenie towaru? Trafiłeś idealnie. Płacę od ręki w brzęczących siekańcach za każdą relikwię, miecz czy pancerz wygrzebany ze starożytnych lochów.',
+      choices: [
+        {
+          id: 'c_gniewosz_sell_duplicates',
+          text: '💰 [Kupiec] Odkup jednym kliknięciem wszystkie moje zdublowane przedmioty za siekańce!',
+          action: 'sell_duplicates',
+          nextNodeId: 'gniewosz_sold_duplicates'
+        },
+        {
+          id: 'c_gniewosz_open_trade',
+          text: '🪙 [Handel] Chcę przejrzeć plecak i sprzedać wybrane przedmioty za siekańce.',
+          action: 'open_trade',
+          nextNodeId: 'gniewosz_trade_opened'
+        },
+        {
+          id: 'c_gniewosz_lore',
+          text: 'Co żywy człowiek robi tak głęboko w lochach sanktuarium?',
+          nextNodeId: 'gniewosz_lore'
+        },
+        {
+          id: 'c_gniewosz_bye',
+          text: 'Będę miał cię na oku. Żegnaj.',
+          nextNodeId: null
+        }
+      ]
+    },
+    gniewosz_sold_duplicates: {
+      id: 'gniewosz_sold_duplicates',
+      speakerName: 'Paser Gniewosz',
+      speakerTitle: 'Handlarz z Mrocznych Katakumb',
+      text: 'Wszystkie duplikaty zniknęły w moich worach, a brzęczące siekańce wylądowały w twojej kieszeni. Czysty, dyskretny zysk!',
+      choices: [
+        {
+          id: 'c_gniewosz_sold_dup_back',
+          text: 'Pokaż co jeszcze masz na myśli.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_gniewosz_sold_dup_bye',
+          text: 'Dzięki. Pilnuj pleców w tych lochach.',
+          nextNodeId: null
+        }
+      ]
+    },
+    gniewosz_trade_opened: {
+      id: 'gniewosz_trade_opened',
+      speakerName: 'Paser Gniewosz',
+      speakerTitle: 'Handlarz z Mrocznych Katakumb',
+      text: 'Wyjmij fanty. Zapłacę uczciwie za każde ostrze i każdy czerep. W katakumbach srebro jest cenniejsze niż modlitwy kapłanów.',
+      choices: [
+        {
+          id: 'c_gniewosz_trade_opened_back',
+          text: 'Wróćmy do rozmowy.',
+          nextNodeId: 'root'
+        },
+        {
+          id: 'c_gniewosz_trade_opened_bye',
+          text: 'Zaraz przejrzę ekwipunek.',
+          nextNodeId: null
+        }
+      ]
+    },
+    gniewosz_lore: {
+      id: 'gniewosz_lore',
+      speakerName: 'Paser Gniewosz',
+      speakerTitle: 'Handlarz z Mrocznych Katakumb',
+      text: 'Górny dziedziniec należy do rycerzy i zakonu, ale te niższe krypty mają własne prawa. Dopóki płacę siekańcami, nawet strażnicy przymykają oko na moje interesy. Znajdź klucz do skarbca, a obaj będziemy obrzydliwie bogaci.',
+      choices: [
+        {
+          id: 'c_gniewosz_lore_back',
+          text: 'Będę pamiętał. Wróćmy do handlu.',
+          nextNodeId: 'root'
         }
       ]
     }
