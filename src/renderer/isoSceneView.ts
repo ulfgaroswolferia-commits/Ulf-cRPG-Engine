@@ -1660,10 +1660,10 @@ export class IsoSceneView {
 
       const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
       if (
-        scr.x < minLocalX - 160 ||
-        scr.x > maxLocalX + 160 ||
-        scr.y < minLocalY - 260 ||
-        scr.y > maxLocalY + 160
+        scr.x < minLocalX - 300 ||
+        scr.x > maxLocalX + 300 ||
+        scr.y < minLocalY - 450 ||
+        scr.y > maxLocalY + 300
       ) {
         continue;
       }

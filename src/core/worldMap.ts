@@ -561,7 +561,7 @@ export function createForestClearingMap(): IsometricWorldMap {
     isOpen: true
   });
 
-  // 6C. Isometric Game Kit Watchtower & OGA Log Cabin / Cliffs / Graveyard Fence Accents
+  // 6C. Isometric Game Kit Watchtower & OGA Log Cabins / Stalls / Cliffs
   props.push({
     id: 'watchtower_bastion_ne',
     name: 'Baszta Obserwacyjna Strażnicy',
@@ -579,6 +579,18 @@ export function createForestClearingMap(): IsometricWorldMap {
     isOpen: true
   });
 
+  const foresterLightId = 'light_cabin_forester';
+  lights.push({
+    id: foresterLightId,
+    x: 19.5,
+    y: 20.5,
+    z: tiles[20][19].z + 1.6,
+    color: { r: 255, g: 186, b: 78 },
+    intensity: 1.3,
+    radius: 6.2,
+    flickerSpeed: 2.5,
+    enabled: true
+  });
   props.push({
     id: 'cabin_forester_lodge',
     name: 'Zrębowa Chata Gajowego (2×1)',
@@ -589,11 +601,60 @@ export function createForestClearingMap(): IsometricWorldMap {
     z: tiles[20][19].z,
     sizeX: 2,
     sizeY: 1,
-    heightZ: 2.8,
+    heightZ: 4.8,
     blocksMovement: true,
     blocksSight: true,
     interactive: true,
-    isOpen: true
+    isOpen: true,
+    linkedLightId: foresterLightId
+  });
+
+  const hunterLightId = 'light_cabin_hunter';
+  lights.push({
+    id: hunterLightId,
+    x: 9.5,
+    y: 13.5,
+    z: tiles[13][9].z + 1.6,
+    color: { r: 255, g: 186, b: 78 },
+    intensity: 1.3,
+    radius: 6.2,
+    flickerSpeed: 2.4,
+    enabled: true
+  });
+  props.push({
+    id: 'cabin_hunter_clearing',
+    name: 'Chata Myśliwska w Zagajniku (2×1)',
+    kind: 'slavic_cottage',
+    variant: 0,
+    x: 9,
+    y: 13,
+    z: tiles[13][9].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 4.8,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: true,
+    linkedLightId: hunterLightId
+  });
+
+  props.push({
+    id: 'stall_forest_merchant',
+    name: 'Kram Wędrownego Kupca (Zioła i Prowiant)',
+    kind: 'market_stall',
+    variant: 0,
+    x: 17,
+    y: 18,
+    z: tiles[18][17].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['item_raw_sausage', 'item_moon_herbs']
   });
 
   const clearingRockCliffs = [
@@ -1172,7 +1233,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
       z: cz,
       sizeX: c.sizeX,
       sizeY: c.sizeY,
-      heightZ: 2.8,
+      heightZ: 4.8,
       blocksMovement: true,
       blocksSight: true,
       interactive: true,
@@ -1478,7 +1539,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
       z: tiles[wdt.y][wdt.x].z,
       sizeX: 1,
       sizeY: 1,
-      heightZ: 2.8,
+      heightZ: 4.8,
       blocksMovement: true,
       blocksSight: false,
       interactive: false

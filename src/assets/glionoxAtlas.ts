@@ -384,10 +384,10 @@ export function getOgaCabinPbr(
     row * 256,
     256,
     256,
-    0.88,
-    188 / 256,
+    1.76, // Doubled from 0.88 to 1.76 (powiększone ×2 zgodnie z prośbą)
+    190 / 256,
+    112,
     56,
-    28,
     0.72,
     0.08
   );
