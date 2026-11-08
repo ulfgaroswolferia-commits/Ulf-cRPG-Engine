@@ -9,6 +9,16 @@ import { EquipSlot, ItemInstance } from './inventorySystem';
 export const STORAGE_KEY_AUTOSAVE = 'ulf_crpg_save_autosave';
 export const STORAGE_KEY_MANUAL = 'ulf_crpg_save_manual';
 
+let autosaveDisabled = false;
+
+export function isAutosaveDisabled(): boolean {
+  return autosaveDisabled;
+}
+
+export function setAutosaveDisabled(disabled: boolean): void {
+  autosaveDisabled = disabled;
+}
+
 export interface SimpleStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -365,6 +375,9 @@ export function saveGame(
   scene?: IsoSceneView,
   slot: 'autosave' | 'manual' = 'autosave'
 ): boolean {
+  if (slot === 'autosave' && autosaveDisabled) {
+    return false;
+  }
   try {
     const storage = getStorage();
     const key = slot === 'manual' ? STORAGE_KEY_MANUAL : STORAGE_KEY_AUTOSAVE;

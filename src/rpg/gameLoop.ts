@@ -231,6 +231,71 @@ export class CrpgGameState {
       syncPlayerCombatMax();
     });
 
+    this.resetToNewGame(initialMapId);
+  }
+
+  /**
+   * Resets the entire game state back to a brand-new pristine game.
+   * Completely restores starter equipment, clears backpack, resets siekańce,
+   * base attributes, combat state, chronicle logs, and reloads the starting map.
+   */
+  public resetToNewGame(initialMapId: MapId = 'forest_clearing'): void {
+    const baseAttrs = {
+      might: 15,
+      finesse: 13,
+      resolve: 14,
+      lore: 14,
+      perception: 15
+    };
+
+    this.statSheet.setBaseAttributes(baseAttrs);
+
+    this.player.recipe = {
+      id: 'player_hero',
+      name: 'Kaelen Vane',
+      title: 'Wędrowiec z Wilczego Szlaku',
+      seed: 1001,
+      skinTone: { r: 232, g: 194, b: 164 },
+      hairColor: { r: 36, g: 28, b: 24 },
+      hairStyle: 'noble_crest',
+      equipment: {
+        head: null,
+        torso: 'torso_warden_brigandine',
+        cloak: null,
+        legs: 'legs_leather_boots',
+        mainHand: 'weapon_sunblade_longsword',
+        offHand: 'offhand_torch'
+      },
+      attributes: { ...baseAttrs }
+    };
+
+    this.player.direction = 0;
+    this.player.isMoving = false;
+    this.player.animFrame = 0;
+    this.player.animTimer = 0;
+    this.player.path = [];
+    this.player.speechBubbleText = null;
+    this.player.speechBubbleTimer = 0;
+
+    if (this.player.combat) {
+      this.player.combat.isHostile = false;
+      this.player.combat.aggroRadius = 0;
+      this.player.combat.hp = 215;
+      this.player.combat.maxHp = 215;
+      this.player.combat.ap = 11;
+      this.player.combat.maxAp = 11;
+      this.player.combat.proficiencies = createDefaultProficiencies();
+      this.player.combat.defending = false;
+      this.player.combat.dazedHeadTurns = 0;
+      this.player.combat.crippledLegsTurns = 0;
+      this.player.combat.xpReward = 0;
+      this.player.combat.lootTable = [];
+      this.player.combat.isAlive = true;
+    }
+
+    this.equipmentManager.clearAllEquipped();
+    this.backpack.clearAllSlots();
+
     // Equip starter gear
     this.equipmentManager.equipDirectInstance(createItemInstance('torso_warden_brigandine', 1), 'torso');
     this.equipmentManager.equipDirectInstance(createItemInstance('legs_leather_boots', 1), 'legs');
@@ -247,6 +312,18 @@ export class CrpgGameState {
     this.backpack.tryAddItem(createItemInstance('cloak_ranger_quiver', 1), true);
     this.backpack.tryAddItem(createItemInstance('weapon_hunting_bow', 1), true);
     this.backpack.tryAddItem(createItemInstance('offhand_slavic_shield', 1), true);
+
+    this.siekance = 45;
+    this.lastDuplicateSaleResult = null;
+    this.activeDialogue = null;
+    this.logs.length = 0;
+
+    this.combatState.active = false;
+    this.combatState.round = 1;
+    this.combatState.participantIds = [];
+    this.combatState.activeTurnActorId = null;
+    this.combatState.selectedTargetId = null;
+    this.combatState.floatingTexts = [];
 
     this.loadMap(initialMapId);
   }

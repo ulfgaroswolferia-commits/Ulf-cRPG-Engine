@@ -17,7 +17,8 @@ import {
   clearSave,
   hasSavedGame,
   loadGame,
-  saveGame
+  saveGame,
+  setAutosaveDisabled
 } from '../rpg/saveSystem';
 import {
   EQUIP_SLOT_LABELS,
@@ -203,11 +204,22 @@ export class HudOverlay {
   }
 
   public resetSaveAndRestart(): void {
+    setAutosaveDisabled(true);
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.setItem('ulf_skip_restore', '1');
+      }
+    } catch {}
     clearSave('all');
-    if (typeof window !== 'undefined') {
+    this.game.resetToNewGame('forest_clearing');
+    if (this.scene) {
+      this.scene.setRotation(0);
+      this.scene.zoom = 1.0;
+      this.scene.centerCameraOnPlayer();
+    }
+    if (typeof window !== 'undefined' && window.location) {
       window.location.reload();
     } else {
-      this.game.loadMap('forest_clearing');
       this.render();
     }
   }

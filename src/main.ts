@@ -2,7 +2,7 @@ import './styles/main.css';
 import { IsoSceneView } from './renderer/isoSceneView';
 import { preloadPrzasneDialoguesAsset } from './rpg/dialogueSystem';
 import { CrpgGameState } from './rpg/gameLoop';
-import { hasSavedGame, loadGame, saveGame } from './rpg/saveSystem';
+import { clearSave, hasSavedGame, isAutosaveDisabled, loadGame, saveGame } from './rpg/saveSystem';
 import { HudOverlay } from './ui/hudOverlay';
 import { InspectorPanel } from './ui/inspectorPanel';
 
@@ -43,8 +43,21 @@ async function bootstrapEngine(): Promise<void> {
   }
   await scene.mount(viewportContainer);
 
+  const skipRestore =
+    typeof window !== 'undefined' &&
+    window.sessionStorage &&
+    window.sessionStorage.getItem('ulf_skip_restore') === '1';
+
+  if (skipRestore) {
+    try {
+      window.sessionStorage.removeItem('ulf_skip_restore');
+    } catch {}
+    clearSave('all');
+  }
+
   const shouldRestoreSave =
-    !isDevMode || new URLSearchParams(window.location.search).get('restore') === '1';
+    !skipRestore &&
+    (!isDevMode || new URLSearchParams(window.location.search).get('restore') === '1');
 
   // Restore game state from autosave if present (prevents reset on F5 / browser reload)
   if (shouldRestoreSave && hasSavedGame('autosave')) {
@@ -62,19 +75,23 @@ async function bootstrapEngine(): Promise<void> {
 
   // 1. Immediately persist on beforeunload (when pressing F5, closing tab, or navigating)
   window.addEventListener('beforeunload', () => {
-    saveGame(game, scene, 'autosave');
+    if (!isAutosaveDisabled()) {
+      saveGame(game, scene, 'autosave');
+    }
   });
 
   // 2. Immediate persist on F5 keypress before browser triggers page unload
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'F5') {
+    if (e.key === 'F5' && !isAutosaveDisabled()) {
       saveGame(game, scene, 'autosave');
     }
   });
 
   // 3. Periodic discreet background autosave every 3.5 seconds
   window.setInterval(() => {
-    saveGame(game, scene, 'autosave');
+    if (!isAutosaveDisabled()) {
+      saveGame(game, scene, 'autosave');
+    }
   }, 3500);
 
   if (isDevMode) {
