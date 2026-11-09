@@ -65,6 +65,7 @@ export interface SerializedNpcState {
   x: number;
   y: number;
   direction: number;
+  isLooted?: boolean;
   combat?: {
     hp: number;
     maxHp: number;
@@ -74,6 +75,7 @@ export interface SerializedNpcState {
     defending: boolean;
     dazedHeadTurns: number;
     crippledLegsTurns: number;
+    lootTable?: string[];
   };
 }
 
@@ -157,6 +159,7 @@ export function serializeGameState(
     x: n.x,
     y: n.y,
     direction: n.direction,
+    isLooted: Boolean(n.isLooted),
     combat: n.combat
       ? {
           hp: n.combat.hp,
@@ -166,7 +169,8 @@ export function serializeGameState(
           isAlive: n.combat.isAlive,
           defending: n.combat.defending,
           dazedHeadTurns: n.combat.dazedHeadTurns,
-          crippledLegsTurns: n.combat.crippledLegsTurns
+          crippledLegsTurns: n.combat.crippledLegsTurns,
+          lootTable: n.combat.lootTable ? [...n.combat.lootTable] : undefined
         }
       : undefined
   }));
@@ -256,6 +260,9 @@ export function deserializeGameState(
           npc.x = sn.x;
           npc.y = sn.y;
           npc.direction = sn.direction as any;
+          if (typeof sn.isLooted === 'boolean') {
+            npc.isLooted = sn.isLooted;
+          }
           if (npc.combat && sn.combat) {
             npc.combat.hp = sn.combat.hp;
             npc.combat.maxHp = sn.combat.maxHp;
@@ -265,6 +272,9 @@ export function deserializeGameState(
             npc.combat.defending = sn.combat.defending;
             npc.combat.dazedHeadTurns = sn.combat.dazedHeadTurns;
             npc.combat.crippledLegsTurns = sn.combat.crippledLegsTurns;
+            if (Array.isArray(sn.combat.lootTable)) {
+              npc.combat.lootTable = [...sn.combat.lootTable];
+            }
           }
         }
       }

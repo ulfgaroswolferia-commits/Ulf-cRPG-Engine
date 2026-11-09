@@ -212,12 +212,83 @@ describe('Turn-Based Combat System (SPECIAL AP, DT/DR, Weapon Proficiencies, Aim
 
     // Verify corpse can be looted
     expect(easy.isLooted).toBeFalsy();
+    const prevCoins = game.siekance;
     const looted = game.commandLootCorpse(easy.id);
     expect(looted).toBe(true);
     expect(easy.isLooted).toBe(true);
+    expect(game.siekance).toBeGreaterThan(prevCoins);
 
     // Second loot attempt fails
     const secondLoot = game.commandLootCorpse(easy.id);
     expect(secondLoot).toBe(false);
+  });
+
+  it('supports multi-subscriber addCombatAttackListener and unsubscribing cleanly', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const easy = game.npcs.find((n) => n.id === 'enemy_bandit_easy')!;
+    game.player.tileX = easy.tileX - 1;
+    game.player.tileY = easy.tileY;
+    game.player.x = game.player.tileX + 0.5;
+    game.player.y = game.player.tileY + 0.5;
+
+    game.startCombatWithEnemy('enemy_bandit_easy');
+
+    let listener1Calls = 0;
+    let listener2Calls = 0;
+
+    const unsub1 = game.addCombatAttackListener((evt) => {
+      listener1Calls++;
+      expect(evt.attacker.id).toBe(game.player.id);
+    });
+
+    const unsub2 = game.addCombatAttackListener((evt) => {
+      listener2Calls++;
+      expect(evt.attacker.id).toBe(game.player.id);
+    });
+
+    game.performPlayerCombatAttack('enemy_bandit_easy', 'quick', () => 0.01);
+    expect(listener1Calls).toBe(1);
+    expect(listener2Calls).toBe(1);
+
+    // Unsubscribe listener 1
+    unsub1();
+    game.performPlayerCombatAttack('enemy_bandit_easy', 'quick', () => 0.01);
+    expect(listener1Calls).toBe(1);
+    expect(listener2Calls).toBe(2);
+
+    unsub2();
+  });
+
+  it('executes sequential animated enemy turns when asyncSequence: true and updates via game.update(dt)', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const enemy = game.npcs.find((n) => n.id === 'enemy_bandit_easy')!;
+    expect(enemy).toBeDefined();
+
+    game.player.tileX = enemy.tileX - 1;
+    game.player.tileY = enemy.tileY;
+    game.player.x = game.player.tileX + 0.5;
+    game.player.y = game.player.tileY + 0.5;
+
+    game.startCombatWithEnemy('enemy_bandit_easy');
+
+    const initialRound = game.combatState.round;
+    game.endPlayerCombatTurn(true);
+
+    expect(game.isSequentialEnemyTurnActive).toBe(true);
+
+    // Step through the game loop ticker
+    let totalTime = 0;
+    const maxSteps = 100;
+    for (let step = 0; step < maxSteps; step++) {
+      if (!game.isSequentialEnemyTurnActive) break;
+      game.update(0.1);
+      totalTime += 0.1;
+    }
+
+    // Sequence must finish within a few seconds and advance to next round
+    expect(game.isSequentialEnemyTurnActive).toBe(false);
+    expect(game.combatState.round).toBe(initialRound + 1);
+    expect(game.combatState.activeTurnActorId).toBe(game.player.id);
+    expect(game.player.combat!.ap).toBe(game.player.combat!.maxAp);
   });
 });

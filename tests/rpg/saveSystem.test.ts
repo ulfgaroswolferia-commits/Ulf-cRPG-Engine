@@ -92,6 +92,7 @@ describe('cRPG Save & Auto-Persist System (F5 / Refresh Protection & Discreet Sa
     // Defeat enemy
     easyEnemy!.combat!.hp = 0;
     easyEnemy!.combat!.isAlive = false;
+    easyEnemy!.isLooted = true;
 
     saveGame(game, undefined, 'autosave');
 
@@ -103,6 +104,7 @@ describe('cRPG Save & Auto-Persist System (F5 / Refresh Protection & Discreet Sa
     expect(restoredEnemy).toBeDefined();
     expect(restoredEnemy!.combat!.isAlive).toBe(false);
     expect(restoredEnemy!.combat!.hp).toBe(0);
+    expect(restoredEnemy!.isLooted).toBe(true);
   });
 
   it('saves to localStorage (manual & autosave) and checks save presence', () => {

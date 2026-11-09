@@ -85,16 +85,42 @@ export interface ActorEntity {
   isLooted?: boolean;
 }
 
+export interface CombatAttackEvent {
+  attacker: ActorEntity;
+  target: ActorEntity;
+  outcome: CombatAttackOutcome;
+}
+
 export class CrpgGameState {
   public map!: IsometricWorldMap;
   public fov!: FovGridState;
   public player!: ActorEntity;
   public readonly npcs: ActorEntity[] = [];
-  public onCombatAttackResolved?: (event: {
-    attacker: ActorEntity;
-    target: ActorEntity;
-    outcome: CombatAttackOutcome;
-  }) => void;
+  public onCombatAttackResolved?: (event: CombatAttackEvent) => void;
+  private readonly combatAttackListeners = new Set<(event: CombatAttackEvent) => void>();
+
+  public isSequentialEnemyTurnActive = false;
+  private pendingEnemyCombatTurnIds: string[] = [];
+  private currentEnemyTurnPhase: 'move' | 'pause_before_attack' | 'attack' | 'pause_after_attack' = 'move';
+  private enemyTurnPhaseTimer = 0;
+
+  public addCombatAttackListener(listener: (event: CombatAttackEvent) => void): () => void {
+    this.combatAttackListeners.add(listener);
+    return () => {
+      this.combatAttackListeners.delete(listener);
+    };
+  }
+
+  public triggerCombatAttackResolved(event: CombatAttackEvent): void {
+    for (const listener of this.combatAttackListeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        console.error('Error in combat attack listener:', err);
+      }
+    }
+    this.onCombatAttackResolved?.(event);
+  }
   public readonly statSheet: CharacterStatSheet;
   public readonly backpack: InventoryContainer;
   public readonly equipmentManager: EquipmentManager;
@@ -336,6 +362,8 @@ export class CrpgGameState {
     this.logs.length = 0;
 
     this.combatState.active = false;
+    this.isSequentialEnemyTurnActive = false;
+    this.pendingEnemyCombatTurnIds = [];
     this.combatState.round = 1;
     this.combatState.participantIds = [];
     this.combatState.activeTurnActorId = null;
@@ -356,6 +384,8 @@ export class CrpgGameState {
     this.npcs.length = 0;
     this.activeDialogue = null;
     this.combatState.active = false;
+    this.isSequentialEnemyTurnActive = false;
+    this.pendingEnemyCombatTurnIds = [];
     this.combatState.round = 1;
     this.combatState.participantIds = [];
     this.combatState.activeTurnActorId = null;
@@ -1490,8 +1520,10 @@ export class CrpgGameState {
     } else {
       if (outcome.critical) {
         audio.playSound('critical_boom');
-      } else if (outcome.mitigatedByArmor > 0 && Math.random() < 0.65) {
+      } else if (outcome.mitigatedByArmor > 0 && rng() < 0.65) {
         audio.playSound('armor_clang');
+      } else if (playerSnap.derived.weaponProfile.category === 'blades') {
+        audio.playSound('slash_blade');
       } else if (playerSnap.derived.weaponProfile.category === 'axes_blunt') {
         audio.playSound('blunt_hit');
       } else {
@@ -1502,7 +1534,7 @@ export class CrpgGameState {
       }
     }
 
-    this.onCombatAttackResolved?.({
+    this.triggerCombatAttackResolved({
       attacker: this.player,
       target: enemy,
       outcome
@@ -1531,11 +1563,6 @@ export class CrpgGameState {
     this.player.combat!.proficiencies[usedWeaponCategory] = nextProf;
 
     const profLabel = PROFICIENCY_META[usedWeaponCategory].label;
-    const droppedNames: string[] = [];
-    for (const itemId of c.lootTable) {
-      this.backpack.tryAddItem(createItemInstance(itemId, 1), true);
-      droppedNames.push(EQUIPMENT_CATALOG[itemId]?.name ?? itemId);
-    }
 
     this.pushFloatingCombatText(
       enemy.x,
@@ -1546,7 +1573,7 @@ export class CrpgGameState {
     );
 
     this.addLog(
-      `🏆 Pokonano przeciwnika: ${enemy.recipe.name}! Biegłość „${profLabel}” wzrosła o +${gain}% (do ${nextProf}%).${droppedNames.length > 0 ? ` Zdobyty łup: ${droppedNames.join(', ')}.` : ''}`
+      `🏆 Pokonano przeciwnika: ${enemy.recipe.name}! Biegłość „${profLabel}” wzrosła o +${gain}% (do ${nextProf}%). Ciało wroga upadło na ziemię — podejdź i przeszukaj zwłoki.`
     );
 
     // Check if any hostile participants remain alive
@@ -1554,7 +1581,9 @@ export class CrpgGameState {
       .map((id) => this.npcs.find((n) => n.id === id))
       .filter((n): n is ActorEntity => Boolean(n && n.combat?.isHostile && n.combat.isAlive));
 
+    this.pendingEnemyCombatTurnIds = this.pendingEnemyCombatTurnIds.filter((id) => id !== enemy.id);
     if (remainingEnemies.length === 0) {
+      this.isSequentialEnemyTurnActive = false;
       this.combatState.active = false;
       this.combatState.activeTurnActorId = null;
       this.combatState.selectedTargetId = null;
@@ -1580,6 +1609,7 @@ export class CrpgGameState {
     }
     c.ap -= 2;
     c.defending = true;
+    CombatAudioEngine.getInstance().playSound('shield_block', 1.0);
     this.pushFloatingCombatText(
       this.player.x,
       this.player.y,
@@ -1593,7 +1623,7 @@ export class CrpgGameState {
     return true;
   }
 
-  public endPlayerCombatTurn(): void {
+  public endPlayerCombatTurn(asyncSequence = false): void {
     if (!this.combatState.active) return;
 
     // Tick down player's temporary status effects from previous round
@@ -1607,11 +1637,28 @@ export class CrpgGameState {
       .map((id) => this.npcs.find((n) => n.id === id))
       .filter((n): n is ActorEntity => Boolean(n && n.combat?.isHostile && n.combat.isAlive));
 
-    for (const enemy of livingEnemies) {
-      if (!this.combatState.active) break;
-      this.executeEnemyCombatTurn(enemy);
+    if (!asyncSequence) {
+      this.isSequentialEnemyTurnActive = false;
+      this.pendingEnemyCombatTurnIds = [];
+      for (const enemy of livingEnemies) {
+        if (!this.combatState.active) break;
+        this.executeEnemyCombatTurn(enemy);
+      }
+      if (this.combatState.active) {
+        this.finishRoundAndStartPlayerTurn();
+      }
+      return;
     }
 
+    // Async animated sequential enemy turns
+    this.isSequentialEnemyTurnActive = true;
+    this.pendingEnemyCombatTurnIds = livingEnemies.map((e) => e.id);
+    this.startNextQueuedEnemyTurn();
+  }
+
+  public finishRoundAndStartPlayerTurn(): void {
+    this.isSequentialEnemyTurnActive = false;
+    this.pendingEnemyCombatTurnIds = [];
     if (!this.combatState.active) return;
 
     // Start next round & restore player's AP
@@ -1625,6 +1672,242 @@ export class CrpgGameState {
     this.addLog(
       `🔔 Runda ${this.combatState.round} — Twoja tura! Odnowiono ${this.player.combat!.ap}/${this.player.combat!.maxAp} AP.`
     );
+  }
+
+  private startNextQueuedEnemyTurn(): void {
+    if (!this.combatState.active) {
+      this.isSequentialEnemyTurnActive = false;
+      return;
+    }
+
+    while (this.pendingEnemyCombatTurnIds.length > 0) {
+      const nextId = this.pendingEnemyCombatTurnIds.shift()!;
+      const enemy = this.npcs.find((n) => n.id === nextId);
+      if (!enemy || !enemy.combat || !enemy.combat.isAlive || !enemy.combat.isHostile) {
+        continue;
+      }
+
+      this.combatState.activeTurnActorId = enemy.id;
+      const ec = enemy.combat;
+      ec.defending = false;
+      const eSnap = this.getActorCombatant(enemy);
+      ec.maxAp = eSnap.derived.maxAp;
+      ec.ap = eSnap.derived.maxAp;
+
+      const moveApCost = ec.crippledLegsTurns > 0 ? 2 : 1;
+      const maxRange = eSnap.derived.weaponProfile.maxRange;
+      const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
+
+      // Check if enemy needs to move closer to player
+      if (dist > maxRange + 0.45 && ec.ap >= moveApCost) {
+        const adj = this.findBestAdjacentWalkableTile(this.player.tileX, this.player.tileY, 1, 1);
+        if (adj) {
+          const path = findPathAStar3D(
+            {
+              width: this.map.width,
+              height: this.map.height,
+              isWalkable: (x, y) => this.isTileWalkable(x, y, enemy.id),
+              getElevation: (x, y) => this.map.tiles[y][x].z
+            },
+            { x: enemy.tileX, y: enemy.tileY },
+            adj
+          );
+          if (path.length > 1) {
+            const maxSteps = Math.floor(ec.ap / moveApCost);
+            const stepsToTake = Math.min(path.length - 1, maxSteps);
+            if (stepsToTake > 0) {
+              ec.ap -= stepsToTake * moveApCost;
+              enemy.path = path.slice(1, stepsToTake + 1);
+              enemy.isMoving = true;
+              this.currentEnemyTurnPhase = 'move';
+              this.enemyTurnPhaseTimer = 0;
+              this.addLog(
+                `👣 ${enemy.recipe.name} przemieszcza się o ${stepsToTake} kafli (-${stepsToTake * moveApCost} AP).`
+              );
+              return;
+            }
+          }
+        }
+      }
+
+      // If no move was needed or possible, pause slightly before attacking
+      this.currentEnemyTurnPhase = 'pause_before_attack';
+      this.enemyTurnPhaseTimer = 0.35;
+      return;
+    }
+
+    // No more enemies left in queue for this round
+    this.finishRoundAndStartPlayerTurn();
+  }
+
+  public updateSequentialEnemyTurn(dtSeconds: number): void {
+    if (!this.combatState.active) {
+      this.isSequentialEnemyTurnActive = false;
+      return;
+    }
+
+    const currentEnemyId = this.combatState.activeTurnActorId;
+    const enemy = this.npcs.find((n) => n.id === currentEnemyId);
+    if (!enemy || !enemy.combat || !enemy.combat.isAlive) {
+      this.startNextQueuedEnemyTurn();
+      return;
+    }
+
+    const ec = enemy.combat;
+    const eSnap = this.getActorCombatant(enemy);
+    const maxRange = eSnap.derived.weaponProfile.maxRange;
+    const baseAttackAp = eSnap.derived.weaponProfile.baseApCost;
+
+    if (this.currentEnemyTurnPhase === 'move') {
+      this.updateActorMovement(enemy, dtSeconds, 3.2, false);
+      if (!enemy.isMoving) {
+        this.currentEnemyTurnPhase = 'pause_before_attack';
+        this.enemyTurnPhaseTimer = 0.35;
+      }
+      return;
+    }
+
+    if (this.currentEnemyTurnPhase === 'pause_before_attack') {
+      this.enemyTurnPhaseTimer -= dtSeconds;
+      if (this.enemyTurnPhaseTimer <= 0) {
+        const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
+        if (dist <= maxRange + 0.45 && ec.ap >= baseAttackAp) {
+          this.executeSingleEnemyAttack(enemy);
+          if (!this.combatState.active) {
+            this.isSequentialEnemyTurnActive = false;
+            return;
+          }
+          this.currentEnemyTurnPhase = 'pause_after_attack';
+          this.enemyTurnPhaseTimer = 0.4;
+        } else {
+          this.finalizeEnemyCombatTurn(enemy);
+          this.startNextQueuedEnemyTurn();
+        }
+      }
+      return;
+    }
+
+    if (this.currentEnemyTurnPhase === 'pause_after_attack') {
+      this.enemyTurnPhaseTimer -= dtSeconds;
+      if (this.enemyTurnPhaseTimer <= 0) {
+        const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
+        if (dist <= maxRange + 0.45 && ec.ap >= baseAttackAp) {
+          this.executeSingleEnemyAttack(enemy);
+          if (!this.combatState.active) {
+            this.isSequentialEnemyTurnActive = false;
+            return;
+          }
+          this.currentEnemyTurnPhase = 'pause_after_attack';
+          this.enemyTurnPhaseTimer = 0.4;
+        } else {
+          this.finalizeEnemyCombatTurn(enemy);
+          this.startNextQueuedEnemyTurn();
+        }
+      }
+      return;
+    }
+  }
+
+  private finalizeEnemyCombatTurn(enemy: ActorEntity): void {
+    const ec = enemy.combat;
+    if (!ec) return;
+    if (ec.ap >= 2) {
+      ec.ap -= 2;
+      ec.defending = true;
+    }
+    if (ec.dazedHeadTurns > 0) ec.dazedHeadTurns--;
+    if (ec.crippledLegsTurns > 0) ec.crippledLegsTurns--;
+  }
+
+  private executeSingleEnemyAttack(enemy: ActorEntity, rng: () => number = Math.random): void {
+    const ec = enemy.combat!;
+    const freshEnemySnap = this.getActorCombatant(enemy);
+    const freshPlayerSnap = this.getActorCombatant(this.player);
+    const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
+    const baseAttackAp = freshEnemySnap.derived.weaponProfile.baseApCost;
+
+    const chosenMode: CombatAttackMode =
+      ec.difficulty === 'very_hard' && ec.ap >= baseAttackAp + 1
+        ? 'power'
+        : 'quick';
+
+    enemy.direction = deltaToDirection8(
+      this.player.tileX - enemy.tileX,
+      this.player.tileY - enemy.tileY
+    );
+
+    const out = resolveCombatAttack(freshEnemySnap, freshPlayerSnap, dist, chosenMode, rng);
+    if (!out.hit) {
+      this.pushFloatingCombatText(
+        this.player.x,
+        this.player.y,
+        this.player.z + 1.8,
+        `UNIK! (${enemy.recipe.name})`,
+        0x69f0ae
+      );
+      this.addLog(
+        `🛡️ Uniknąłeś ataku ${enemy.recipe.name}! (Szansa wroga: ${out.hitChancePct}%, rzut: ${out.rollPct}%).`
+      );
+    } else {
+      this.pushFloatingCombatText(
+        this.player.x,
+        this.player.y,
+        this.player.z + 1.85,
+        `-${out.damageDealt} HP`,
+        0xff453a
+      );
+      this.addLog(
+        `🩸 ${enemy.recipe.name} trafia Cię (${ATTACK_MODE_META[chosenMode].label}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
+      );
+    }
+
+    // Visual combat feedback on enemy attack
+    enemy.attackAnimTimer = 0.22;
+    enemy.attackAnimMaxTimer = 0.22;
+    enemy.attackTargetX = this.player.x;
+    enemy.attackTargetY = this.player.y;
+
+    this.player.hitRecoilTimer = 0.18;
+    this.player.hitRecoilMaxTimer = 0.18;
+    this.player.hitFromX = enemy.x;
+    this.player.hitFromY = enemy.y;
+    if (out.hit) {
+      this.player.damageFlashTimer = 0.2;
+    }
+
+    const audio = CombatAudioEngine.getInstance();
+    if (!out.hit) {
+      audio.playSound('miss_whoosh');
+    } else {
+      const weaponDef = freshEnemySnap.derived.weaponProfile;
+      const isBlade =
+        weaponDef.category === 'blades' ||
+        weaponDef.label.toLowerCase().includes('miecz') ||
+        weaponDef.label.toLowerCase().includes('topór') ||
+        weaponDef.label.toLowerCase().includes('sztylet');
+
+      if (isBlade) {
+        audio.playSound('slash_blade');
+      }
+      if (out.critical) {
+        audio.playSound('critical_boom');
+      } else if (out.mitigatedByArmor > 0 && rng() < 0.65) {
+        audio.playSound('armor_clang');
+      } else if (!isBlade) {
+        audio.playSound('flesh_impact');
+      }
+    }
+
+    this.triggerCombatAttackResolved({
+      attacker: enemy,
+      target: this.player,
+      outcome: out
+    });
+
+    if (this.player.combat!.hp <= 0) {
+      this.handlePlayerDefeated();
+      return;
+    }
   }
 
   private executeEnemyCombatTurn(enemy: ActorEntity): void {
@@ -1680,94 +1963,19 @@ export class CrpgGameState {
     let attacksMade = 0;
     while (dist <= maxRange + 0.45 && ec.ap >= baseAttackAp && attacksMade < 2) {
       attacksMade++;
-      const freshEnemySnap = this.getActorCombatant(enemy);
-      const freshPlayerSnap = this.getActorCombatant(this.player);
-
-      const chosenMode: CombatAttackMode =
-        ec.difficulty === 'very_hard' && ec.ap >= baseAttackAp + 1 && attacksMade === 1
-          ? 'power'
-          : 'quick';
-
-      enemy.direction = deltaToDirection8(
-        this.player.tileX - enemy.tileX,
-        this.player.tileY - enemy.tileY
-      );
-
-      const out = resolveCombatAttack(freshEnemySnap, freshPlayerSnap, dist, chosenMode);
-      if (!out.hit) {
-        this.pushFloatingCombatText(
-          this.player.x,
-          this.player.y,
-          this.player.z + 1.8,
-          `UNIK! (${enemy.recipe.name})`,
-          0x69f0ae
-        );
-        this.addLog(
-          `🛡️ Uniknąłeś ataku ${enemy.recipe.name}! (Szansa wroga: ${out.hitChancePct}%, rzut: ${out.rollPct}%).`
-        );
-      } else {
-        this.pushFloatingCombatText(
-          this.player.x,
-          this.player.y,
-          this.player.z + 1.85,
-          `-${out.damageDealt} HP`,
-          0xff453a
-        );
-        this.addLog(
-          `🩸 ${enemy.recipe.name} trafia Cię (${ATTACK_MODE_META[chosenMode].label}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
-        );
-      }
-
-      // Visual combat feedback on enemy attack
-      enemy.attackAnimTimer = 0.22;
-      enemy.attackAnimMaxTimer = 0.22;
-      enemy.attackTargetX = this.player.x;
-      enemy.attackTargetY = this.player.y;
-
-      this.player.hitRecoilTimer = 0.18;
-      this.player.hitRecoilMaxTimer = 0.18;
-      this.player.hitFromX = enemy.x;
-      this.player.hitFromY = enemy.y;
-      if (out.hit) {
-        this.player.damageFlashTimer = 0.20;
-      }
-
-      const audio = CombatAudioEngine.getInstance();
-      if (!out.hit) {
-        audio.playSound('miss_whoosh');
-      } else {
-        if (out.critical) {
-          audio.playSound('critical_boom');
-        } else if (out.mitigatedByArmor > 0 && Math.random() < 0.65) {
-          audio.playSound('armor_clang');
-        } else {
-          audio.playSound('flesh_impact');
-        }
-      }
-
-      this.onCombatAttackResolved?.({
-        attacker: enemy,
-        target: this.player,
-        outcome: out
-      });
-
-      if (this.player.combat!.hp <= 0) {
-        this.handlePlayerDefeated();
+      this.executeSingleEnemyAttack(enemy);
+      if (!this.combatState.active || this.player.combat!.hp <= 0) {
         return;
       }
     }
 
-    // 3. If enemy still has >= 2 AP left, enter Defensive Stance
-    if (ec.ap >= 2) {
-      ec.ap -= 2;
-      ec.defending = true;
-    }
-
-    if (ec.dazedHeadTurns > 0) ec.dazedHeadTurns--;
-    if (ec.crippledLegsTurns > 0) ec.crippledLegsTurns--;
+    // 3. Finalize turn
+    this.finalizeEnemyCombatTurn(enemy);
   }
 
   private handlePlayerDefeated(): void {
+    this.isSequentialEnemyTurnActive = false;
+    this.pendingEnemyCombatTurnIds = [];
     this.combatState.active = false;
     this.combatState.activeTurnActorId = null;
     this.combatState.selectedTargetId = null;
@@ -1942,7 +2150,7 @@ export class CrpgGameState {
     const enemy = this.npcs.find((n) => n.id === enemyId);
     if (!enemy || !enemy.combat || enemy.combat.isAlive) return false;
     if (enemy.isLooted) {
-      this.addLog(`💀 Ciało „${enemy.recipe.name}” zostało już przeszukane.`);
+      this.addLog(`💀 Ciało „${enemy.recipe.name}” zostało już przeszukane (brak dodatkowego łupu).`);
       return false;
     }
     const dist = Math.hypot(enemy.tileX - this.player.tileX, enemy.tileY - this.player.tileY);
@@ -1954,8 +2162,29 @@ export class CrpgGameState {
       }
       return false;
     }
+
+    const c = enemy.combat;
+    const lootNames: string[] = [];
+    const itemsToAdd = [...(c.lootTable ?? [])];
+    for (const itemId of itemsToAdd) {
+      const added = this.backpack.tryAddItem(createItemInstance(itemId, 1), true);
+      if (added) {
+        lootNames.push(EQUIPMENT_CATALOG[itemId]?.name ?? itemId);
+      }
+    }
+    const coinReward =
+      c.difficulty === 'very_hard' ? 24 : c.difficulty === 'normal' ? 12 : 6;
+    this.siekance += coinReward;
+
     enemy.isLooted = true;
-    this.addLog(`💰 Przeszukano ciało: ${enemy.recipe.name}. Znaleziono dodatkowe zapasy.`);
+    c.lootTable = [];
+
+    const lootSummary =
+      lootNames.length > 0
+        ? ` Przedmioty: ${lootNames.join(', ')} oraz +${coinReward} siekańców.`
+        : ` Znaleziono +${coinReward} siekańców.`;
+    this.addLog(`💰 Przeszukano ciało: ${enemy.recipe.name}.${lootSummary}`);
+    this.pushFloatingCombatText(enemy.x, enemy.y, enemy.z + 1.8, `+${coinReward} 🪙`, 0xf5c451);
     CombatAudioEngine.getInstance().playSound('armor_clang', 0.85);
     return true;
   }
@@ -2579,6 +2808,9 @@ export class CrpgGameState {
     this.updateActorMovement(this.player, dtSeconds, 4.2, true);
 
     if (this.combatState.active) {
+      if (this.isSequentialEnemyTurnActive) {
+        this.updateSequentialEnemyTurn(dtSeconds);
+      }
       return;
     }
 

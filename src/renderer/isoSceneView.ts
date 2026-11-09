@@ -293,7 +293,7 @@ export class IsoSceneView {
     this.game = game;
     this.onUiStateChange = onUiStateChange;
 
-    this.game.onCombatAttackResolved = (evt) => {
+    this.game.addCombatAttackListener((evt) => {
       this.triggerScreenShake(evt.outcome.critical ? 260 : 130, evt.outcome.critical ? 5.5 : 3.0);
       this.spawnCombatHitVfx(
         evt.target.x,
@@ -309,7 +309,7 @@ export class IsoSceneView {
         evt.target.y,
         evt.outcome.critical ? 0xffca28 : 0xedf2f7
       );
-    };
+    });
   }
 
   public async mount(containerEl: HTMLElement): Promise<void> {
@@ -1052,9 +1052,9 @@ export class IsoSceneView {
               ? '1x2'
               : '1x1';
         this.onUiStateChange?.();
-      } else if (k === ' ' && this.game.combatState.active) {
+      } else if (k === ' ' && this.game.combatState.active && this.game.combatState.activeTurnActorId === this.game.player.id && !this.game.isSequentialEnemyTurnActive) {
         e.preventDefault();
-        this.game.endPlayerCombatTurn();
+        this.game.endPlayerCombatTurn(true);
         this.onUiStateChange?.();
       }
     });

@@ -83,6 +83,15 @@ const SHEET_DISPLAY_STATS: ReadonlyArray<StatType> = [
   StatType.Perception
 ];
 
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function formatStatVal(stat: StatType, val: number): string {
   const isPct = STAT_META[stat].isPercent;
   const rounded = Math.round(val * 10) / 10;
@@ -151,15 +160,35 @@ export class HudOverlay {
         } else if (e.key === 'F5') {
           // Immediately persist state before browser executes refresh
           saveGame(inst.game, inst.scene, 'autosave');
-        } else if (inst.game.combatState.active && e.code === 'Space') {
+        } else if (
+          inst.game.combatState.active &&
+          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
+          !inst.game.isSequentialEnemyTurnActive &&
+          e.code === 'Space'
+        ) {
           e.preventDefault();
-          inst.game.endPlayerCombatTurn();
+          inst.game.endPlayerCombatTurn(true);
           inst.render();
-        } else if (inst.game.combatState.active && e.key === '1') {
+        } else if (
+          inst.game.combatState.active &&
+          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
+          !inst.game.isSequentialEnemyTurnActive &&
+          e.key === '1'
+        ) {
           inst.executeQuickStrike('quick');
-        } else if (inst.game.combatState.active && e.key === '2') {
+        } else if (
+          inst.game.combatState.active &&
+          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
+          !inst.game.isSequentialEnemyTurnActive &&
+          e.key === '2'
+        ) {
           inst.executeQuickStrike('power');
-        } else if (inst.game.combatState.active && e.key === '3') {
+        } else if (
+          inst.game.combatState.active &&
+          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
+          !inst.game.isSequentialEnemyTurnActive &&
+          e.key === '3'
+        ) {
           inst.game.activatePlayerDefendStance();
           inst.render();
         } else if (inst.game.combatState.active && e.key.toLowerCase() === 'v') {
@@ -244,6 +273,12 @@ export class HudOverlay {
   }
 
   public executeQuickStrike(mode: CombatAttackMode): void {
+    if (
+      this.game.isSequentialEnemyTurnActive ||
+      this.game.combatState.activeTurnActorId !== this.game.player.id
+    ) {
+      return;
+    }
     this.game.combatState.selectedAttackMode = mode;
     const livingEnemies = this.game.npcs.filter(
       (n) => n.combat?.isHostile && n.combat.isAlive
@@ -412,13 +447,20 @@ export class HudOverlay {
       : `<span class="combat-range-pill out-of-range" title="Dystans: ${dist.toFixed(1)} kafli (zasięg broni: ${activePreview.maxRange}). Kliknij dowolny atak, a bohater sam podejdzie!">👣 Za daleko (${dist.toFixed(1)} kafli) — kliknij atak, aby podejść</span>`;
 
     const armorPenPct = Math.round(playerSnap.derived.weaponProfile.armorPenetrationRatio * 100);
+    const isPlayerTurn =
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive;
 
     return `
       <div class="combat-tactical-bar ${this.isCombatAdvancedOpen ? 'veteran-open' : ''}">
         <div class="combat-bar-top">
           <div class="combat-turn-banner">
             <span class="combat-round-pill">⚔️ RUNDA ${this.game.combatState.round}</span>
-            <span class="combat-turn-owner">TWOJA KOLEJ • ${playerSnap.derived.weaponProfile.icon} ${playerSnap.derived.weaponProfile.label}</span>
+            <span class="combat-turn-owner">${
+              isPlayerTurn
+                ? `TWOJA KOLEJ • ${playerSnap.derived.weaponProfile.icon} ${playerSnap.derived.weaponProfile.label}`
+                : `⏳ TURA PRZECIWNIKA...`
+            }</span>
             ${rangeBadgeHtml}
           </div>
 
@@ -464,7 +506,7 @@ export class HudOverlay {
           <div class="combat-quick-strikes">
             <button
               type="button"
-              class="quick-strike-card strike-quick ${activeMode === 'quick' ? 'selected' : ''} ${!quickPreview.hasEnoughAp ? 'disabled' : ''}"
+              class="quick-strike-card strike-quick ${activeMode === 'quick' ? 'selected' : ''} ${!isPlayerTurn || !quickPreview.hasEnoughAp ? 'disabled' : ''}"
               data-quick-strike="quick"
               title="Kliknij (lub wciśnij [1]), aby od razu wykonać Szybki Cios (albo podejść do wroga)"
             >
@@ -481,7 +523,7 @@ export class HudOverlay {
 
             <button
               type="button"
-              class="quick-strike-card strike-power ${activeMode === 'power' ? 'selected' : ''} ${!powerPreview.hasEnoughAp ? 'disabled' : ''}"
+              class="quick-strike-card strike-power ${activeMode === 'power' ? 'selected' : ''} ${!isPlayerTurn || !powerPreview.hasEnoughAp ? 'disabled' : ''}"
               data-quick-strike="power"
               title="Kliknij (lub wciśnij [2]), aby od razu wykonać Silny Cios (+38% obrażeń, łatwiej przebija pancerz)"
             >
@@ -498,7 +540,7 @@ export class HudOverlay {
 
             <button
               type="button"
-              class="quick-strike-card strike-defend ${pCombat.ap < 2 || pCombat.defending ? 'disabled' : ''} ${pCombat.defending ? 'active-stance' : ''}"
+              class="quick-strike-card strike-defend ${!isPlayerTurn || pCombat.ap < 2 || pCombat.defending ? 'disabled' : ''} ${pCombat.defending ? 'active-stance' : ''}"
               data-combat-action="defend"
               title="Przyjmij postawę obronną [Klawisz 3]: +20% Uniku i ochrona przed ciosami do następnej tury"
             >
@@ -527,7 +569,7 @@ export class HudOverlay {
             <div class="combat-turn-btns">
               <button
                 type="button"
-                class="combat-exec-btn end-turn"
+                class="combat-exec-btn end-turn ${!isPlayerTurn ? 'disabled' : ''}"
                 data-combat-action="end-turn"
                 title="Zakończ swoją turę i odnów punkty AP w kolejnej rundzie (Klawisz Spacja)"
               >
@@ -536,7 +578,7 @@ export class HudOverlay {
 
               <button
                 type="button"
-                class="combat-exec-btn flee"
+                class="combat-exec-btn flee ${!isPlayerTurn ? 'disabled' : ''}"
                 data-combat-action="flee"
                 title="Wycofaj się taktycznie z walki"
               >
@@ -569,7 +611,7 @@ export class HudOverlay {
                   return `
                     <button
                       type="button"
-                      class="combat-mode-btn veteran-aim-card ${isSelected ? 'active' : ''} ${!prev.hasEnoughAp ? 'no-ap' : ''}"
+                      class="combat-mode-btn veteran-aim-card ${isSelected ? 'active' : ''} ${!isPlayerTurn || !prev.hasEnoughAp ? 'no-ap' : ''}"
                       data-attack-mode="${mode}"
                       data-quick-strike="${mode}"
                       title="${meta.description} (Kliknij, aby zaatakować)"
@@ -596,7 +638,7 @@ export class HudOverlay {
               </span>
               <button
                 type="button"
-                class="combat-exec-btn primary ${!activePreview.hasEnoughAp ? 'disabled' : ''}"
+                class="combat-exec-btn primary ${!isPlayerTurn || !activePreview.hasEnoughAp ? 'disabled' : ''}"
                 data-combat-action="attack"
                 title="Wykonaj aktualnie zaznaczony tryb ataku (${ATTACK_MODE_META[activeMode].label})"
               >
@@ -877,17 +919,17 @@ export class HudOverlay {
           <div class="dialogue-inner">
             <div class="dialogue-portrait-col">
               <div class="dialogue-portrait-box">
-                <img src="${activeSpeakerPortrait}" alt="${this.game.activeDialogue.node.speakerName}" class="dialogue-portrait-img" />
-                <div class="portrait-name-ribbon">${this.game.activeDialogue.node.speakerName.split(' ')[0]}</div>
+                <img src="${activeSpeakerPortrait}" alt="${escapeHtml(this.game.activeDialogue.node.speakerName)}" class="dialogue-portrait-img" />
+                <div class="portrait-name-ribbon">${escapeHtml(this.game.activeDialogue.node.speakerName.split(' ')[0])}</div>
               </div>
             </div>
             <div class="dialogue-content-col">
               <div class="dialogue-header">
-                <span class="dialogue-speaker">${this.game.activeDialogue.node.speakerName}</span>
-                <span class="dialogue-title">${this.game.activeDialogue.node.speakerTitle}</span>
+                <span class="dialogue-speaker">${escapeHtml(this.game.activeDialogue.node.speakerName)}</span>
+                <span class="dialogue-title">${escapeHtml(this.game.activeDialogue.node.speakerTitle)}</span>
               </div>
               <div class="dialogue-body-wrap">
-                <p class="dialogue-body">„${this.game.activeDialogue.node.text}”</p>
+                <p class="dialogue-body">„${escapeHtml(this.game.activeDialogue.node.text)}”</p>
                 ${kolapsyAccordionHtml}
                 ${merchantShopHtml}
               </div>
@@ -900,7 +942,7 @@ export class HudOverlay {
                     return `
                       <button class="dialogue-choice-btn ${canPick ? '' : 'disabled'}" data-choice-idx="${idx}" ${canPick ? '' : 'disabled'}>
                         <span class="choice-index">${idx + 1}.</span>
-                        <span class="choice-text">${c.text}</span>
+                        <span class="choice-text">${escapeHtml(c.text)}</span>
                       </button>
                     `;
                   })
@@ -1217,7 +1259,7 @@ export class HudOverlay {
           <span class="editor-tool-pill">🛠️ Aktywne narzędzie: <strong>${this.scene.activeTool}</strong> (Pędzel ${this.scene.editorBrushSize}×${this.scene.editorBrushSize})</span>
           <span class="editor-shortcuts-pill">LPM / Przeciągnij = Maluj/Stawiaj • PPM = Przesuń kamerę • Rolka = Zoom • [R] = Obróć obiekt • [Q/E] = Obrót 90°</span>
         </div>
-        <div class="editor-last-log">📝 ${this.game.logs[0] ?? 'Gotowy do edycji poziomu.'}</div>
+        <div class="editor-last-log">📝 ${escapeHtml(this.game.logs[0] ?? 'Gotowy do edycji poziomu.')}</div>
       </div>
     `
         : `
@@ -1232,8 +1274,8 @@ export class HudOverlay {
             <span class="armor-badge" title="Całkowity Pancerz / Obrażenia">🛡️ ${totalArmor} | ⚔️ ${totalAttack}</span>
           </div>
           <div class="hero-details">
-            <div class="hero-name">${player.recipe.name} <span class="hero-hp-ap-pill">❤️ ${player.combat?.hp ?? 215}/${player.combat?.maxHp ?? 215} • ⚡ ${player.combat?.ap ?? 11}/${player.combat?.maxAp ?? 11} AP</span></div>
-            <div class="hero-title">${player.recipe.title}</div>
+            <div class="hero-name">${escapeHtml(player.recipe.name)} <span class="hero-hp-ap-pill">❤️ ${player.combat?.hp ?? 215}/${player.combat?.maxHp ?? 215} • ⚡ ${player.combat?.ap ?? 11}/${player.combat?.maxAp ?? 11} AP</span></div>
+            <div class="hero-title">${escapeHtml(player.recipe.title)}</div>
             <div class="attr-row">
               <span title="Siła">SIŁ <strong>${attrs.might}</strong></span>
               <span title="Finezja">FIN <strong>${attrs.finesse}</strong></span>
@@ -1275,7 +1317,7 @@ export class HudOverlay {
           </div>
           <div class="log-entries">
             ${visibleLogs
-              .map((entry) => `<div class="log-line">• ${entry}</div>`)
+              .map((entry) => `<div class="log-line">• ${escapeHtml(entry)}</div>`)
               .join('')}
           </div>
         </div>
@@ -1475,6 +1517,12 @@ export class HudOverlay {
 
     this.root.querySelectorAll<HTMLElement>('[data-combat-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (
+          this.game.isSequentialEnemyTurnActive ||
+          this.game.combatState.activeTurnActorId !== this.game.player.id
+        ) {
+          return;
+        }
         const act = btn.dataset.combatAction;
         if (act === 'attack') {
           const targetId = this.game.combatState.selectedTargetId;
@@ -1484,12 +1532,16 @@ export class HudOverlay {
         } else if (act === 'defend') {
           this.game.activatePlayerDefendStance();
         } else if (act === 'end-turn') {
-          this.game.endPlayerCombatTurn();
+          this.game.endPlayerCombatTurn(true);
         } else if (act === 'flee') {
           this.game.fleeCombat();
         }
         this.render();
       });
+    });
+
+    this.root.querySelector('.credits-modal-window')?.addEventListener('click', (e) => {
+      e.stopPropagation();
     });
 
     this.root.querySelectorAll<HTMLElement>('[data-rot]').forEach((btn) => {
@@ -1684,7 +1736,7 @@ export class HudOverlay {
 
     return `
       <div class="credits-modal-backdrop" data-action="close-credits">
-        <div class="credits-modal-window" onclick="event.stopPropagation()">
+        <div class="credits-modal-window">
           <div class="credits-modal-header">
             <div class="credits-modal-title">
               <span class="credits-crest">❖</span>
