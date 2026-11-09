@@ -104,6 +104,16 @@ interface FloatingParticle {
   size: number;
 }
 
+interface SlashArcVfx {
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+  life: number;
+  maxLife: number;
+  color: number;
+}
+
 function rgbaBufferToTexture(
   rgba: Uint8ClampedArray,
   width: number,
@@ -260,6 +270,9 @@ export class IsoSceneView {
   private cachedHoverPathKey = '';
   private cachedHoverPath: PathStepNode[] = [];
   private readonly particles: FloatingParticle[] = [];
+  private readonly slashArcs: SlashArcVfx[] = [];
+  private screenShakeTimer = 0;
+  private screenShakeIntensity = 0;
   private postFilter: Filter | null = null;
 
   private elapsedSeconds = 0;
@@ -279,6 +292,24 @@ export class IsoSceneView {
     this.app = new Application();
     this.game = game;
     this.onUiStateChange = onUiStateChange;
+
+    this.game.onCombatAttackResolved = (evt) => {
+      this.triggerScreenShake(evt.outcome.critical ? 260 : 130, evt.outcome.critical ? 5.5 : 3.0);
+      this.spawnCombatHitVfx(
+        evt.target.x,
+        evt.target.y,
+        evt.target.z + 0.8,
+        evt.outcome.critical,
+        evt.outcome.mitigatedByArmor > 0
+      );
+      this.spawnSlashArc(
+        evt.attacker.x,
+        evt.attacker.y,
+        evt.target.x,
+        evt.target.y,
+        evt.outcome.critical ? 0xffca28 : 0xedf2f7
+      );
+    };
   }
 
   public async mount(containerEl: HTMLElement): Promise<void> {
@@ -331,6 +362,9 @@ export class IsoSceneView {
         const dt = Math.min(0.1, ticker.deltaMS / 1000);
         this.fps = Math.round(ticker.FPS);
         this.elapsedSeconds += dt;
+        if (this.screenShakeTimer > 0) {
+          this.screenShakeTimer = Math.max(0, this.screenShakeTimer - dt);
+        }
         const viewportW = this.app.screen?.width || window.innerWidth || 1280;
         const viewportH = this.app.screen?.height || window.innerHeight || 720;
         this.handleKeyboardCameraPan(dt);
@@ -1081,6 +1115,15 @@ export class IsoSceneView {
           return;
         }
 
+        const deadNpcAtTile = this.game.npcs.find(
+          (n) => n.tileX === x && n.tileY === y && n.combat && !n.combat.isAlive
+        );
+        if (deadNpcAtTile) {
+          this.game.commandLootCorpse(deadNpcAtTile.id);
+          this.onUiStateChange?.();
+          return;
+        }
+
         const propAtTile = this.game.getPropAtTile(x, y);
         if (propAtTile && propAtTile.interactive) {
           const prevMapId = this.game.map.id;
@@ -1379,6 +1422,69 @@ export class IsoSceneView {
       p.y += p.vy * dt;
       p.z += p.vz * dt;
     }
+
+    for (let i = this.slashArcs.length - 1; i >= 0; i--) {
+      const arc = this.slashArcs[i];
+      arc.life += dt;
+      if (arc.life >= arc.maxLife) {
+        this.slashArcs.splice(i, 1);
+      }
+    }
+  }
+
+  public triggerScreenShake(durationMs = 150, intensityPx = 3.2): void {
+    this.screenShakeTimer = durationMs / 1000;
+    this.screenShakeIntensity = intensityPx;
+  }
+
+  public spawnCombatHitVfx(
+    worldX: number,
+    worldY: number,
+    worldZ: number,
+    isCritical: boolean,
+    isArmored: boolean
+  ): void {
+    const bloodColors = [0xb71c1c, 0xc62828, 0xd32f2f, 0x8e0000];
+    const sparkColors = [0xffea00, 0xffd600, 0xff9100, 0xffffff];
+
+    const count = isCritical ? 18 : 10;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.8 + Math.random() * 1.8;
+      const isSpark = isArmored && Math.random() < 0.65;
+      this.particles.push({
+        x: worldX + (Math.random() - 0.5) * 0.25,
+        y: worldY + (Math.random() - 0.5) * 0.25,
+        z: worldZ + (Math.random() - 0.5) * 0.3,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        vz: (isSpark ? 1.2 : 0.4) + Math.random() * 0.8,
+        life: 0,
+        maxLife: isSpark ? 0.35 + Math.random() * 0.3 : 0.65 + Math.random() * 0.5,
+        color: isSpark
+          ? sparkColors[Math.floor(Math.random() * sparkColors.length)]
+          : bloodColors[Math.floor(Math.random() * bloodColors.length)],
+        size: isSpark ? 1.8 + Math.random() * 1.2 : 2.5 + Math.random() * 2.0
+      });
+    }
+  }
+
+  public spawnSlashArc(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    color = 0xedf2f7
+  ): void {
+    this.slashArcs.push({
+      startX: fromX,
+      startY: fromY,
+      targetX: toX,
+      targetY: toY,
+      life: 0,
+      maxLife: 0.18,
+      color
+    });
   }
 
   private buildScreenSpaceLights(): ScreenSpacePointLight[] {
@@ -1486,7 +1592,13 @@ export class IsoSceneView {
   private renderFrame(): void {
     this.displayPool.beginFrame();
 
-    this.worldContainer.position.set(this.cameraOffsetX, this.cameraOffsetY);
+    let shakeX = 0;
+    let shakeY = 0;
+    if (this.screenShakeTimer > 0) {
+      shakeX = (Math.random() - 0.5) * 2 * this.screenShakeIntensity;
+      shakeY = (Math.random() - 0.5) * 2 * this.screenShakeIntensity;
+    }
+    this.worldContainer.position.set(this.cameraOffsetX + shakeX, this.cameraOffsetY + shakeY);
     this.worldContainer.scale.set(this.zoom);
 
     this.floorLayer.removeChildren();
@@ -1968,9 +2080,7 @@ export class IsoSceneView {
 
     const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
     for (const actor of allActors) {
-      if (actor.combat && !actor.combat.isAlive) {
-        continue;
-      }
+      const isDead = Boolean(actor.combat && !actor.combat.isAlive);
       const isPlayer = actor.id === this.game.player.id;
       const vis = this.game.fov.getVisibility(actor.tileX, actor.tileY);
       if (
@@ -2004,58 +2114,122 @@ export class IsoSceneView {
         zMin: actor.z,
         zMax: actor.z + 1.9,
         render: (orderIndex, totalCount) => {
+          let actorScrX = scr.x;
+          let actorScrY = scr.y;
+          let actorRotation = 0;
+          let actorScaleY = 1.0;
 
-          // Render Dual-Layer Cast Shadow (Inner Contact Core + Directional Penumbra)
-          if (this.bufferMode === 'final_pbr') {
-            let shadowOffsetX = -8;
-            let shadowOffsetY = 4;
-            if (screenLights.length > 0) {
-              let nearest = screenLights[0];
-              let bestD = Infinity;
-              for (const l of screenLights) {
-                const d = Math.hypot(scr.x - l.screenX, scr.y - l.screenY);
-                if (d < bestD) {
-                  bestD = d;
-                  nearest = l;
-                }
-              }
-              const dx = scr.x - nearest.screenX;
-              const dy = scr.y - nearest.screenY;
-              const len = Math.max(1, Math.hypot(dx, dy));
-              shadowOffsetX = (dx / len) * 14;
-              shadowOffsetY = (dy / len) * 7;
+          if (isDead) {
+            actorScrY += 4;
+            actorScaleY = 0.38;
+            actorRotation = 0.42;
+          } else {
+            // Combat stance ready bob & breathing
+            if (this.game.combatState.active) {
+              const stanceBob = Math.sin(this.elapsedSeconds * 6 + (actor.id.charCodeAt(0) || 0)) * 1.5;
+              actorScrY += stanceBob;
             }
 
-            const shadowGfx = this.displayPool.graphics();
-            // Layer 1: Dense tight contact shadow directly beneath feet (anchors actor to ground)
-            shadowGfx
-              .ellipse(scr.x, scr.y + 1, 13, 6.5)
-              .fill({ color: 0x010204, alpha: 0.68 });
-            // Layer 2: Directional penumbra cast shadow away from light
-            shadowGfx
-              .ellipse(scr.x + shadowOffsetX * 0.55, scr.y + shadowOffsetY * 0.55, 20, 10)
-              .fill({ color: 0x030509, alpha: 0.42 });
+            // Attack Lunge animation
+            if (actor.attackAnimTimer && actor.attackAnimTimer > 0) {
+              const maxT = actor.attackAnimMaxTimer || 0.22;
+              const progress = 1 - Math.max(0, actor.attackAnimTimer) / maxT;
+              const lungeDist = Math.sin(progress * Math.PI) * 16;
+              const targetWorldX = actor.attackTargetX ?? actor.x;
+              const targetWorldY = actor.attackTargetY ?? actor.y;
+              const rotTarget = toRotatedContinuous(targetWorldX, targetWorldY, mapW, mapH, this.rotation);
+              const scrTarget = gridToScreen(rotTarget.rx, rotTarget.ry, actor.z);
+              const dx = scrTarget.x - scr.x;
+              const dy = scrTarget.y - scr.y;
+              const len = Math.hypot(dx, dy) || 1;
+              actorScrX += (dx / len) * lungeDist;
+              actorScrY += (dy / len) * lungeDist;
+              actorRotation = (dx >= 0 ? 0.16 : -0.16) * Math.sin(progress * Math.PI);
+            }
 
-            if (actor.id === this.game.player.id) {
-              // Subtle selection ring under active player hero
+            // Hit Recoil animation
+            if (actor.hitRecoilTimer && actor.hitRecoilTimer > 0) {
+              const maxT = actor.hitRecoilMaxTimer || 0.18;
+              const progress = 1 - Math.max(0, actor.hitRecoilTimer) / maxT;
+              const recoilDist = Math.sin(progress * Math.PI) * 12;
+              const fromWorldX = actor.hitFromX ?? actor.x;
+              const fromWorldY = actor.hitFromY ?? actor.y;
+              const rotFrom = toRotatedContinuous(fromWorldX, fromWorldY, mapW, mapH, this.rotation);
+              const scrFrom = gridToScreen(rotFrom.rx, rotFrom.ry, actor.z);
+              const rx = scr.x - scrFrom.x;
+              const ry = scr.y - scrFrom.y;
+              const rlen = Math.hypot(rx, ry) || 1;
+              actorScrX += (rx / rlen) * recoilDist;
+              actorScrY += (ry / rlen) * recoilDist;
+              actorRotation = (rx >= 0 ? 0.22 : -0.22) * Math.sin(progress * Math.PI);
+            }
+          }
+
+          // Render Dual-Layer Cast Shadow / Blood Pool / Combat Circle
+          if (this.bufferMode === 'final_pbr') {
+            const shadowGfx = this.displayPool.graphics();
+            if (isDead) {
+              // Deep blood pool beneath fallen corpse
               shadowGfx
-                .ellipse(scr.x, scr.y, 22, 11)
-                .stroke({ color: 0x38ef7d, width: 2, alpha: 0.78 });
-            } else if (actor.combat?.isHostile) {
-              const isSelectedTarget = this.game.combatState.selectedTargetId === actor.id;
-              const ringColor =
-                actor.combat.difficulty === 'easy'
-                  ? 0x4cd964
-                  : actor.combat.difficulty === 'normal'
-                    ? 0xf5c451
-                    : 0xff453a;
+                .ellipse(actorScrX, actorScrY + 1, 22, 11)
+                .fill({ color: 0x3d0808, alpha: 0.85 });
               shadowGfx
-                .ellipse(scr.x, scr.y, isSelectedTarget ? 25 : 22, isSelectedTarget ? 12.5 : 11)
-                .stroke({
-                  color: ringColor,
-                  width: isSelectedTarget ? 2.8 : 1.9,
-                  alpha: isSelectedTarget ? 0.96 : 0.78
-                });
+                .ellipse(actorScrX + 2, actorScrY + 2, 12, 6)
+                .fill({ color: 0x1a0303, alpha: 0.95 });
+            } else {
+              let shadowOffsetX = -8;
+              let shadowOffsetY = 4;
+              if (screenLights.length > 0) {
+                let nearest = screenLights[0];
+                let bestD = Infinity;
+                for (const l of screenLights) {
+                  const d = Math.hypot(actorScrX - l.screenX, actorScrY - l.screenY);
+                  if (d < bestD) {
+                    bestD = d;
+                    nearest = l;
+                  }
+                }
+                const dx = actorScrX - nearest.screenX;
+                const dy = actorScrY - nearest.screenY;
+                const len = Math.max(1, Math.hypot(dx, dy));
+                shadowOffsetX = (dx / len) * 14;
+                shadowOffsetY = (dy / len) * 7;
+              }
+
+              // Layer 1: Dense tight contact shadow directly beneath feet
+              shadowGfx
+                .ellipse(actorScrX, actorScrY + 1, 13, 6.5)
+                .fill({ color: 0x010204, alpha: 0.68 });
+              // Layer 2: Directional penumbra cast shadow away from light
+              shadowGfx
+                .ellipse(actorScrX + shadowOffsetX * 0.55, actorScrY + shadowOffsetY * 0.55, 20, 10)
+                .fill({ color: 0x030509, alpha: 0.42 });
+
+              // Tactical Combat Stance indicator ring
+              if (this.game.combatState.active) {
+                const isActiveTurn = this.game.combatState.activeTurnActorId === actor.id;
+                const ringRadius = isActiveTurn ? 24 + Math.sin(this.elapsedSeconds * 8) * 2.2 : 21;
+                const ringColor = isPlayer
+                  ? 0xf5c451
+                  : actor.combat?.isHostile
+                    ? (actor.combat.difficulty === 'very_hard' ? 0xff453a : 0xf5c451)
+                    : 0x69f0ae;
+                shadowGfx
+                  .ellipse(actorScrX, actorScrY, ringRadius, ringRadius * 0.5)
+                  .stroke({
+                    color: ringColor,
+                    width: isActiveTurn ? 2.6 : 1.4,
+                    alpha: isActiveTurn ? 0.96 : 0.65
+                  });
+              } else if (actor.id === this.game.player.id) {
+                shadowGfx
+                  .ellipse(actorScrX, actorScrY, 22, 11)
+                  .stroke({ color: 0x38ef7d, width: 2, alpha: 0.78 });
+              } else if (actor.combat?.isHostile) {
+                shadowGfx
+                  .ellipse(actorScrX, actorScrY, 22, 11)
+                  .stroke({ color: 0xff453a, width: 1.8, alpha: 0.75 });
+              }
             }
             this.sortedObjectLayer.addChild(shadowGfx);
           }
@@ -2068,16 +2242,22 @@ export class IsoSceneView {
             : charTex.albedoFrames[rotDir][frameIdx];
 
           const sp = this.displayPool.sprite(tex);
-          sp.anchor.set(0.5, 82 / 96);
-          sp.position.set(scr.x, scr.y);
+          sp.anchor.set(0.5, isDead ? 0.65 : 82 / 96);
+          sp.position.set(actorScrX, actorScrY);
+          sp.scale.y = actorScaleY;
+          sp.rotation = actorRotation;
 
           if (this.bufferMode === 'depth_dag') {
             const t = orderIndex / Math.max(1, totalCount - 1);
             sp.tint = ((Math.round(55 + t * 200) << 16) | (220 << 8) | 120);
+          } else if (isDead) {
+            sp.tint = 0x6e7683;
+          } else if (actor.damageFlashTimer && actor.damageFlashTimer > 0) {
+            sp.tint = 0xff2b2b;
           } else {
             sp.tint = this.computeRgbTintForScreenPoint(
-              scr.x,
-              scr.y - 32,
+              actorScrX,
+              actorScrY - 32,
               0,
               -0.2,
               0.32,
@@ -2091,6 +2271,7 @@ export class IsoSceneView {
 
           // Render HP Bar & Status Badges above Hostile Enemies & Player in Combat
           const showHpBar =
+            !isDead &&
             actor.combat &&
             (actor.combat.isHostile ||
               this.game.combatState.active ||
@@ -2099,8 +2280,8 @@ export class IsoSceneView {
           if (showHpBar && actor.combat && this.bufferMode !== 'depth_dag') {
             const barW = 46;
             const barH = 5;
-            const barX = scr.x - barW * 0.5;
-            const barY = scr.y - 72;
+            const barX = actorScrX - barW * 0.5;
+            const barY = actorScrY - 72;
             const hpRatio = Math.max(0, Math.min(1, actor.combat.hp / Math.max(1, actor.combat.maxHp)));
             const barFillCol =
               actor.id === this.game.player.id
@@ -2120,10 +2301,30 @@ export class IsoSceneView {
             this.debugOverlayContainer.addChild(hpGfx);
           }
 
-          // Floating nameplate for story NPCs, Hostile Enemies, and Player
+          // Floating nameplate for story NPCs, Hostile Enemies, Dead Corpses, and Player
           const isHovered =
             this.hoveredWorldTile?.x === actor.tileX && this.hoveredWorldTile?.y === actor.tileY;
-          if (
+
+          if (isDead) {
+            if (isHovered && this.bufferMode !== 'depth_dag') {
+              const corpseTag = this.displayPool.text(
+                actor.isLooted
+                  ? `💀 ${actor.recipe.name} (Przeszukano)`
+                  : `💰 ${actor.recipe.name} (Kliknij, aby przeszukać)`,
+                `corpse_${actor.id}_${actor.isLooted ? 'looted' : 'loot'}`,
+                () => ({
+                  fontFamily: 'Cinzel, serif',
+                  fontSize: 11,
+                  fontWeight: '700',
+                  fill: actor.isLooted ? 0x94a3b8 : 0xf6df92,
+                  stroke: { color: 0x05070b, width: 3.5 }
+                })
+              );
+              corpseTag.anchor.set(0.5, 1);
+              corpseTag.position.set(actorScrX, actorScrY - 24);
+              this.debugOverlayContainer.addChild(corpseTag);
+            }
+          } else if (
             isHovered ||
             actor.dialogueId ||
             actor.combat?.isHostile ||
@@ -2285,6 +2486,31 @@ export class IsoSceneView {
           .circle(scrP.x, scrP.y, p.size)
           .fill({ color: p.color, alpha: alpha * 0.65 });
       }
+    }
+
+    // 5. Render Slash Arc Trails (Dynamic weapon blade trails)
+    for (const arc of this.slashArcs) {
+      const rotStart = toRotatedContinuous(arc.startX, arc.startY, mapW, mapH, this.rotation);
+      const rotEnd = toRotatedContinuous(arc.targetX, arc.targetY, mapW, mapH, this.rotation);
+      const scrStart = gridToScreen(rotStart.rx, rotStart.ry, 0);
+      const scrEnd = gridToScreen(rotEnd.rx, rotEnd.ry, 0);
+      const progress = Math.max(0, Math.min(1, arc.life / arc.maxLife));
+      const alpha = Math.sin(progress * Math.PI) * 0.95;
+      const midX = (scrStart.x + scrEnd.x) * 0.5;
+      const midY = (scrStart.y + scrEnd.y) * 0.5 - 24;
+
+      const slashGfx = this.displayPool.graphics();
+      // Outer colored swing blade
+      slashGfx
+        .moveTo(scrStart.x, scrStart.y - 18)
+        .quadraticCurveTo(midX, midY - 12, scrEnd.x, scrEnd.y - 18)
+        .stroke({ color: arc.color, width: 4.8 * (1 - progress * 0.4), alpha });
+      // Inner glowing white core
+      slashGfx
+        .moveTo(scrStart.x, scrStart.y - 18)
+        .quadraticCurveTo(midX, midY - 12, scrEnd.x, scrEnd.y - 18)
+        .stroke({ color: 0xffffff, width: 2.2 * (1 - progress * 0.4), alpha: alpha * 0.95 });
+      this.sortedObjectLayer.addChild(slashGfx);
     }
 
     this.displayPool.endFrame();

@@ -169,4 +169,55 @@ describe('Turn-Based Combat System (SPECIAL AP, DT/DR, Weapon Proficiencies, Aim
     expect(game.combatState.selectedAttackMode).toBe('power');
     expect(game.player.combat!.ap).toBeLessThan(apBeforeStrike);
   });
+
+  it('triggers attack animation, recoil, damage flash, and allows corpse looting when an enemy is defeated', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const easy = game.npcs.find((n) => n.id === 'enemy_bandit_easy');
+    expect(easy).toBeDefined();
+    if (!easy) return;
+
+    game.player.tileX = easy.tileX - 1;
+    game.player.tileY = easy.tileY;
+    game.player.x = game.player.tileX + 0.5;
+    game.player.y = game.player.tileY + 0.5;
+
+    let combatEventFired = false;
+    game.onCombatAttackResolved = (evt) => {
+      combatEventFired = true;
+      expect(evt.attacker.id).toBe(game.player.id);
+      expect(evt.target.id).toBe(easy.id);
+    };
+
+    // Attack easy enemy
+    const res = game.performPlayerCombatAttack(easy.id, 'quick', () => 0.01);
+    expect(res).not.toBeNull();
+    expect(combatEventFired).toBe(true);
+
+    // Verify visual animation timers were set
+    expect(game.player.attackAnimTimer).toBeGreaterThan(0);
+    expect(easy.hitRecoilTimer).toBeGreaterThan(0);
+    expect(easy.damageFlashTimer).toBeGreaterThan(0);
+
+    // Update game loop by dt -> timers count down
+    game.update(0.1);
+    expect(game.player.attackAnimTimer).toBeLessThan(0.22);
+    expect(easy.hitRecoilTimer).toBeLessThan(0.18);
+    expect(easy.damageFlashTimer).toBeLessThan(0.20);
+
+    // Simulate killing the enemy
+    easy.combat!.hp = 1;
+    const killRes = game.performPlayerCombatAttack(easy.id, 'power', () => 0.01);
+    expect(killRes?.targetDefeated).toBe(true);
+    expect(easy.combat!.isAlive).toBe(false);
+
+    // Verify corpse can be looted
+    expect(easy.isLooted).toBeFalsy();
+    const looted = game.commandLootCorpse(easy.id);
+    expect(looted).toBe(true);
+    expect(easy.isLooted).toBe(true);
+
+    // Second loot attempt fails
+    const secondLoot = game.commandLootCorpse(easy.id);
+    expect(secondLoot).toBe(false);
+  });
 });

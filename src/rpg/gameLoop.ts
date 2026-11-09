@@ -1,4 +1,5 @@
 import { generateRandomCharacterRecipe } from '../assets/characterBakery';
+import { CombatAudioEngine } from '../audio/combatAudio';
 import { computeFieldOfView, FovGridState } from '../core/fov';
 import { Direction8, WorldGridPoint } from '../core/mapRotation';
 import { deltaToDirection8, findPathAStar3D, PathStepNode } from '../core/pathfinding';
@@ -71,6 +72,17 @@ export interface ActorEntity {
   pendingDialogueActorId?: string | null;
   pendingAttackTargetId?: string | null;
   combat?: ActorCombatComponent;
+  attackAnimTimer?: number;
+  attackAnimMaxTimer?: number;
+  attackTargetX?: number;
+  attackTargetY?: number;
+  hitRecoilTimer?: number;
+  hitRecoilMaxTimer?: number;
+  hitFromX?: number;
+  hitFromY?: number;
+  damageFlashTimer?: number;
+  deathAnimTimer?: number;
+  isLooted?: boolean;
 }
 
 export class CrpgGameState {
@@ -78,6 +90,11 @@ export class CrpgGameState {
   public fov!: FovGridState;
   public player!: ActorEntity;
   public readonly npcs: ActorEntity[] = [];
+  public onCombatAttackResolved?: (event: {
+    attacker: ActorEntity;
+    target: ActorEntity;
+    outcome: CombatAttackOutcome;
+  }) => void;
   public readonly statSheet: CharacterStatSheet;
   public readonly backpack: InventoryContainer;
   public readonly equipmentManager: EquipmentManager;
@@ -1449,6 +1466,48 @@ export class CrpgGameState {
       );
     }
 
+    // Trigger visual animation timers
+    this.player.attackAnimTimer = 0.22;
+    this.player.attackAnimMaxTimer = 0.22;
+    this.player.attackTargetX = enemy.x;
+    this.player.attackTargetY = enemy.y;
+
+    enemy.hitRecoilTimer = 0.18;
+    enemy.hitRecoilMaxTimer = 0.18;
+    enemy.hitFromX = this.player.x;
+    enemy.hitFromY = this.player.y;
+    if (outcome.hit) {
+      enemy.damageFlashTimer = 0.20;
+    }
+    if (outcome.targetDefeated) {
+      enemy.deathAnimTimer = 0.45;
+    }
+
+    // Procedural Web Audio playback
+    const audio = CombatAudioEngine.getInstance();
+    if (!outcome.hit) {
+      audio.playSound('miss_whoosh');
+    } else {
+      if (outcome.critical) {
+        audio.playSound('critical_boom');
+      } else if (outcome.mitigatedByArmor > 0 && Math.random() < 0.65) {
+        audio.playSound('armor_clang');
+      } else if (playerSnap.derived.weaponProfile.category === 'axes_blunt') {
+        audio.playSound('blunt_hit');
+      } else {
+        audio.playSound('flesh_impact');
+      }
+      if (outcome.targetDefeated) {
+        audio.playSound('death_gasp');
+      }
+    }
+
+    this.onCombatAttackResolved?.({
+      attacker: this.player,
+      target: enemy,
+      outcome
+    });
+
     if (outcome.targetDefeated) {
       this.handleEnemyDefeated(enemy, playerSnap.derived.weaponProfile.category);
     }
@@ -1659,6 +1718,39 @@ export class CrpgGameState {
         );
       }
 
+      // Visual combat feedback on enemy attack
+      enemy.attackAnimTimer = 0.22;
+      enemy.attackAnimMaxTimer = 0.22;
+      enemy.attackTargetX = this.player.x;
+      enemy.attackTargetY = this.player.y;
+
+      this.player.hitRecoilTimer = 0.18;
+      this.player.hitRecoilMaxTimer = 0.18;
+      this.player.hitFromX = enemy.x;
+      this.player.hitFromY = enemy.y;
+      if (out.hit) {
+        this.player.damageFlashTimer = 0.20;
+      }
+
+      const audio = CombatAudioEngine.getInstance();
+      if (!out.hit) {
+        audio.playSound('miss_whoosh');
+      } else {
+        if (out.critical) {
+          audio.playSound('critical_boom');
+        } else if (out.mitigatedByArmor > 0 && Math.random() < 0.65) {
+          audio.playSound('armor_clang');
+        } else {
+          audio.playSound('flesh_impact');
+        }
+      }
+
+      this.onCombatAttackResolved?.({
+        attacker: enemy,
+        target: this.player,
+        outcome: out
+      });
+
       if (this.player.combat!.hp <= 0) {
         this.handlePlayerDefeated();
         return;
@@ -1827,7 +1919,7 @@ export class CrpgGameState {
 
     if (npc.combat?.isHostile) {
       if (!npc.combat.isAlive) {
-        this.addLog(`☠️ ${npc.recipe.name} został już pokonany.`);
+        this.commandLootCorpse(npc.id);
         return;
       }
       this.commandAttackEnemy(npc.id);
@@ -1844,6 +1936,28 @@ export class CrpgGameState {
     if (adj && this.commandPlayerMoveTo(adj.x, adj.y)) {
       this.player.pendingDialogueActorId = npc.id;
     }
+  }
+
+  public commandLootCorpse(enemyId: string): boolean {
+    const enemy = this.npcs.find((n) => n.id === enemyId);
+    if (!enemy || !enemy.combat || enemy.combat.isAlive) return false;
+    if (enemy.isLooted) {
+      this.addLog(`💀 Ciało „${enemy.recipe.name}” zostało już przeszukane.`);
+      return false;
+    }
+    const dist = Math.hypot(enemy.tileX - this.player.tileX, enemy.tileY - this.player.tileY);
+    if (dist > 1.85) {
+      const adj = this.findBestAdjacentWalkableTile(enemy.tileX, enemy.tileY, 1, 1);
+      if (adj && this.commandPlayerMoveTo(adj.x, adj.y)) {
+        this.player.pendingDialogueActorId = null;
+        this.player.pendingInteractionPropId = null;
+      }
+      return false;
+    }
+    enemy.isLooted = true;
+    this.addLog(`💰 Przeszukano ciało: ${enemy.recipe.name}. Znaleziono dodatkowe zapasy.`);
+    CombatAudioEngine.getInstance().playSound('armor_clang', 0.85);
+    return true;
   }
 
   public togglePropInteraction(propId: string): void {
@@ -2429,6 +2543,22 @@ export class CrpgGameState {
   }
 
   public update(dtSeconds: number): void {
+    const allActors = [this.player, ...this.npcs];
+    for (const a of allActors) {
+      if (a.attackAnimTimer && a.attackAnimTimer > 0) {
+        a.attackAnimTimer = Math.max(0, a.attackAnimTimer - dtSeconds);
+      }
+      if (a.hitRecoilTimer && a.hitRecoilTimer > 0) {
+        a.hitRecoilTimer = Math.max(0, a.hitRecoilTimer - dtSeconds);
+      }
+      if (a.damageFlashTimer && a.damageFlashTimer > 0) {
+        a.damageFlashTimer = Math.max(0, a.damageFlashTimer - dtSeconds);
+      }
+      if (a.deathAnimTimer && a.deathAnimTimer > 0) {
+        a.deathAnimTimer = Math.max(0, a.deathAnimTimer - dtSeconds);
+      }
+    }
+
     if (this.player.speechBubbleTimer && this.player.speechBubbleTimer > 0) {
       this.player.speechBubbleTimer -= dtSeconds;
       if (this.player.speechBubbleTimer <= 0) {

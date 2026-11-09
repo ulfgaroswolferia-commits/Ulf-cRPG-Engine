@@ -111,6 +111,7 @@ export class HudOverlay {
   private isPlaytestInEditor = false;
   private isChronicleExpanded = false;
   private isCombatAdvancedOpen = false;
+  private isCreditsOpen = false;
   private saveToastActive = false;
   private saveToastTimer: number | null = null;
   private activeFilter: BackpackFilterCategory = 'all';
@@ -164,7 +165,10 @@ export class HudOverlay {
         } else if (inst.game.combatState.active && e.key.toLowerCase() === 'v') {
           inst.toggleCombatAdvanced();
         } else if (e.key === 'Escape') {
-          if (inst.isCombatAdvancedOpen) {
+          if (inst.isCreditsOpen) {
+            inst.isCreditsOpen = false;
+            inst.render();
+          } else if (inst.isCombatAdvancedOpen) {
             inst.isCombatAdvancedOpen = false;
             inst.render();
           } else if (inst.isChronicleExpanded) {
@@ -1151,6 +1155,17 @@ export class HudOverlay {
       </button>
     `;
 
+    const discreetCreditsBtnHtml = `
+      <button
+        type="button"
+        class="discrete-credits-btn"
+        data-action="toggle-credits"
+        title="Wyświetl twórców, licencje i atrybucję prawną assetów (Credits)"
+      >
+        📜 Twórcy & Licencje
+      </button>
+    `;
+
     const telemetryOrControlsHtml = this.devMode
       ? `
         <div class="telemetry-badges">
@@ -1159,6 +1174,7 @@ export class HudOverlay {
           <button type="button" class="compass-angle-btn ${this.isPlaytestInEditor ? 'active' : ''}" data-action="toggle-editor-playtest" title="Przełącz między czystym Edytorem Poziomu a testowaniem rozgrywki cRPG">
             ${this.isPlaytestInEditor ? '🛠️ Wróć do Edytora' : '🎮 Testuj Rozgrywkę'}
           </button>
+          ${discreetCreditsBtnHtml}
           ${discreetSaveBtnHtml}
           <span class="telemetry-pill">FPS: <strong>${this.scene.fps}</strong></span>
           <span class="telemetry-pill">Bake: <strong>${this.scene.lastBakeDurationMs} ms</strong></span>
@@ -1169,6 +1185,7 @@ export class HudOverlay {
       : `
         <div class="telemetry-badges">
           <span class="telemetry-pill">LPM: <strong>Ruch</strong> • I: <strong>Plecak</strong></span>
+          ${discreetCreditsBtnHtml}
           ${discreetSaveBtnHtml}
           <button
             type="button"
@@ -1295,6 +1312,7 @@ export class HudOverlay {
       </div>
 
       ${bottomAreaHtml}
+      ${this.renderCreditsModalHtml()}
     `;
 
     this.bindEvents();
@@ -1308,6 +1326,12 @@ export class HudOverlay {
           this.scene.rotateCamera(-1);
         } else if (action === 'rot-cw') {
           this.scene.rotateCamera(1);
+        } else if (action === 'toggle-credits') {
+          this.isCreditsOpen = !this.isCreditsOpen;
+          this.render();
+        } else if (action === 'close-credits') {
+          this.isCreditsOpen = false;
+          this.render();
         } else if (action === 'sell-duplicates') {
           this.game.sellAllDuplicatesForSiekance();
           this.render();
@@ -1653,5 +1677,90 @@ export class HudOverlay {
       arrowBtn.addEventListener('mouseup', deactivate);
       arrowBtn.addEventListener('pointercancel', deactivate);
     });
+  }
+
+  private renderCreditsModalHtml(): string {
+    if (!this.isCreditsOpen) return '';
+
+    return `
+      <div class="credits-modal-backdrop" data-action="close-credits">
+        <div class="credits-modal-window" onclick="event.stopPropagation()">
+          <div class="credits-modal-header">
+            <div class="credits-modal-title">
+              <span class="credits-crest">❖</span>
+              <div>
+                <h2>Twórcy, Licencje i Wymogi Formalne</h2>
+                <div class="credits-subtitle">Legal Attribution & Open-Source Asset Notice</div>
+              </div>
+            </div>
+            <button type="button" class="credits-close-btn" data-action="close-credits" title="Zamknij (Klawisz Esc)">✕</button>
+          </div>
+
+          <div class="credits-modal-body">
+            <div class="credits-section-box">
+              <div class="credits-section-title">🎮 Projekt i Silnik Gry</div>
+              <p><strong>Ulf-cRPG-Engine</strong> — Autorski izometryczny silnik cRPG 2.5D z oświetleniem 2.5D Deferred Normal-Mapped PBR.</p>
+              <div class="credits-meta-row">
+                <span>Autor: <strong>Jakub Górski</strong></span>
+                <span>Licencja: <strong>MIT License</strong></span>
+              </div>
+            </div>
+
+            <div class="credits-section-box">
+              <div class="credits-section-title">🌲 Grafika Otoczenia i Teren (2D)</div>
+              <p><strong>Forest Biome Environment Set</strong> — Zestaw kafelków i obiektów leśnych (drzewa, pnie, poszycie, dekoracje).</p>
+              <div class="credits-meta-row">
+                <span>Autor: <strong>Glionox</strong> (<a href="https://glionox.itch.io/top-down-forest-tileset" target="_blank" rel="noopener noreferrer">itch.io</a>)</span>
+                <span>Zastosowanie: <strong>Free & Commercial Projects</strong></span>
+              </div>
+            </div>
+
+            <div class="credits-section-box">
+              <div class="credits-section-title">🏰 Izometryczne Modele i Obiekty Świata (OpenGameArt.org)</div>
+              <ul class="credits-list">
+                <li>
+                  <strong>Izometryczne Chaty z Bali (Log Cabins):</strong> Surt, Clint Bellanger (OpenGameArt.org) — Licencja <em>CC-BY 3.0 / CC0</em>
+                </li>
+                <li>
+                  <strong>Izometryczne Drzewa (Isometric Trees):</strong> Yar, Hyptosis (OpenGameArt.org) — Licencja <em>CC-BY 3.0 / CC0</em>
+                </li>
+                <li>
+                  <strong>Płoty, Latarnie i Studnia (Graveyard Props & Fences):</strong> OpenGameArt contributors — Licencja <em>CC-BY 3.0 / OGA-BY</em>
+                </li>
+                <li>
+                  <strong>Kafelki Terenu, Klify i Zarośla (Grassland & Cliffs):</strong> OpenGameArt contributors — Licencja <em>CC-BY 3.0 / OGA-BY</em>
+                </li>
+              </ul>
+            </div>
+
+            <div class="credits-section-box">
+              <div class="credits-section-title">🔤 Typografia i Fonty (Google Fonts)</div>
+              <div class="credits-meta-row">
+                <span><strong>Cinzel</strong> (Natanael Gama) — <em>SIL OFL 1.1</em></span>
+                <span><strong>Inter</strong> (Rasmus Andersson) — <em>SIL OFL 1.1</em></span>
+                <span><strong>JetBrains Mono</strong> (JetBrains) — <em>Apache 2.0 / SIL OFL 1.1</em></span>
+              </div>
+            </div>
+
+            <div class="credits-section-box">
+              <div class="credits-section-title">⚙️ Biblioteki i Środowisko Uruchomieniowe</div>
+              <div class="credits-meta-row">
+                <span><strong>PixiJS v8</strong> — Mathew Groves & Goodboy Digital (<em>MIT License</em>)</span>
+                <span><strong>Vite & TypeScript</strong> (<em>MIT / Apache 2.0</em>)</span>
+              </div>
+            </div>
+
+            <div class="credits-legal-badge">
+              ✓ Spełniono wymogi licencji Creative Commons (CC-BY), SIL Open Font License oraz MIT (atrybucja i nota praw autorskich).
+              Kompletny dokument prawny jest dostępny w pliku <code>CREDITS.md</code>.
+            </div>
+          </div>
+
+          <div class="credits-modal-footer">
+            <button type="button" class="credits-ack-btn" data-action="close-credits">Rozumiem / Zamknij</button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 }

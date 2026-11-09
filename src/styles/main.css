@@ -223,6 +223,24 @@ body,
   border-color: rgba(239, 83, 80, 0.45);
 }
 
+.discrete-credits-btn {
+  background: rgba(25, 30, 42, 0.7);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.discrete-credits-btn:hover {
+  background: rgba(229, 189, 104, 0.18);
+  color: #f6df92;
+  border-color: rgba(229, 189, 104, 0.45);
+}
+
 /* Bottom HUD */
 .bottom-hud {
   position: absolute;
@@ -2507,5 +2525,193 @@ body,
   color: var(--gold-accent);
   font-weight: 700;
 }
+
+/* --- CREDITS & LEGAL ATTRIBUTION MODAL --- */
+.credits-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(6, 9, 15, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.credits-modal-window {
+  background: linear-gradient(180deg, #181d28 0%, #0e121a 100%);
+  border: 2px solid #5a4214;
+  outline: 1px solid rgba(246, 223, 146, 0.3);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8), 0 0 24px rgba(229, 189, 104, 0.15);
+  border-radius: 8px;
+  max-width: 680px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #e2e8f0;
+}
+
+.credits-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid rgba(229, 189, 104, 0.25);
+}
+
+.credits-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.credits-crest {
+  font-size: 24px;
+  color: #f6df92;
+}
+
+.credits-modal-title h2 {
+  font-family: 'Cinzel', serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #f6df92;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+.credits-subtitle {
+  font-size: 11px;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.credits-close-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+  font-size: 16px;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.credits-close-btn:hover {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ff8a80;
+  border-color: #ef5350;
+}
+
+.credits-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.credits-section-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.credits-section-title {
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #dfb658;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.credits-section-box p {
+  margin: 0 0 6px 0;
+  color: #cbd5e1;
+}
+
+.credits-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.credits-meta-row a {
+  color: #f6df92;
+  text-decoration: underline;
+}
+
+.credits-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #cbd5e1;
+}
+
+.credits-list li {
+  margin-bottom: 4px;
+}
+
+.credits-legal-badge {
+  background: rgba(46, 125, 50, 0.18);
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  color: #a5d6a7;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.credits-legal-badge code {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.credits-modal-footer {
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.35);
+  border-top: 1px solid rgba(229, 189, 104, 0.2);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.credits-ack-btn {
+  background: linear-gradient(135deg, #b88a38 0%, #5a4214 100%);
+  color: #fff;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 12px;
+  border: 1px solid #f6df92;
+  padding: 8px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: all 0.15s ease;
+}
+
+.credits-ack-btn:hover {
+  background: linear-gradient(135deg, #dfb658 0%, #7d5b1d 100%);
+  box-shadow: 0 2px 12px rgba(223, 182, 88, 0.35);
+}
+
 
 
