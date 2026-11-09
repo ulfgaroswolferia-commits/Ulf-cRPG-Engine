@@ -20,8 +20,8 @@ describe('Merchant NPCs, Expensive Grind Items & Siekańce Economy', () => {
     expect(bogusz).toBeDefined();
     expect(bogusz?.recipe.name).toContain('Bogusz');
     expect(bogusz?.dialogueId).toBe('npc_bogusz');
-    expect(bogusz?.tileX).toBe(17);
-    expect(bogusz?.tileY).toBe(17);
+    expect(bogusz?.tileX).toBe(21);
+    expect(bogusz?.tileY).toBe(20);
     expect(bogusz?.isMerchant).toBe(true);
 
     // 3. Sanctum Dungeon -> Paser Gniewosz
@@ -30,8 +30,8 @@ describe('Merchant NPCs, Expensive Grind Items & Siekańce Economy', () => {
     expect(gniewosz).toBeDefined();
     expect(gniewosz?.recipe.name).toContain('Gniewosz');
     expect(gniewosz?.dialogueId).toBe('npc_gniewosz');
-    expect(gniewosz?.tileX).toBe(14);
-    expect(gniewosz?.tileY).toBe(7);
+    expect(gniewosz?.tileX).toBe(5);
+    expect(gniewosz?.tileY).toBe(4);
     expect(gniewosz?.isMerchant).toBe(true);
   });
 
@@ -51,11 +51,11 @@ describe('Merchant NPCs, Expensive Grind Items & Siekańce Economy', () => {
     expect(game.backpack.findByInstanceId(testItem.instanceId)).toBeDefined();
     expect(game.logs.some((l) => l.includes('Sprzedaż możliwa tylko u kupca'))).toBe(true);
 
-    // Walk player up to Kupiec Dobromir (tile 14, 15 - adjacent to stall)
-    game.player.tileX = 14;
-    game.player.tileY = 15;
-    game.player.x = 14.5;
-    game.player.y = 15.5;
+    // Walk player up to Kupiec Dobromir (tile 20, 21 - adjacent to stall)
+    game.player.tileX = 20;
+    game.player.tileY = 21;
+    game.player.x = 20.5;
+    game.player.y = 21.5;
 
     expect(game.isNearMerchant()).toBe(true);
 
@@ -71,10 +71,10 @@ describe('Merchant NPCs, Expensive Grind Items & Siekańce Economy', () => {
     game.backpack.clearAllSlots();
 
     // Walk player up to Dobromir
-    game.player.tileX = 14;
-    game.player.tileY = 15;
-    game.player.x = 14.5;
-    game.player.y = 15.5;
+    game.player.tileX = 20;
+    game.player.tileY = 21;
+    game.player.x = 20.5;
+    game.player.y = 21.5;
     expect(game.isNearMerchant()).toBe(true);
 
     // Equip Sunblade sword
@@ -152,10 +152,10 @@ describe('Merchant NPCs, Expensive Grind Items & Siekańce Economy', () => {
 
     // 2. Test purchasing mechanics: insufficient funds vs successful grind purchase
     const game = new CrpgGameState('slavic_village');
-    game.player.tileX = 14;
-    game.player.tileY = 15;
-    game.player.x = 14.5;
-    game.player.y = 15.5;
+    game.player.tileX = 20;
+    game.player.tileY = 21;
+    game.player.x = 20.5;
+    game.player.y = 21.5;
 
     // Player starts with modest amount (45 siek.), so buying the 590 siek. amulet must fail
     expect(game.siekance).toBeLessThan(expensiveKolowrot!.priceSiekance);
@@ -176,10 +176,10 @@ describe('Merchant NPCs, Expensive Grind Items & Siekańce Economy', () => {
     // 1. Dobromir in Slavic Village
     const village = new CrpgGameState('slavic_village');
     village.backpack.clearAllSlots();
-    village.player.tileX = 14;
-    village.player.tileY = 15;
-    village.player.x = 14.5;
-    village.player.y = 15.5;
+    village.player.tileX = 20;
+    village.player.tileY = 21;
+    village.player.x = 20.5;
+    village.player.y = 21.5;
 
     // Add two duplicate axes (neither equipped)
     const axe1 = createItemInstance('weapon_Executioner_axe', 1);

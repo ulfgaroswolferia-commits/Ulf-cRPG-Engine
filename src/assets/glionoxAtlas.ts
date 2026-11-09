@@ -17,6 +17,41 @@ export interface GlionoxForestRawSheets {
   ogaPropsFence?: LoadedImageBuffer;    // 1024 x 640  (8 cols x 5 rows of 128x128)
   ogaTerrainTiles?: LoadedImageBuffer;  // 1024 x 384  (8 cols x 6 rows of 128x64)
   ogaCliffsFoliage?: LoadedImageBuffer; // 1024 x 512  (row 0: 8x 128x256 cliffs; row 1..2: 8x 128x128 bushes/grass)
+  dungeonPngMap?: Map<string, LoadedImageBuffer>;
+}
+
+const dungeonPngMap = new Map<string, LoadedImageBuffer>();
+
+export function getKenneyDungeonPropPbr(
+  filename: string,
+  scale = 0.5,
+  anchorRatioY = 384 / 512,
+  aoRadiusX = 32,
+  aoRadiusY = 16,
+  roughness = 0.72,
+  metallic = 0.12
+): SynthesizedPbrBufferPair | null {
+  const buf = dungeonPngMap.get(filename);
+  if (!buf) return null;
+  const key = `kenney_${filename}_s${scale}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    buf,
+    0,
+    0,
+    buf.width,
+    buf.height,
+    scale,
+    anchorRatioY,
+    aoRadiusX,
+    aoRadiusY,
+    roughness,
+    metallic
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
 }
 
 let loadedSheets: GlionoxForestRawSheets | null = null;
@@ -98,6 +133,27 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
         tryLoadOptionalPng('./assets/oga/oga_terrain_tiles.png'),
         tryLoadOptionalPng('./assets/oga/oga_cliffs_foliage.png')
       ]);
+
+      const dungeonFiles = [
+        'stoneWall_N.png',
+        'stoneWallBroken_N.png',
+        'stoneWallDoorClosed_N.png',
+        'stoneWallDoorOpen_N.png',
+        'stoneColumn_N.png',
+        'barrel_N.png',
+        'barrels_N.png',
+        'woodenCrate_N.png',
+        'woodenCrates_N.png',
+        'tableRound_N.png',
+        'woodenSupports_N.png'
+      ];
+      await Promise.all(
+        dungeonFiles.map(async (fn) => {
+          const loaded = await tryLoadOptionalPng(`./assets/dungeon/${fn}`);
+          if (loaded) dungeonPngMap.set(fn, loaded);
+        })
+      );
+
       loadedSheets = {
         trees,
         stumps,
@@ -107,7 +163,8 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
         ogaTrees,
         ogaPropsFence,
         ogaTerrainTiles,
-        ogaCliffsFoliage
+        ogaCliffsFoliage,
+        dungeonPngMap
       };
       return loadedSheets;
     } catch {

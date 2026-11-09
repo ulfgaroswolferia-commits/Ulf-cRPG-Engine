@@ -11,11 +11,11 @@ import { bakeCharacterBuffers } from '../../src/assets/characterBakery';
 import { getSlavicPortrait } from '../../src/assets/slavicPortraits';
 
 describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () => {
-  it('creates a 32x32 Slavic settlement map with cottages, market stalls, shrine of Światowid, well, and wattle fences', () => {
+  it('creates an enlarged 44x44 Slavic settlement map with cottages, outbuildings, market stalls, shrine of Światowid, well, and wattle fences', () => {
     const map = createSlavicVillageMap();
     expect(map.id).toBe('slavic_village');
-    expect(map.width).toBe(32);
-    expect(map.height).toBe(32);
+    expect(map.width).toBe(44);
+    expect(map.height).toBe(44);
 
     const cottages = map.props.filter((p) => p.kind === 'slavic_cottage');
     const stalls = map.props.filter((p) => p.kind === 'market_stall');
@@ -23,11 +23,11 @@ describe('Slavic Settlement & Marketplace ("Osada Żerców i Targowisko")', () =
     const wells = map.props.filter((p) => p.kind === 'slavic_well');
     const fences = map.props.filter((p) => p.kind === 'wattle_fence');
 
-    expect(cottages.length).toBe(12);
-    expect(stalls.length).toBeGreaterThanOrEqual(3);
+    expect(cottages.length).toBe(20); // 10 residential cottages + 10 outbuildings/barns/sheds/spichlerze
+    expect(stalls.length).toBeGreaterThanOrEqual(4);
     expect(shrines.length).toBeGreaterThanOrEqual(1);
     expect(wells.length).toBeGreaterThanOrEqual(1);
-    expect(fences.length).toBeGreaterThanOrEqual(12);
+    expect(fences.length).toBeGreaterThanOrEqual(15);
 
     // Verify showcase features: Ancestral Kurhan & Burial Mound, Watchtowers, Pier and Lights
     const sarcophagus = map.props.filter((p) => p.kind === 'sarcophagus');

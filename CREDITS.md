@@ -83,6 +83,17 @@ Zasoby graficzne zoptymalizowane pod rzut izometryczny 2.5D, pobrane z serwisu *
 
 ---
 
+## 3B. Izometryczne Podziemia, Lochy i Jaskinie (Kenney Isometric Dungeon)
+
+Zasoby graficzne modułowych lochów, jaskiń i podziemi izometrycznych:
+* **Katalog w projekcie:** `public/assets/dungeon/` (ściany kamienne, bramy, drzwi, kolumny, beczki, skrzynie, podziemne korytarze)
+* **Autor:** Kenney (Kenney Vleugels — [https://kenney.nl](https://kenney.nl))
+* **Źródło:** [OpenGameArt.org / Isometric Miniature Dungeon](https://opengameart.org/content/isometric-miniature-dungeon) oraz [Kenney.nl](https://kenney.nl)
+* **Licencja:** Creative Commons Zero (CC0 1.0 Universal — Public Domain)
+* **Warunki licencyjne:** Całkowicie wolne do użytku prywatnego, edukacyjnego i komercyjnego bez wymogu formalnej atrybucji.
+
+---
+
 ## 4. Portrety Postaci i Grafika Wektorowa (Procedural & Vector Art)
 
 * **Plik:** `src/assets/slavicPortraits.ts`

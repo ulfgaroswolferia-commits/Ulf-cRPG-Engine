@@ -392,8 +392,8 @@ export class CrpgGameState {
     this.combatState.selectedTargetId = null;
     this.combatState.floatingTexts = [];
 
-    const startX = mapId === 'forest_clearing' ? 15 : mapId === 'slavic_village' ? 16 : 4;
-    const startY = mapId === 'forest_clearing' ? 17 : mapId === 'slavic_village' ? 20 : 4;
+    const startX = mapId === 'forest_clearing' ? 15 : mapId === 'slavic_village' ? 22 : 4;
+    const startY = mapId === 'forest_clearing' ? 17 : mapId === 'slavic_village' ? 26 : 4;
     this.player.tileX = startX;
     this.player.tileY = startY;
     this.player.x = startX + 0.5;
@@ -407,23 +407,23 @@ export class CrpgGameState {
     if (mapId === 'forest_clearing') {
       this.initForestClearingNpcs();
       this.addLog(
-        'Witaj na Polanie Wilczego Ognia (32×32). Podnieś porozrzucany ekwipunek oraz Surową Kiełbasę, upiecz ją na ognisku lub ruszaj drogowskazem do Słowiańskiej Osady!'
+        'Witaj na Polanie Wilczego Ognia (32×32). Podnieś porozrzucany ekwipunek oraz Surową Kiełbasę, upiecz ją na ognisku lub ruszaj drogowskazem do Słowiańskiej Osady bądź Lochów!'
       );
     } else if (mapId === 'slavic_village') {
       this.initSlavicVillageNpcs();
       this.addLog(
-        'Witaj w Osadzie Żerców — Targowisko pod Światowidem (32×32). Obejrzyj kramy kupieckie, porozmawiaj z Kupcem Dobromirem i odwiedź Święty Gaj na wzgórzu!'
+        'Witaj w powiększonej Osadzie Żerców — Targowisko pod Światowidem (44×44). Obejrzyj kramy kupieckie, porozmawiaj z Kupcem Dobromirem i odwiedź Święty Gaj oraz Kurhan!'
       );
     } else {
       this.initSanctumNpcs();
-      this.addLog('Przeniesiono do lokacji: Sanktuarium Zatopionej Korony (20×20).');
+      this.addLog('Wkroczono do lochów: Sanktuarium Zatopionej Korony & Jaskinie Aethelgardu (36×36). Pokonaj potwory w pieczarach, przedrzyj się przez krypty i zmierz się z Mrocznym Czempionem!');
     }
 
     this.recomputeFov();
   }
 
   private initSlavicVillageNpcs(): void {
-    // 0. Sovereign King Gniewomir at the southern market square (verbal collapse dialogue)
+    // 0. Sovereign King Gniewomir at the Starosta / Kniaź Manor (verbal collapse dialogue)
     const gniewkoRecipe = generateRandomCharacterRecipe(488, 'npc_gniewko');
     gniewkoRecipe.name = 'Król Gniewomir';
     gniewkoRecipe.title = 'Suweren Pogranicza';
@@ -438,11 +438,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_gniewko',
       recipe: gniewkoRecipe,
-      x: 15.5,
-      y: 18.5,
-      z: this.map.tiles[18][15].z,
-      tileX: 15,
-      tileY: 18,
+      x: 20.5,
+      y: 14.5,
+      z: this.map.tiles[14][20].z,
+      tileX: 20,
+      tileY: 14,
       direction: 4,
       isMoving: false,
       animFrame: 0,
@@ -451,7 +451,7 @@ export class CrpgGameState {
       dialogueId: 'npc_gniewko'
     });
 
-    // 1. Merchant Dobromir at the central market stall
+    // 1. Merchant Dobromir at the central marketplace stall
     const dobromirRecipe = generateRandomCharacterRecipe(512, 'npc_dobromir');
     dobromirRecipe.name = 'Kupiec Dobromir';
     dobromirRecipe.title = 'Starszy Targowiska pod Światowidem';
@@ -466,11 +466,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_dobromir',
       recipe: dobromirRecipe,
-      x: 14.5,
-      y: 14.5,
-      z: this.map.tiles[14][14].z,
-      tileX: 14,
-      tileY: 14,
+      x: 20.5,
+      y: 20.5,
+      z: this.map.tiles[20][20].z,
+      tileX: 20,
+      tileY: 20,
       direction: 4,
       isMoving: false,
       animFrame: 0,
@@ -480,7 +480,7 @@ export class CrpgGameState {
       isMerchant: true
     });
 
-    // 2. Blacksmith Bożydar by the eastern market stall & forge
+    // 2. Blacksmith Bożydar by the eastern marketplace stall & forge
     const bozydarRecipe = generateRandomCharacterRecipe(576, 'npc_bozydar');
     bozydarRecipe.name = 'Płatnerz Bożydar';
     bozydarRecipe.title = 'Kowal Grodowy';
@@ -496,11 +496,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_bozydar',
       recipe: bozydarRecipe,
-      x: 18.5,
-      y: 14.5,
-      z: this.map.tiles[14][18].z,
-      tileX: 18,
-      tileY: 14,
+      x: 26.5,
+      y: 23.5,
+      z: this.map.tiles[23][26].z,
+      tileX: 26,
+      tileY: 23,
       direction: 5,
       isMoving: false,
       animFrame: 0,
@@ -526,11 +526,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_radogost',
       recipe: radogostRecipe,
-      x: 8.5,
-      y: 8.5,
-      z: this.map.tiles[8][8].z,
-      tileX: 8,
-      tileY: 8,
+      x: 10.5,
+      y: 10.5,
+      z: this.map.tiles[10][10].z,
+      tileX: 10,
+      tileY: 10,
       direction: 3,
       isMoving: false,
       animFrame: 0,
@@ -539,7 +539,7 @@ export class CrpgGameState {
       dialogueId: 'npc_radogost'
     });
 
-    // 4. Herbalist Wisława at the western marketplace stall
+    // 4. Herbalist Wisława at the herbalist marketplace stall
     const wislawaRecipe = generateRandomCharacterRecipe(642, 'npc_wislawa');
     wislawaRecipe.name = 'Zielarka Wisława';
     wislawaRecipe.title = 'Uzdrowicielka i Plecionkarka';
@@ -556,11 +556,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_wislawa',
       recipe: wislawaRecipe,
-      x: 17.5,
-      y: 12.5,
-      z: this.map.tiles[12][17].z,
-      tileX: 17,
-      tileY: 12,
+      x: 23.5,
+      y: 19.5,
+      z: this.map.tiles[19][23].z,
+      tileX: 23,
+      tileY: 19,
       direction: 4,
       isMoving: false,
       animFrame: 0,
@@ -585,11 +585,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_sambor',
       recipe: samborRecipe,
-      x: 9.5,
-      y: 12.5,
-      z: this.map.tiles[12][9].z,
-      tileX: 9,
-      tileY: 12,
+      x: 15.5,
+      y: 13.5,
+      z: this.map.tiles[13][15].z,
+      tileX: 15,
+      tileY: 13,
       direction: 4,
       isMoving: false,
       animFrame: 0,
@@ -613,27 +613,27 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_milosz_patrol',
       recipe: miloszRecipe,
-      x: 18.5,
-      y: 17.5,
-      z: this.map.tiles[17][18].z,
-      tileX: 18,
-      tileY: 17,
+      x: 21.5,
+      y: 25.5,
+      z: this.map.tiles[25][21].z,
+      tileX: 21,
+      tileY: 25,
       direction: 2,
       isMoving: false,
       animFrame: 0,
       animTimer: 0,
       path: [],
       patrolPoints: [
-        { x: 18, y: 17 },
-        { x: 15, y: 12 },
-        { x: 12, y: 16 },
-        { x: 17, y: 20 }
+        { x: 21, y: 25 },
+        { x: 25, y: 21 },
+        { x: 22, y: 17 },
+        { x: 18, y: 21 }
       ],
       patrolIndex: 0,
       patrolWaitTimer: 1.5
     });
 
-    // 5. SLAVIC BESTIARY: Zardzewiały Woj Mogił (Ancestral Kurhan, x=27, y=6, Z=2)
+    // 7. SLAVIC BESTIARY: Zardzewiały Woj Mogił (Ancestral Kurhan, x=35, y=8, Z=2)
     const wojKurhanRecipe = generateRandomCharacterRecipe(915, 'enemy_kurhan_skeleton');
     wojKurhanRecipe.name = 'Zardzewiały Woj Mogił';
     wojKurhanRecipe.title = '💀 [KURHAN] Ożywieńczy Tarczownik Kniazia';
@@ -655,11 +655,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'enemy_kurhan_skeleton',
       recipe: wojKurhanRecipe,
-      x: 27.5,
-      y: 6.5,
-      z: this.map.tiles[6][27].z,
-      tileX: 27,
-      tileY: 6,
+      x: 35.5,
+      y: 8.5,
+      z: this.map.tiles[8][35].z,
+      tileX: 35,
+      tileY: 8,
       direction: 6,
       isMoving: false,
       animFrame: 0,
@@ -744,7 +744,7 @@ export class CrpgGameState {
       dialogueId: 'npc_lyra'
     });
 
-    // 2b. Wandering Merchant Bogusz by the forest market stall (tile 17, 17)
+    // 2b. Wandering Merchant Bogusz resting by the eastern herbalist cottage (tile 21, 20)
     const boguszRecipe = generateRandomCharacterRecipe(731, 'npc_bogusz');
     boguszRecipe.name = 'Wędrowny Kramarz Bogusz';
     boguszRecipe.title = 'Kupiec Szlaku Puszczańskiego';
@@ -760,11 +760,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_bogusz',
       recipe: boguszRecipe,
-      x: 17.5,
-      y: 17.5,
-      z: this.map.tiles[17][17].z,
-      tileX: 17,
-      tileY: 17,
+      x: 21.5,
+      y: 20.5,
+      z: this.map.tiles[20][21].z,
+      tileX: 21,
+      tileY: 20,
       direction: 4,
       isMoving: false,
       animFrame: 0,
@@ -1068,64 +1068,10 @@ export class CrpgGameState {
   }
 
   private initSanctumNpcs(): void {
-    const vaelenRecipe = generateRandomCharacterRecipe(202, 'npc_vaelen');
-    vaelenRecipe.name = 'Kapitan Vaelen';
-    vaelenRecipe.title = 'Dowódca Straży Dziedzińca';
-    vaelenRecipe.equipment = {
-      head: 'helm_dread_plate',
-      torso: 'torso_aethel_plate',
-      cloak: 'cloak_steel_pauldrons',
-      legs: 'legs_steel_greaves',
-      mainHand: 'weapon_sunblade_longsword',
-      offHand: 'offhand_heraldic_shield'
-    };
-    this.npcs.push({
-      id: 'npc_vaelen',
-      recipe: vaelenRecipe,
-      x: 6.5,
-      y: 5.5,
-      z: this.map.tiles[5][6].z,
-      tileX: 6,
-      tileY: 5,
-      direction: 4,
-      isMoving: false,
-      animFrame: 0,
-      animTimer: 0,
-      path: [],
-      dialogueId: 'npc_vaelen'
-    });
-
-    const lyraRecipe = generateRandomCharacterRecipe(303, 'npc_lyra');
-    lyraRecipe.name = 'Uczona Lyra';
-    lyraRecipe.title = 'Kronikarka Astralna';
-    lyraRecipe.equipment = {
-      head: 'helm_arcane_circlet',
-      torso: 'torso_archmage_robes',
-      cloak: 'cloak_crimson_mantle',
-      legs: 'legs_leather_boots',
-      mainHand: 'weapon_astral_staff',
-      offHand: 'offhand_grimoire'
-    };
-    this.npcs.push({
-      id: 'npc_lyra',
-      recipe: lyraRecipe,
-      x: 10.5,
-      y: 10.5,
-      z: this.map.tiles[10][10].z,
-      tileX: 10,
-      tileY: 10,
-      direction: 5,
-      isMoving: false,
-      animFrame: 0,
-      animTimer: 0,
-      path: [],
-      dialogueId: 'npc_lyra'
-    });
-
-    // 3. Shady Merchant / Fence Gniewosz in the catacombs alcove (tile 14, 7)
+    // 0. Shady Merchant / Fence Gniewosz in the Upper Cavern safe alcove (tile 5, 4)
     const gniewoszRecipe = generateRandomCharacterRecipe(842, 'npc_gniewosz');
     gniewoszRecipe.name = 'Paser Gniewosz';
-    gniewoszRecipe.title = 'Handlarz z Mrocznych Katakumb';
+    gniewoszRecipe.title = 'Handlarz z Jaskiniowych Przełęczy';
     gniewoszRecipe.hairStyle = 'short_crop';
     gniewoszRecipe.equipment = {
       head: 'helm_shadow_hood',
@@ -1138,11 +1084,11 @@ export class CrpgGameState {
     this.npcs.push({
       id: 'npc_gniewosz',
       recipe: gniewoszRecipe,
-      x: 14.5,
-      y: 7.5,
-      z: this.map.tiles[7][14].z,
-      tileX: 14,
-      tileY: 7,
+      x: 5.5,
+      y: 4.5,
+      z: this.map.tiles[4][5].z,
+      tileX: 5,
+      tileY: 4,
       direction: 4,
       isMoving: false,
       animFrame: 0,
@@ -1150,6 +1096,390 @@ export class CrpgGameState {
       path: [],
       dialogueId: 'npc_gniewosz',
       isMerchant: true
+    });
+
+    // ==========================================
+    // ZONE 1: UPPER CAVERNS (4 EASY ENEMIES)
+    // ==========================================
+
+    // Easy 1: Jaskiniowy Łupieżca (7, 6)
+    const b1Recipe = generateRandomCharacterRecipe(851, 'dungeon_bandit_1');
+    b1Recipe.name = 'Jaskiniowy Łupieżca';
+    b1Recipe.title = '🟢 [ŁATWY] Maruder Skalnych Pieczar';
+    b1Recipe.equipment = {
+      head: 'helm_shadow_hood',
+      torso: 'torso_linen_tunic',
+      cloak: null,
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_sunblade_longsword',
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'dungeon_bandit_1',
+      recipe: b1Recipe,
+      x: 7.5,
+      y: 6.5,
+      z: this.map.tiles[6][7].z,
+      tileX: 7,
+      tileY: 6,
+      direction: 2,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'easy',
+        difficultyLabel: '🟢 ŁATWY',
+        aggroRadius: 3.5,
+        hp: 42,
+        maxHp: 42,
+        ap: 8,
+        maxAp: 8,
+        proficiencies: createDefaultProficiencies({ blades: 50 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 4,
+        lootTable: ['item_raw_sausage', 'legs_leather_boots'],
+        isAlive: true
+      }
+    });
+
+    // Easy 2: Kłusownik z Głębin (12, 5)
+    const b2Recipe = generateRandomCharacterRecipe(852, 'dungeon_bandit_2');
+    b2Recipe.name = 'Kłusownik z Głębin';
+    b2Recipe.title = '🟢 [ŁATWY] Zwiadowca Jaskiń';
+    b2Recipe.equipment = {
+      head: 'helm_ranger_cowl',
+      torso: 'torso_linen_tunic',
+      cloak: null,
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_slavic_axe',
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'dungeon_bandit_2',
+      recipe: b2Recipe,
+      x: 12.5,
+      y: 5.5,
+      z: this.map.tiles[5][12].z,
+      tileX: 12,
+      tileY: 5,
+      direction: 3,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'easy',
+        difficultyLabel: '🟢 ŁATWY',
+        aggroRadius: 3.5,
+        hp: 45,
+        maxHp: 45,
+        ap: 8,
+        maxAp: 8,
+        proficiencies: createDefaultProficiencies({ axes_blunt: 52 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 4,
+        lootTable: ['item_raw_sausage'],
+        isAlive: true
+      }
+    });
+
+    // Easy 3: Zdziczały Szczurołap (6, 12)
+    const b3Recipe = generateRandomCharacterRecipe(853, 'dungeon_skulker');
+    b3Recipe.name = 'Zdziczały Szczurołap';
+    b3Recipe.title = '🟢 [ŁATWY] Podziemny Włóczęga';
+    b3Recipe.equipment = {
+      head: 'helm_shadow_hood',
+      torso: 'torso_slavic_giezlo',
+      cloak: null,
+      legs: 'legs_lapcie',
+      mainHand: 'weapon_sunblade_longsword',
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'dungeon_skulker',
+      recipe: b3Recipe,
+      x: 6.5,
+      y: 12.5,
+      z: this.map.tiles[12][6].z,
+      tileX: 6,
+      tileY: 12,
+      direction: 1,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'easy',
+        difficultyLabel: '🟢 ŁATWY',
+        aggroRadius: 3.5,
+        hp: 40,
+        maxHp: 40,
+        ap: 8,
+        maxAp: 8,
+        proficiencies: createDefaultProficiencies({ blades: 48 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 4,
+        lootTable: ['item_moon_herbs'],
+        isAlive: true
+      }
+    });
+
+    // Easy 4: Nowicjusz Kultu Cieni (12, 11)
+    const b4Recipe = generateRandomCharacterRecipe(854, 'dungeon_cultist_novice');
+    b4Recipe.name = 'Nowicjusz Kultu Cieni';
+    b4Recipe.title = '🟢 [ŁATWY] Akolita Mrocznych Rytuałów';
+    b4Recipe.equipment = {
+      head: null,
+      torso: 'torso_slavic_giezlo',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_astral_staff',
+      offHand: null
+    };
+    this.npcs.push({
+      id: 'dungeon_cultist_novice',
+      recipe: b4Recipe,
+      x: 12.5,
+      y: 11.5,
+      z: this.map.tiles[11][12].z,
+      tileX: 12,
+      tileY: 11,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'easy',
+        difficultyLabel: '🟢 ŁATWY',
+        aggroRadius: 3.5,
+        hp: 44,
+        maxHp: 44,
+        ap: 8,
+        maxAp: 8,
+        proficiencies: createDefaultProficiencies({ runic_staffs: 50, blades: 48 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 5,
+        lootTable: ['item_piolun_herb', 'trinket_motanka'],
+        isAlive: true
+      }
+    });
+
+    // ==========================================
+    // ZONE 2: CATACOMBS & CRYPTS (3 MEDIUM ENEMIES)
+    // ==========================================
+
+    // Medium 1: Zbrojny Strażnik Krypt (20, 7)
+    const g1Recipe = generateRandomCharacterRecipe(861, 'dungeon_guard_1');
+    g1Recipe.name = 'Zbrojny Strażnik Krypt';
+    g1Recipe.title = '🟡 [ŚREDNI] Opancerzony Strażnik Grobowców';
+    g1Recipe.equipment = {
+      head: 'helm_szyszak',
+      torso: 'torso_przeszywanica',
+      cloak: 'cloak_steel_pauldrons',
+      legs: 'legs_steel_greaves',
+      mainHand: 'weapon_slavic_axe',
+      offHand: 'offhand_slavic_shield'
+    };
+    this.npcs.push({
+      id: 'dungeon_guard_1',
+      recipe: g1Recipe,
+      x: 20.5,
+      y: 7.5,
+      z: this.map.tiles[7][20].z,
+      tileX: 20,
+      tileY: 7,
+      direction: 2,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'normal',
+        difficultyLabel: '🟡 ŚREDNI',
+        aggroRadius: 3.8,
+        hp: 75,
+        maxHp: 75,
+        ap: 8,
+        maxAp: 8,
+        proficiencies: createDefaultProficiencies({ axes_blunt: 68, unarmed_shield: 65 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 9,
+        lootTable: ['weapon_slavic_axe', 'offhand_slavic_shield'],
+        isAlive: true,
+        customArmorBonus: 6,
+        customDamageBonus: 3
+      }
+    });
+
+    // Medium 2: Fanatyczny Tarczownik Cieni (28, 6)
+    const g2Recipe = generateRandomCharacterRecipe(862, 'dungeon_guard_2');
+    g2Recipe.name = 'Fanatyczny Tarczownik Cieni';
+    g2Recipe.title = '🟡 [ŚREDNI] Weteran Mrocznej Gwardii';
+    g2Recipe.equipment = {
+      head: 'helm_shadow_hood',
+      torso: 'torso_warden_brigandine',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_steel_greaves',
+      mainHand: 'weapon_sunblade_longsword',
+      offHand: 'offhand_heraldic_shield'
+    };
+    this.npcs.push({
+      id: 'dungeon_guard_2',
+      recipe: g2Recipe,
+      x: 28.5,
+      y: 6.5,
+      z: this.map.tiles[6][28].z,
+      tileX: 28,
+      tileY: 6,
+      direction: 4,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'normal',
+        difficultyLabel: '🟡 ŚREDNI',
+        aggroRadius: 3.8,
+        hp: 80,
+        maxHp: 80,
+        ap: 8,
+        maxAp: 8,
+        proficiencies: createDefaultProficiencies({ blades: 70, unarmed_shield: 70 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 10,
+        lootTable: ['torso_przeszywanica', 'weapon_sunblade_longsword'],
+        isAlive: true,
+        customArmorBonus: 8,
+        customDamageBonus: 4
+      }
+    });
+
+    // Medium 3: Mroczny Guślarz Katakumb (24, 13)
+    const g3Recipe = generateRandomCharacterRecipe(863, 'dungeon_cultist_sorcerer');
+    g3Recipe.name = 'Mroczny Guślarz Katakumb';
+    g3Recipe.title = '🟡 [ŚREDNI] Czarnoksiężnik Przeklętego Kręgu';
+    g3Recipe.equipment = {
+      head: 'helm_arcane_circlet',
+      torso: 'torso_archmage_robes',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_leather_boots',
+      mainHand: 'weapon_astral_staff',
+      offHand: 'offhand_grimoire'
+    };
+    this.npcs.push({
+      id: 'dungeon_cultist_sorcerer',
+      recipe: g3Recipe,
+      x: 24.5,
+      y: 13.5,
+      z: this.map.tiles[13][24].z,
+      tileX: 24,
+      tileY: 13,
+      direction: 2,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'normal',
+        difficultyLabel: '🟡 ŚREDNI',
+        aggroRadius: 4.0,
+        hp: 68,
+        maxHp: 68,
+        ap: 9,
+        maxAp: 9,
+        proficiencies: createDefaultProficiencies({ runic_staffs: 72, blades: 60 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 11,
+        lootTable: ['helm_arcane_circlet', 'ring_emerald_seal', 'weapon_astral_staff'],
+        isAlive: true,
+        customArmorBonus: 4,
+        customDamageBonus: 5
+      }
+    });
+
+    // ==========================================
+    // ZONE 3: INNER SANCTUM (1 VERY HARD BOSS)
+    // ==========================================
+
+    // Boss: Mroczny Czempion Zatopionej Korony (24, 27)
+    const bossRecipe = generateRandomCharacterRecipe(999, 'dungeon_boss_champion');
+    bossRecipe.name = 'Mroczny Czempion Zatopionej Korony';
+    bossRecipe.title = '🔴 [BOSS] Dawny Władyka Głębin Aethelgardu';
+    bossRecipe.attributes = {
+      might: 18,
+      finesse: 14,
+      resolve: 16,
+      lore: 12,
+      perception: 14
+    };
+    bossRecipe.equipment = {
+      head: 'helm_dread_plate',
+      torso: 'torso_aethel_plate',
+      cloak: 'cloak_steel_pauldrons',
+      legs: 'legs_steel_greaves',
+      mainHand: 'weapon_Executioner_axe',
+      offHand: 'offhand_heraldic_shield'
+    };
+    this.npcs.push({
+      id: 'dungeon_boss_champion',
+      recipe: bossRecipe,
+      x: 24.5,
+      y: 27.5,
+      z: this.map.tiles[27][24].z,
+      tileX: 24,
+      tileY: 27,
+      direction: 2,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      combat: {
+        isHostile: true,
+        difficulty: 'very_hard',
+        difficultyLabel: '🔴 BOSS LOCHÓW',
+        aggroRadius: 4.5,
+        hp: 220,
+        maxHp: 220,
+        ap: 10,
+        maxAp: 10,
+        proficiencies: createDefaultProficiencies({ axes_blunt: 88, unarmed_shield: 85, blades: 80 }),
+        defending: false,
+        dazedHeadTurns: 0,
+        crippledLegsTurns: 0,
+        xpReward: 25,
+        lootTable: [
+          'weapon_Executioner_axe',
+          'torso_aethel_plate',
+          'helm_dread_plate',
+          'trinket_kolowrot'
+        ],
+        isAlive: true,
+        customArmorBonus: 16,
+        customDamageBonus: 8
+      }
     });
   }
 
@@ -2201,15 +2531,26 @@ export class CrpgGameState {
     }
 
     if (prop.kind === 'travel_signpost') {
-      const targetMap: MapId =
-        this.map.id === 'forest_clearing' ? 'slavic_village' : 'forest_clearing';
+      let targetMap: MapId = 'slavic_village';
+      let bark = 'Dotarłem do słowiańskiej osady i targowiska!';
+      if (prop.id.includes('dungeon') || prop.id.includes('sanctum')) {
+        targetMap = 'sanctum_dungeon';
+        bark = 'Zstąpiłem w głąb ponurych lochów i jaskiń Aethelgardu!';
+      } else if (prop.id.includes('clearing') || prop.id.includes('forest')) {
+        targetMap = 'forest_clearing';
+        bark = 'Powróciłem na Polanę Wilczego Ognia.';
+      } else if (prop.id.includes('village')) {
+        targetMap = 'slavic_village';
+        bark = 'Dotarłem do słowiańskiej osady i targowiska!';
+      } else {
+        targetMap = this.map.id === 'forest_clearing' ? 'slavic_village' : 'forest_clearing';
+        bark =
+          targetMap === 'slavic_village'
+            ? 'Dotarłem do słowiańskiej osady i targowiska!'
+            : 'Powróciłem na Polanę Wilczego Ognia.';
+      }
       this.loadMap(targetMap);
-      this.sayPlayerBark(
-        targetMap === 'slavic_village'
-          ? 'Dotarłem do słowiańskiej osady i targowiska!'
-          : 'Powróciłem na Polanę Wilczego Ognia.',
-        4.5
-      );
+      this.sayPlayerBark(bark, 4.5);
       return;
     }
 
@@ -2339,6 +2680,13 @@ export class CrpgGameState {
       prop.kind === 'fallen_log'
     ) {
       this.addLog(`Zbadano obiekt wielokaflowy: ${prop.name}.`);
+      return;
+    }
+
+    if (prop.kind === 'dungeon_barrel' || prop.kind === 'dungeon_crate') {
+      prop.isOpen = !prop.isOpen;
+      this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}.`);
+      return;
     }
   }
 

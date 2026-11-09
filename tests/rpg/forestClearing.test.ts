@@ -12,15 +12,21 @@ describe('Forest Clearing Test Location ("Polana Wilczego Ognia")', () => {
 
     const campfire = map.props.find((p) => p.kind === 'campfire');
     expect(campfire).toBeDefined();
+    expect(campfire?.x).toBe(15);
+    expect(campfire?.y).toBe(15);
 
     const exitTrigger = map.props.find((p) => p.kind === 'exit_path');
     expect(exitTrigger).toBeDefined();
 
+    const dungeonSign = map.props.find((p) => p.id === 'signpost_to_dungeon');
+    expect(dungeonSign).toBeDefined();
+
     const cottages = map.props.filter((p) => p.kind === 'slavic_cottage');
-    expect(cottages.length).toBeGreaterThanOrEqual(2);
+    // Exactly 2 residential cottages on outer edges + 1 utility outbuilding shed
+    expect(cottages.length).toBe(3);
 
     const stalls = map.props.filter((p) => p.kind === 'market_stall');
-    expect(stalls.length).toBeGreaterThanOrEqual(1);
+    expect(stalls.length).toBe(0);
 
     const sausageLoot = map.props.find(
       (p) => p.kind === 'ground_loot' && p.lootItems?.includes('item_raw_sausage')

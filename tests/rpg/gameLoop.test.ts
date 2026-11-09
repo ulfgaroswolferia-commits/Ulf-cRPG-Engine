@@ -4,10 +4,10 @@ import { computeCharacterRecipeHash } from '../../src/assets/characterBakery';
 import { CrpgGameState } from '../../src/rpg/gameLoop';
 
 describe('worldMap & gameLoop - Sanctum cRPG Vertical Slice & Live State', () => {
-  it('constructs the multi-elevation 20x20 Sanctum map with lights, doors, chests, and multi-tile objects', () => {
+  it('constructs the multi-elevation 36x36 Sanctum map with lights, doors, chests, and multi-tile objects', () => {
     const map = createSanctumWorldMap();
-    expect(map.width).toBe(20);
-    expect(map.height).toBe(20);
+    expect(map.width).toBe(36);
+    expect(map.height).toBe(36);
     expect(map.props.length).toBeGreaterThan(15);
 
     // Check multi-tile object presence (e.g., 2x1 altar or sarcophagus)

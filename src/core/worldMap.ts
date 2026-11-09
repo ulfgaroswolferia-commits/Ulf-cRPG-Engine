@@ -41,7 +41,11 @@ export type PropKind =
   | 'watchtower' // 1x1 / 2x1 Isometric Game Kit defensive watchtower / bastion spire
   | 'graveyard_fence' // 1x1 OpenGameArt wrought-iron gothic fence / gate
   | 'dead_tree' // 1x1 OpenGameArt gnarled dead / swamp tree
-  | 'rock_cliff'; // 1x1 OpenGameArt sculpted rock cliff / mossy boulder outcrop
+  | 'rock_cliff' // 1x1 OpenGameArt sculpted rock cliff / mossy boulder outcrop
+  | 'dungeon_barrel' // 1x1 dungeon wooden barrel
+  | 'dungeon_crate' // 1x1 dungeon supply crate
+  | 'dungeon_table' // 1x1 dungeon table
+  | 'dungeon_support'; // 1x1 mine timber support frame
 
 export interface TileCell {
   x: number;
@@ -202,47 +206,47 @@ export function createForestClearingMap(): IsometricWorldMap {
     linkedLightId: campfireLightId
   });
 
-  // 2. Large Slavic Thatched Cottage & Fallen Log around the Central Campfire (2×1, scale ×2)
-  const campCottageLightId = 'light_camp_cottage';
-  lights.push({
-    id: campCottageLightId,
-    x: 17.5,
-    y: 12.5,
-    z: tiles[12][17].z + 1.6,
-    color: { r: 255, g: 186, b: 78 },
-    intensity: 1.35,
-    radius: 6.5,
-    flickerSpeed: 2.4,
-    enabled: true
-  });
-  props.push({
-    id: 'cottage_camp_clearing',
-    name: 'Chata Zrębowa Obozowiska (Chata z Gankiem, 2×1)',
-    kind: 'slavic_cottage',
-    variant: 0,
-    x: 17,
-    y: 12,
-    z: tiles[12][17].z,
-    sizeX: 2,
-    sizeY: 1,
-    heightZ: 4.8,
-    blocksMovement: true,
-    blocksSight: true,
-    interactive: true,
-    isOpen: true,
-    linkedLightId: campCottageLightId
-  });
-
+  // 2. Log Seats & Ranger Tent around the Central Campfire (Wild Clearing Focal Point)
   props.push({
     id: 'log_campfire_seat',
     name: 'Powalony Pień przy Ognisku (1x2)',
     kind: 'fallen_log',
     x: 13,
-    y: 16,
-    z: tiles[16][13].z,
+    y: 15,
+    z: tiles[15][13].z,
     sizeX: 1,
     sizeY: 2,
     heightZ: 1.0,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true
+  });
+
+  props.push({
+    id: 'log_campfire_seat_east',
+    name: 'Ociosany Pień Obozowy (1x2)',
+    kind: 'fallen_log',
+    x: 17,
+    y: 15,
+    z: tiles[15][17].z,
+    sizeX: 1,
+    sizeY: 2,
+    heightZ: 1.0,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true
+  });
+
+  props.push({
+    id: 'tent_scout_shelter',
+    name: 'Namiot Zwiadowcy Puszczy (2x1)',
+    kind: 'ranger_tent',
+    x: 12,
+    y: 12,
+    z: tiles[12][12].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 2.2,
     blocksMovement: true,
     blocksSight: false,
     interactive: true
@@ -583,7 +587,24 @@ export function createForestClearingMap(): IsometricWorldMap {
     isOpen: true
   });
 
-  // 6C. Isometric Game Kit Watchtower & OGA Log Cabins / Stalls / Cliffs
+  props.push({
+    id: 'signpost_to_dungeon',
+    name: 'Drogowskaz: Zejście do Jaskiń i Lochów ↓',
+    kind: 'travel_signpost',
+    variant: 0,
+    x: 19,
+    y: 7,
+    z: tiles[7][19].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true
+  });
+
+  // 6C. Isometric Game Kit Watchtower & Exactly 2 Cottages on Outer Edges + 1 Outbuilding
   props.push({
     id: 'watchtower_bastion_ne',
     name: 'Baszta Obserwacyjna Strażnicy',
@@ -601,42 +622,13 @@ export function createForestClearingMap(): IsometricWorldMap {
     isOpen: true
   });
 
-  const foresterLightId = 'light_cabin_forester';
-  lights.push({
-    id: foresterLightId,
-    x: 19.5,
-    y: 20.5,
-    z: tiles[20][19].z + 1.6,
-    color: { r: 255, g: 186, b: 78 },
-    intensity: 1.3,
-    radius: 6.2,
-    flickerSpeed: 2.5,
-    enabled: true
-  });
-  props.push({
-    id: 'cabin_forester_lodge',
-    name: 'Gospoda Leśna „Pod Wilczym Kłem” (2×1)',
-    kind: 'slavic_cottage',
-    variant: 5,
-    x: 19,
-    y: 20,
-    z: tiles[20][19].z,
-    sizeX: 2,
-    sizeY: 1,
-    heightZ: 4.8,
-    blocksMovement: true,
-    blocksSight: true,
-    interactive: true,
-    isOpen: true,
-    linkedLightId: foresterLightId
-  });
-
+  // Cottage 1 (Skraj zachodni): Chata Myśliwska
   const hunterLightId = 'light_cabin_hunter';
   lights.push({
     id: hunterLightId,
-    x: 9.5,
-    y: 13.5,
-    z: tiles[13][9].z + 1.6,
+    x: 7.5,
+    y: 10.5,
+    z: tiles[10][7].z + 1.6,
     color: { r: 255, g: 186, b: 78 },
     intensity: 1.3,
     radius: 6.2,
@@ -645,12 +637,12 @@ export function createForestClearingMap(): IsometricWorldMap {
   });
   props.push({
     id: 'cabin_hunter_clearing',
-    name: 'Kuźnia i Chata Myśliwska w Zagajniku (2×1)',
+    name: 'Chata Myśliwska na Skraju Polany (2×1)',
     kind: 'slavic_cottage',
     variant: 7,
-    x: 9,
-    y: 13,
-    z: tiles[13][9].z,
+    x: 7,
+    y: 10,
+    z: tiles[10][7].z,
     sizeX: 2,
     sizeY: 1,
     heightZ: 4.8,
@@ -661,22 +653,53 @@ export function createForestClearingMap(): IsometricWorldMap {
     linkedLightId: hunterLightId
   });
 
+  // Budynek gospodarczy (Skraj zachodni przy chacie myśliwego): Szopa na Drwa i Narzędzia
   props.push({
-    id: 'stall_forest_merchant',
-    name: 'Kram Wędrownego Kupca (Zioła i Prowiant)',
-    kind: 'market_stall',
-    variant: 0,
-    x: 17,
-    y: 18,
-    z: tiles[18][17].z,
+    id: 'shed_woodcutter_outbuilding',
+    name: 'Szopa na Drwa i Narzędzia (Budynek Gospodarczy, 1×2)',
+    kind: 'slavic_cottage',
+    variant: 11,
+    x: 6,
+    y: 12,
+    z: tiles[12][6].z,
+    sizeX: 1,
+    sizeY: 2,
+    heightZ: 3.6,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: false
+  });
+
+  // Cottage 2 (Skraj wschodni): Chata Zielarki
+  const herbalistLightId = 'light_cottage_herbalist';
+  lights.push({
+    id: herbalistLightId,
+    x: 22.5,
+    y: 19.5,
+    z: tiles[19][22].z + 1.6,
+    color: { r: 255, g: 186, b: 78 },
+    intensity: 1.3,
+    radius: 6.2,
+    flickerSpeed: 2.4,
+    enabled: true
+  });
+  props.push({
+    id: 'cottage_herbalist_clearing',
+    name: 'Chata Zielarki na Skraju Polany (2×1)',
+    kind: 'slavic_cottage',
+    variant: 9,
+    x: 22,
+    y: 19,
+    z: tiles[19][22].z,
     sizeX: 2,
     sizeY: 1,
-    heightZ: 2.1,
+    heightZ: 4.8,
     blocksMovement: true,
-    blocksSight: false,
+    blocksSight: true,
     interactive: true,
-    isOpen: false,
-    lootItems: ['item_raw_sausage', 'item_moon_herbs']
+    isOpen: true,
+    linkedLightId: herbalistLightId
   });
 
   const clearingRockCliffs = [
@@ -911,8 +934,8 @@ export function createForestClearingMap(): IsometricWorldMap {
  * woven willow wattle fences, and surrounding forest/stream outskirts.
  */
 export function createSlavicVillageMap(): IsometricWorldMap {
-  const width = 32;
-  const height = 32;
+  const width = 44;
+  const height = 44;
   const tiles: TileCell[][] = [];
   const props: WorldPropEntity[] = [];
   const lights: PointLightSource[] = [];
@@ -924,61 +947,62 @@ export function createSlavicVillageMap(): IsometricWorldMap {
       let terrain: TileTerrainType = 'forest_grass';
       let walkable = true;
 
-      // 1. Sacred Pagan Hill Grove of Światowid in North-West (x: 4..10, y: 4..10)
-      if (x >= 4 && x <= 10 && y >= 4 && y <= 10) {
+      // 1. Sacred Pagan Hill Grove of Światowid in North-West (x: 5..14, y: 5..14)
+      if (x >= 5 && x <= 14 && y >= 5 && y <= 14) {
         z = 1;
         terrain = 'forest_grass';
-        if (x >= 6 && x <= 8 && y >= 6 && y <= 8) {
+        if (x >= 8 && x <= 11 && y >= 8 && y <= 11) {
           z = 2;
           terrain = 'mossy_cobble';
         }
       }
 
       // Stone steps ascending to the Sacred Grove
-      if ((x === 9 || x === 10) && y === 10) {
+      if ((x === 11 || x === 12) && y === 14) {
         z = 1;
         terrain = 'stairs_stone';
       }
-      if (x === 8 && y === 9) {
+      if (x === 14 && (y === 11 || y === 12)) {
         z = 1;
         terrain = 'stairs_stone';
       }
 
-      // 2. Ancestral Kurhan & Burial Mound in North-East (x: 23..29, y: 3..8)
-      if (x >= 23 && x <= 29 && y >= 3 && y <= 8) {
+      // 2. Ancestral Kurhan & Burial Mound in North-East (x: 30..39, y: 4..12)
+      if (x >= 30 && x <= 39 && y >= 4 && y <= 12) {
         z = 1;
         terrain = 'forest_soil';
-        if (x >= 25 && x <= 27 && y >= 5 && y <= 7) {
+        if (x >= 33 && x <= 36 && y >= 6 && y <= 9) {
           z = 2;
           terrain = 'arcane_inlay';
         }
       }
 
       // Stone steps ascending to the Ancestral Kurhan
-      if ((x === 23 || x === 24) && (y === 5 || y === 6)) {
+      if ((x === 29 || x === 30) && (y === 7 || y === 8)) {
         z = 1;
         terrain = 'stairs_stone';
       }
 
-      // 3. Central Marketplace Plaza (Rynek Osady, x: 12..20, y: 12..20)
-      if (x >= 12 && x <= 20 && y >= 12 && y <= 20) {
-        const distCenter = Math.hypot(x - 16, y - 16);
-        if (distCenter <= 4.3) {
+      // 3. Central Marketplace Plaza (Rynek Osady, center at 22, 22)
+      if (x >= 16 && x <= 28 && y >= 16 && y <= 28) {
+        const distCenter = Math.hypot(x - 22, y - 22);
+        if (distCenter <= 5.5) {
           terrain = 'mossy_cobble';
-        } else if (distCenter <= 5.6) {
+        } else if (distCenter <= 7.2) {
           terrain = 'dirt_path';
         }
       }
 
-      // 4. Village Roads connecting cottages, market square, kurhan, wharf and southern gate
-      const isSouthRoad = x >= 15 && x <= 17 && y >= 16 && y < height;
-      const isEastRoad = y >= 15 && y <= 17 && x >= 16 && x <= 27;
-      const isWestRoad = y >= 15 && y <= 16 && x >= 7 && x <= 16;
-      const isNorthRoad = x >= 15 && x <= 16 && y >= 6 && y <= 16;
-      const isKurhanRoad = x >= 22 && x <= 23 && y >= 7 && y <= 15;
-      const isWharfRoad = x >= 21 && x <= 22 && y >= 18 && y <= 22;
+      // 4. Village Roads connecting gates, cottages, market square, kurhan, and mill
+      const isSouthRoad = x >= 21 && x <= 23 && y >= 22 && y < height;
+      const isNorthRoad = x >= 21 && x <= 23 && y >= 2 && y <= 22;
+      const isEastRoad = y >= 21 && y <= 23 && x >= 22 && x <= 38;
+      const isWestRoad = y >= 21 && y <= 23 && x >= 5 && x <= 22;
+      const isKurhanRoad = x >= 28 && x <= 29 && y >= 8 && y <= 21;
+      const isWharfRoad = x >= 28 && x <= 29 && y >= 23 && y <= 32;
+      const isGroveRoad = y === 15 && x >= 12 && x <= 21;
       if (
-        (isSouthRoad || isEastRoad || isWestRoad || isNorthRoad || isKurhanRoad || isWharfRoad) &&
+        (isSouthRoad || isNorthRoad || isEastRoad || isWestRoad || isKurhanRoad || isWharfRoad || isGroveRoad) &&
         z === 0
       ) {
         if (terrain !== 'mossy_cobble') {
@@ -986,10 +1010,10 @@ export function createSlavicVillageMap(): IsometricWorldMap {
         }
       }
 
-      // 5. Scenic Stream, Mill Pond & Fisherman's Wharf in South-East (x: 22..29, y: 20..27)
-      const pondDist = Math.hypot((x - 25.5) * 0.9, (y - 23.5) * 1.1);
-      const isPier = (x === 22 || x === 23) && (y === 22 || y === 23);
-      const isMillFoundation = (x === 26 || x === 27) && y === 26;
+      // 5. Scenic Stream, Mill Pond & Fisherman's Wharf in South-East (x: 30..42, y: 28..40)
+      const pondDist = Math.hypot((x - 36) * 0.9, (y - 34) * 1.1);
+      const isPier = (x === 30 || x === 31) && (y === 31 || y === 32);
+      const isMillFoundation = (x === 34 || x === 35) && y === 35;
       if (isPier) {
         z = 0;
         terrain = 'dungeon_stone';
@@ -998,10 +1022,10 @@ export function createSlavicVillageMap(): IsometricWorldMap {
         z = 0;
         terrain = 'forest_soil';
         walkable = true;
-      } else if (pondDist <= 2.5) {
+      } else if (pondDist <= 3.6) {
         terrain = 'abyss_water';
         walkable = false;
-      } else if (pondDist <= 3.8 && terrain === 'forest_grass') {
+      } else if (pondDist <= 5.2 && terrain === 'forest_grass') {
         terrain = 'forest_soil';
       }
 
@@ -1015,9 +1039,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     id: 'village_central_well',
     name: 'Studnia Gromadna z Żurawiem',
     kind: 'slavic_well',
-    x: 16,
-    y: 16,
-    z: tiles[16][16].z,
+    x: 22,
+    y: 22,
+    z: tiles[22][22].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.2,
@@ -1030,9 +1054,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   const marketFireLightId = 'light_village_campfire';
   lights.push({
     id: marketFireLightId,
-    x: 14,
-    y: 18,
-    z: tiles[18][14].z + 1.2,
+    x: 20,
+    y: 24,
+    z: tiles[24][20].z + 1.2,
     color: { r: 255, g: 156, b: 54 },
     intensity: 1.55,
     radius: 8.5,
@@ -1043,9 +1067,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     id: 'village_market_campfire',
     name: 'Ognisko Targowe (Ruszt Kucharski)',
     kind: 'campfire',
-    x: 14,
-    y: 18,
-    z: tiles[18][14].z,
+    x: 20,
+    y: 24,
+    z: tiles[24][20].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 1.3,
@@ -1056,15 +1080,15 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     linkedLightId: marketFireLightId
   });
 
-  // --- B. Three Bustling Marketplace Stalls (Kramy Kupieckie 2x1 / 1x2) ---
+  // --- B. Bustling Marketplace Stalls (Kramy Kupieckie) ---
   props.push({
     id: 'stall_dobromir_wares',
     name: 'Kram Kupca Dobromira (Sukno, Bursztyn i Prowiant)',
     kind: 'market_stall',
     variant: 0,
-    x: 13,
-    y: 13,
-    z: tiles[13][13].z,
+    x: 19,
+    y: 19,
+    z: tiles[19][19].z,
     sizeX: 2,
     sizeY: 1,
     heightZ: 2.1,
@@ -1080,9 +1104,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Stragan Zielarki Wisławy (Zioła i Amulety)',
     kind: 'market_stall',
     variant: 1,
-    x: 18,
-    y: 13,
-    z: tiles[13][18].z,
+    x: 24,
+    y: 19,
+    z: tiles[19][24].z,
     sizeX: 2,
     sizeY: 1,
     heightZ: 2.1,
@@ -1104,9 +1128,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Kram Płatnerza Bożydara (Oręż i Zbroje)',
     kind: 'market_stall',
     variant: 2,
-    x: 20,
-    y: 16,
-    z: tiles[16][20].z,
+    x: 25,
+    y: 23,
+    z: tiles[23][25].z,
     sizeX: 1,
     sizeY: 2,
     heightZ: 2.1,
@@ -1123,8 +1147,72 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     ]
   });
 
-  // --- C. Twelve Slavic Log Cabins & Thatched Cottages (OpenGameArt Isometric Log Cabins 0..15) ---
-  const cottages: ReadonlyArray<{
+  props.push({
+    id: 'stall_baker_wares',
+    name: 'Kram Prowiantowy (Chleb, Kołacze i Miód)',
+    kind: 'market_stall',
+    variant: 0,
+    x: 19,
+    y: 23,
+    z: tiles[23][19].z,
+    sizeX: 2,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['item_raw_sausage', 'item_old_mead']
+  });
+
+  // Barrels and Crates in Market Square
+  const marketBarrels = [
+    { id: 'm_bar_1', x: 18, y: 19, name: 'Beczka Solonych Śledzi' },
+    { id: 'm_bar_2', x: 26, y: 24, name: 'Beczka Smoły Kuźniczej' },
+    { id: 'm_bar_3', x: 21, y: 25, name: 'Beczka Miodu Pitnego' }
+  ];
+  for (const mb of marketBarrels) {
+    props.push({
+      id: mb.id,
+      name: mb.name,
+      kind: 'dungeon_barrel',
+      x: mb.x,
+      y: mb.y,
+      z: tiles[mb.y][mb.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.2,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: true,
+      isOpen: false
+    });
+  }
+
+  const marketCrates = [
+    { id: 'm_cra_1', x: 19, y: 18, name: 'Skrzynia Sukna i Futer' },
+    { id: 'm_cra_2', x: 25, y: 22, name: 'Skrzynia Sztab Żelaza' }
+  ];
+  for (const mc of marketCrates) {
+    props.push({
+      id: mc.id,
+      name: mc.name,
+      kind: 'dungeon_crate',
+      x: mc.x,
+      y: mc.y,
+      z: tiles[mc.y][mc.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.1,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: true,
+      isOpen: false
+    });
+  }
+
+  // --- C. Slavic Log Cottages & Farmstead Outbuildings (20 buildings: cottages + barns/sheds/spichlerze) ---
+  const villageBuildings: ReadonlyArray<{
     id: string;
     name: string;
     x: number;
@@ -1133,117 +1221,209 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     sizeY: number;
     variant: number;
   }> = [
+    // 1. Dwór Starosty i Kniazia Gniewomira
     {
       id: 'cottage_elder_starosta',
-      name: 'Dwór Starosty Grodowego (Chata z Gankiem)',
-      x: 14,
-      y: 8,
+      name: 'Dwór Starosty i Króla Gniewomira (Chata z Gankiem)',
+      x: 19,
+      y: 12,
       sizeX: 2,
       sizeY: 1,
       variant: 0
     },
+    // 2. Budynek gospodarczy dworu: Wielki Spichlerz Gromadzki
     {
-      id: 'cottage_inn_wolf_fang',
-      name: 'Gospoda „Pod Wilczym Kłem” (Karczma Zrębowa)',
-      x: 22,
-      y: 11,
-      sizeX: 2,
-      sizeY: 1,
-      variant: 5
-    },
-    {
-      id: 'cottage_blacksmith_bozydar',
-      name: 'Kuźnia Płatnerza Bożydara (Dymarka i Kowadło)',
-      x: 21,
-      y: 14,
-      sizeX: 2,
-      sizeY: 1,
-      variant: 7
-    },
-    {
-      id: 'cottage_herbalist_hut',
-      name: 'Chata Zielarki nad Jarem (Strzecha)',
-      x: 8,
-      y: 18,
-      sizeX: 1,
-      sizeY: 2,
-      variant: 9
-    },
-    {
-      id: 'cottage_wheelwright',
-      name: 'Chata Kołodzieja i Bartnika',
-      x: 20,
-      y: 21,
-      sizeX: 2,
-      sizeY: 1,
-      variant: 12
-    },
-    {
-      id: 'cottage_hunter_north',
-      name: 'Chata Łowczego Puszczy',
-      x: 19,
-      y: 7,
-      sizeX: 2,
-      sizeY: 1,
-      variant: 2
-    },
-    {
-      id: 'cottage_fisherman_pond',
-      name: 'Chata Rybaka nad Stawem',
-      x: 25,
-      y: 18,
-      sizeX: 2,
-      sizeY: 1,
-      variant: 14
-    },
-    {
-      id: 'cottage_granary',
-      name: 'Spichlerz Zbożowy i Magazyn Kupiecki',
-      x: 9,
-      y: 11,
+      id: 'barn_granary_communal',
+      name: 'Wielki Spichlerz Gromadzki i Magazyn Kupiecki',
+      x: 14,
+      y: 12,
       sizeX: 2,
       sizeY: 1,
       variant: 4
     },
+    // 3. Karczma Grodowa
     {
-      id: 'cottage_potter_weaver',
-      name: 'Chata Garncarki i Tkaczki',
-      x: 8,
-      y: 23,
+      id: 'cottage_inn_wolf_fang',
+      name: 'Gospoda „Pod Wilczym Kłem” (Karczma Zrębowa)',
+      x: 27,
+      y: 14,
       sizeX: 2,
       sizeY: 1,
-      variant: 1
+      variant: 5
     },
+    // 4. Budynek gospodarczy karczmy: Wozownia i Stajenka
     {
-      id: 'cottage_woodcutter',
-      name: 'Chata Drwala i Smolarza',
-      x: 5,
+      id: 'shed_inn_stable',
+      name: 'Wozownia i Stajenka Karczemna (Budynek Gospodarczy)',
+      x: 30,
       y: 14,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 12
+    },
+    // 5. Kuźnia Grodowa
+    {
+      id: 'cottage_blacksmith_bozydar',
+      name: 'Kuźnia Płatnerza Bożydara (Dymarka i Kowadło)',
+      x: 27,
+      y: 20,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 7
+    },
+    // 6. Budynek gospodarczy kuźni: Szopa na węgiel i narzędzia
+    {
+      id: 'shed_blacksmith_forge',
+      name: 'Szopa Kuźnicza i Skład Węgla (Budynek Gospodarczy)',
+      x: 30,
+      y: 20,
       sizeX: 1,
       sizeY: 2,
       variant: 11
     },
+    // 7. Chata Zielarki
+    {
+      id: 'cottage_herbalist_hut',
+      name: 'Chata Zielarki Wisławy (Strzecha)',
+      x: 12,
+      y: 24,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 9
+    },
+    // 8. Budynek gospodarczy zielarki: Suszarnia ziół
+    {
+      id: 'shed_herbalist_drying',
+      name: 'Suszarnia Ziół i Chlewik Zielarki (Budynek Gospodarczy)',
+      x: 10,
+      y: 25,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    // 9. Zagroda Gospodarska Północna
+    {
+      id: 'cottage_hunter_north',
+      name: 'Zagroda Chłopska Północna (Chata Rolnika)',
+      x: 25,
+      y: 8,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 2
+    },
+    // 10. Budynek gospodarczy: Wielka Stodoła na Siano
+    {
+      id: 'barn_peasant_north',
+      name: 'Wielka Stodoła na Siano i Snopek (Budynek Gospodarczy)',
+      x: 28,
+      y: 8,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 4
+    },
+    // 11. Chata Rzemieślnicza Tkaczki i Garncarki
+    {
+      id: 'cottage_potter_weaver',
+      name: 'Chata Garncarki i Tkaczki',
+      x: 11,
+      y: 29,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 1
+    },
+    // 12. Budynek gospodarczy garncarki: Wiata na glinę i piec
+    {
+      id: 'shed_potter_kiln',
+      name: 'Wiata na Glinę i Piec Garncarski (Budynek Gospodarczy)',
+      x: 8,
+      y: 29,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    // 13. Chata Drwala i Smolarza
+    {
+      id: 'cottage_woodcutter',
+      name: 'Chata Drwala i Smolarza',
+      x: 7,
+      y: 17,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    // 14. Budynek gospodarczy: Drewutnia gromadzka na kłody
+    {
+      id: 'shed_woodcutter_logs',
+      name: 'Drewutnia Gromadzka na Kłody i Drzewce (Budynek Gospodarczy)',
+      x: 7,
+      y: 19,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    // 15. Chata Rybaka nad Przystanią
+    {
+      id: 'cottage_fisherman_pond',
+      name: 'Chata Rybaka nad Przystanią',
+      x: 34,
+      y: 26,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 14
+    },
+    // 16. Budynek gospodarczy rybaka: Wiata na sieci i czółna
+    {
+      id: 'shed_wharf_nets',
+      name: 'Wiata Rybacka na Sieci i Czółna (Budynek Gospodarczy)',
+      x: 34,
+      y: 28,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    // 17. Chata Kołodzieja i Rymarza
+    {
+      id: 'cottage_wheelwright',
+      name: 'Chata Kołodzieja i Bartnika',
+      x: 26,
+      y: 27,
+      sizeX: 2,
+      sizeY: 1,
+      variant: 12
+    },
+    // 18. Budynek gospodarczy kołodzieja: Szopa na koła i osie
+    {
+      id: 'shed_wheelwright_timber',
+      name: 'Szopa Kołodziejska z Kołami i Ośkami (Budynek Gospodarczy)',
+      x: 29,
+      y: 27,
+      sizeX: 1,
+      sizeY: 2,
+      variant: 11
+    },
+    // 19. Wartownia Straży Grodowej przy Bramie Południowej
     {
       id: 'cottage_gatekeeper',
       name: 'Wartownia Strażników Bramy Południowej',
-      x: 12,
-      y: 22,
+      x: 18,
+      y: 34,
       sizeX: 1,
       sizeY: 2,
       variant: 3
     },
+    // 20. Młyn Wodny Nadbrzeżny
     {
       id: 'cottage_watermill',
-      name: 'Młyn Wodny Nadbrzeżny z Kołem Młyńskim',
-      x: 26,
-      y: 26,
+      name: 'Młyn Wodny Nadbrzeżny z Kołem Młyńskim (Budynek Gospodarczy)',
+      x: 34,
+      y: 35,
       sizeX: 2,
       sizeY: 1,
       variant: 8
     }
   ];
 
-  for (const c of cottages) {
+  for (const c of villageBuildings) {
     const cz = tiles[c.y][c.x].z;
     const lightId = `light_${c.id}`;
     lights.push({
@@ -1276,13 +1456,13 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     });
   }
 
-  // --- D. Sacred Pagan Shrine of Four-Faced Światowid on the Grove Hill ---
+  // --- D. Sacred Pagan Shrine of Four-Faced Światowid on Grove Hill ---
   const shrineLightId = 'light_swiatowid_grove';
   lights.push({
     id: shrineLightId,
-    x: 7,
-    y: 7,
-    z: tiles[7][7].z + 1.6,
+    x: 9,
+    y: 9,
+    z: tiles[9][9].z + 1.6,
     color: { r: 255, g: 196, b: 64 },
     intensity: 1.5,
     radius: 7.2,
@@ -1293,9 +1473,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     id: 'shrine_swiatowid_hill',
     name: 'Posąg Czterotwarzowego Światowida (Święty Gaj)',
     kind: 'slavic_shrine',
-    x: 7,
-    y: 7,
-    z: tiles[7][7].z,
+    x: 9,
+    y: 9,
+    z: tiles[9][9].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.6,
@@ -1310,9 +1490,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   const kurhanLightId = 'light_ancestral_kurhan';
   lights.push({
     id: kurhanLightId,
-    x: 25.5,
-    y: 5.5,
-    z: tiles[5][25].z + 1.8,
+    x: 34.5,
+    y: 7.5,
+    z: tiles[7][34].z + 1.8,
     color: { r: 168, g: 92, b: 255 },
     intensity: 1.6,
     radius: 7.0,
@@ -1325,9 +1505,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Kamienny Sarkofag Dawnego Kniazia na Kurhanie',
     kind: 'sarcophagus',
     variant: 0,
-    x: 26,
-    y: 6,
-    z: tiles[6][26].z,
+    x: 34,
+    y: 7,
+    z: tiles[7][34].z,
     sizeX: 1,
     sizeY: 2,
     heightZ: 1.8,
@@ -1343,9 +1523,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Runiczny Monolit Duszy Przodków',
     kind: 'arcane_crystal',
     variant: 0,
-    x: 25,
-    y: 5,
-    z: tiles[5][25].z,
+    x: 33,
+    y: 6,
+    z: tiles[6][33].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.2,
@@ -1357,10 +1537,10 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   });
 
   const kurhanPillars = [
-    { id: 'kurhan_pillar_nw', x: 24, y: 4, v: 1 },
-    { id: 'kurhan_pillar_sw', x: 24, y: 7, v: 3 },
-    { id: 'kurhan_pillar_ne', x: 28, y: 4, v: 5 },
-    { id: 'kurhan_pillar_se', x: 28, y: 7, v: 7 }
+    { id: 'kurhan_pillar_nw', x: 32, y: 5, v: 1 },
+    { id: 'kurhan_pillar_sw', x: 32, y: 9, v: 3 },
+    { id: 'kurhan_pillar_ne', x: 37, y: 5, v: 5 },
+    { id: 'kurhan_pillar_se', x: 37, y: 9, v: 7 }
   ];
   for (const kp of kurhanPillars) {
     props.push({
@@ -1385,9 +1565,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Baszta Cmentarna i Obserwacyjna Kurhanu',
     kind: 'watchtower',
     variant: 2,
-    x: 28,
-    y: 5,
-    z: tiles[5][28].z,
+    x: 37,
+    y: 6,
+    z: tiles[6][37].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 3.6,
@@ -1398,16 +1578,16 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   });
 
   const kurhanFences = [
-    { x: 24, y: 3, v: 0 },
-    { x: 25, y: 3, v: 1 },
-    { x: 26, y: 3, v: 2 },
-    { x: 27, y: 3, v: 3 },
-    { x: 29, y: 4, v: 4 },
-    { x: 29, y: 5, v: 5 },
-    { x: 29, y: 6, v: 4 },
-    { x: 25, y: 8, v: 0 },
-    { x: 26, y: 8, v: 1 },
-    { x: 27, y: 8, v: 2 }
+    { x: 31, y: 4, v: 0 },
+    { x: 32, y: 4, v: 1 },
+    { x: 33, y: 4, v: 2 },
+    { x: 34, y: 4, v: 3 },
+    { x: 38, y: 5, v: 4 },
+    { x: 38, y: 6, v: 5 },
+    { x: 38, y: 7, v: 4 },
+    { x: 33, y: 10, v: 0 },
+    { x: 34, y: 10, v: 1 },
+    { x: 35, y: 10, v: 2 }
   ];
   for (const kf of kurhanFences) {
     props.push({
@@ -1428,8 +1608,8 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   }
 
   const kurhanDeadTrees = [
-    { x: 23, y: 3, v: 1 },
-    { x: 29, y: 7, v: 3 }
+    { x: 30, y: 4, v: 1 },
+    { x: 38, y: 8, v: 3 }
   ];
   for (const dt of kurhanDeadTrees) {
     props.push({
@@ -1449,23 +1629,29 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     });
   }
 
-  // --- E. Woven Willow Wattle Fences (Plecione Płoty Wiklinowe) around Cottages ---
+  // --- E. Woven Willow Wattle Fences around Homestead Yards (20+ fences) ---
   const fenceCoords: ReadonlyArray<{ x: number; y: number; v: number }> = [
-    { x: 13, y: 8, v: 0 },
-    { x: 16, y: 8, v: 0 },
-    { x: 17, y: 8, v: 0 },
-    { x: 21, y: 11, v: 0 },
-    { x: 24, y: 11, v: 0 },
-    { x: 24, y: 12, v: 1 },
-    { x: 7, y: 18, v: 1 },
-    { x: 7, y: 19, v: 1 },
-    { x: 7, y: 20, v: 1 },
-    { x: 19, y: 21, v: 0 },
-    { x: 22, y: 21, v: 0 },
-    { x: 4, y: 14, v: 1 },
-    { x: 4, y: 15, v: 1 },
-    { x: 8, y: 11, v: 0 },
-    { x: 11, y: 11, v: 0 }
+    { x: 18, y: 12, v: 0 },
+    { x: 21, y: 12, v: 0 },
+    { x: 13, y: 12, v: 0 },
+    { x: 16, y: 12, v: 0 },
+    { x: 26, y: 14, v: 0 },
+    { x: 29, y: 14, v: 0 },
+    { x: 26, y: 20, v: 0 },
+    { x: 29, y: 20, v: 0 },
+    { x: 11, y: 24, v: 1 },
+    { x: 11, y: 25, v: 1 },
+    { x: 11, y: 26, v: 1 },
+    { x: 25, y: 27, v: 0 },
+    { x: 28, y: 27, v: 0 },
+    { x: 6, y: 17, v: 1 },
+    { x: 6, y: 18, v: 1 },
+    { x: 6, y: 19, v: 1 },
+    { x: 10, y: 29, v: 0 },
+    { x: 13, y: 29, v: 0 },
+    { x: 24, y: 8, v: 0 },
+    { x: 27, y: 8, v: 0 },
+    { x: 30, y: 8, v: 0 }
   ];
 
   for (const f of fenceCoords) {
@@ -1486,14 +1672,30 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     });
   }
 
-  // --- F. Travel Signpost back to Forest Clearing & Village Chests ---
+  // --- F. Travel Signposts (Bidirectional connections to Forest Clearing and Dungeons) ---
   props.push({
     id: 'signpost_to_forest_clearing',
     name: 'Drogowskaz: Polana Wilczego Ognia ←',
     kind: 'travel_signpost',
-    x: 17,
-    y: 23,
-    z: tiles[23][17].z,
+    x: 22,
+    y: 36,
+    z: tiles[36][22].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true
+  });
+
+  props.push({
+    id: 'signpost_to_dungeon',
+    name: 'Drogowskaz: Zejście do Jaskiń i Lochów Aethelgardu ↓',
+    kind: 'travel_signpost',
+    x: 22,
+    y: 5,
+    z: tiles[5][22].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.1,
@@ -1508,9 +1710,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Okuta Skrzynia Starosty',
     kind: 'chest',
     variant: 0,
-    x: 13,
-    y: 9,
-    z: tiles[9][13].z,
+    x: 18,
+    y: 13,
+    z: tiles[13][18].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 1.1,
@@ -1521,15 +1723,15 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     lootItems: ['torso_aethel_plate', 'weapon_astral_staff']
   });
 
-  // --- Wharf, Fisher's Pier & Deep Water Props (South-East) ---
+  // Wharf & Pier Props (South-East)
   props.push({
     id: 'village_chest_wharf_1',
     name: 'Skrzynia Rybacka z Narzędziami',
     kind: 'chest',
     variant: 1,
-    x: 22,
-    y: 22,
-    z: tiles[22][22].z,
+    x: 30,
+    y: 31,
+    z: tiles[31][30].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 1.1,
@@ -1545,9 +1747,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Beczka i Skrzynia Towarowa Przystani',
     kind: 'chest',
     variant: 2,
-    x: 23,
-    y: 23,
-    z: tiles[23][23].z,
+    x: 31,
+    y: 32,
+    z: tiles[32][31].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 1.1,
@@ -1559,8 +1761,8 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   });
 
   const wharfDeadTrees = [
-    { x: 24, y: 20, v: 0 },
-    { x: 28, y: 23, v: 2 }
+    { x: 33, y: 31, v: 0 },
+    { x: 39, y: 35, v: 2 }
   ];
   for (const wdt of wharfDeadTrees) {
     props.push({
@@ -1582,8 +1784,9 @@ export function createSlavicVillageMap(): IsometricWorldMap {
 
   // --- F2. Village Watchtowers, Street Lanterns, Sacred Grove Iron Fences & Rock Cliffs ---
   const villageWatchtowers = [
-    { id: 'watchtower_south_west', name: 'Baszta Strażnicza Bramy Zachodniej', x: 13, y: 24, v: 1 },
-    { id: 'watchtower_south_east', name: 'Kamienna Baszta Straży Grodowej', x: 18, y: 24, v: 0 }
+    { id: 'watchtower_south_west', name: 'Baszta Strażnicza Bramy Zachodniej', x: 18, y: 38, v: 1 },
+    { id: 'watchtower_south_east', name: 'Kamienna Baszta Straży Grodowej', x: 24, y: 38, v: 0 },
+    { id: 'watchtower_north_pass', name: 'Baszta Obserwacyjna Przełęczy Północnej', x: 24, y: 4, v: 0 }
   ];
   for (const wt of villageWatchtowers) {
     props.push({
@@ -1605,12 +1808,13 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   }
 
   const villageLanterns = [
-    { id: 'lantern_market_nw', x: 12, y: 15 },
-    { id: 'lantern_market_ne', x: 19, y: 15 },
-    { id: 'lantern_road_south', x: 15, y: 22 },
-    { id: 'lantern_wharf', x: 21, y: 22 },
-    { id: 'lantern_kurhan_approach', x: 22, y: 9 },
-    { id: 'lantern_sacred_steps', x: 10, y: 11 }
+    { id: 'lantern_market_nw', x: 18, y: 20 },
+    { id: 'lantern_market_ne', x: 26, y: 20 },
+    { id: 'lantern_road_south', x: 21, y: 32 },
+    { id: 'lantern_wharf', x: 29, y: 31 },
+    { id: 'lantern_kurhan_approach', x: 29, y: 10 },
+    { id: 'lantern_sacred_steps', x: 13, y: 15 },
+    { id: 'lantern_gate_north', x: 21, y: 6 }
   ];
   for (const vl of villageLanterns) {
     const lid = `light_${vl.id}`;
@@ -1646,11 +1850,11 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   }
 
   const groveIronFences = [
-    { x: 5, y: 10, v: 0 },
-    { x: 6, y: 10, v: 1 },
-    { x: 7, y: 10, v: 2 },
-    { x: 10, y: 8, v: 4 },
-    { x: 10, y: 9, v: 5 }
+    { x: 6, y: 13, v: 0 },
+    { x: 7, y: 13, v: 1 },
+    { x: 8, y: 13, v: 2 },
+    { x: 13, y: 9, v: 4 },
+    { x: 13, y: 10, v: 5 }
   ];
   for (const gf of groveIronFences) {
     props.push({
@@ -1671,11 +1875,11 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   }
 
   const villageCliffs = [
-    { x: 4, y: 11, v: 1 },
-    { x: 11, y: 4, v: 3 },
-    { x: 21, y: 24, v: 0 },
-    { x: 23, y: 25, v: 4 },
-    { x: 28, y: 26, v: 6 }
+    { x: 5, y: 14, v: 1 },
+    { x: 14, y: 5, v: 3 },
+    { x: 29, y: 34, v: 0 },
+    { x: 31, y: 36, v: 4 },
+    { x: 39, y: 37, v: 6 }
   ];
   for (const vc of villageCliffs) {
     props.push({
@@ -1697,12 +1901,12 @@ export function createSlavicVillageMap(): IsometricWorldMap {
 
   // --- G. Surrounding Slavic Forest Perimeter & Wildflowers ---
   const occupied = new Set<string>([
-    '16,20', // Player spawn
-    '15,18', // NPC Król Gniewomir
-    '14,14', // NPC Kupiec Dobromir
-    '18,14', // NPC Płatnerz Bożydar
-    '8,8',   // NPC Żerca Radogost
-    '18,17'  // NPC Strażnik Miłosz
+    '22,26', // Player spawn
+    '21,15', // NPC Król Gniewomir
+    '20,20', // NPC Kupiec Dobromir
+    '26,21', // NPC Płatnerz Bożydar
+    '10,9',  // NPC Żerca Radogost
+    '22,24'  // Marketplace center
   ]);
   for (const p of props) {
     for (let dy = 0; dy < p.sizeY; dy++) {
@@ -1719,8 +1923,8 @@ export function createSlavicVillageMap(): IsometricWorldMap {
       if (tiles[y][x].terrain === 'dirt_path' || tiles[y][x].terrain === 'mossy_cobble') continue;
 
       const isOuterBorder = x <= 1 || x >= width - 2 || y <= 1 || y >= height - 2;
-      const distCenter = Math.hypot(x - 16, y - 16);
-      const isOutskirtWoods = distCenter >= 12.2 && (x * 11 + y * 17) % 3 === 0;
+      const distCenter = Math.hypot(x - 22, y - 22);
+      const isOutskirtWoods = distCenter >= 16.5 && (x * 11 + y * 17) % 3 === 0;
 
       if (isOuterBorder || isOutskirtWoods) {
         const treeVariant = (x * 7 + y * 13) % 19;
@@ -1766,7 +1970,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     id: 'slavic_village',
     name: 'Osada Żerców — Targowisko pod Światowidem',
     subtitle:
-      'Słowiańska osada (32×32) — 12 chat zrębowych, Kurhan Kniazia z runami, Przystań i Młyn, Baszty oraz Święty Gaj Światowida',
+      'Powiększona osada słowiańska (44×44) — 20 chat i budynków gospodarczych, Kurhan Kniazia, Przystań i Młyn, Baszty oraz Święty Gaj Światowida',
     width,
     height,
     maxElevation: 3,
@@ -1776,9 +1980,18 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   };
 }
 
+/**
+ * Third Test Location: Multi-zone Cavern & Dungeon Crawler (36x36):
+ * "Sanktuarium Zatopionej Korony & Jaskinie Aethelgardu"
+ * 
+ * Features 3 progressive zones:
+ * Zone 1: Upper Caverns (wilgotne pieczary, podziemne jezioro, drewniane podpory kopalniane, 4 łatwych wrogów)
+ * Zone 2: Catacombs & Crypts (kamienne korytarze, wrota, kolumny, beczki, skrzynie, 3 średnich wrogów)
+ * Zone 3: Deep Inner Sanctum & Boss Chamber (marmur, runiczny ołtarz, kryształy eteryczne, złote relikwie, 1 potężny Boss)
+ */
 export function createSanctumWorldMap(): IsometricWorldMap {
-  const width = 20;
-  const height = 20;
+  const width = 36;
+  const height = 36;
   const tiles: TileCell[][] = [];
 
   for (let y = 0; y < height; y++) {
@@ -1788,32 +2001,53 @@ export function createSanctumWorldMap(): IsometricWorldMap {
       let terrain: TileTerrainType = 'dungeon_stone';
       let walkable = true;
 
-      if (x <= 7 && y <= 7) {
-        z = 2;
+      // Zone 1: Upper Caverns (x: 2..15, y: 2..16)
+      if (x <= 15 && y <= 16) {
         terrain = 'mossy_cobble';
+        // Raised cave ridge at NW
+        if (x <= 6 && y <= 6) {
+          z = 1;
+        }
+        // Subterranean lake / stream
+        if (x >= 2 && x <= 6 && y >= 9 && y <= 14) {
+          terrain = 'abyss_water';
+          walkable = false;
+        }
       }
 
-      if (x >= 12 && y >= 12) {
-        z = 2;
+      // Cave steps down from ridge
+      if ((x === 7 && (y === 4 || y === 5)) || (y === 7 && (x === 4 || x === 5))) {
+        z = 0;
+        terrain = 'stairs_stone';
+      }
+
+      // Zone 2: Middle Catacombs & Crypts (x: 16..34, y: 2..17)
+      if (x >= 16 && y <= 17) {
+        terrain = 'dungeon_stone';
+      }
+
+      // Corridor connector stairs between Caverns and Catacombs
+      if (x === 15 && (y === 7 || y === 8)) {
+        terrain = 'stairs_stone';
+      }
+
+      // Zone 3: Inner Sanctum & Boss Chamber (x: 14..34, y: 18..34)
+      if (x >= 14 && y >= 18) {
         terrain = 'sanctum_marble';
+        // Raised dais in Boss Chamber
+        if (x >= 20 && x <= 28 && y >= 22 && y <= 30) {
+          z = 1;
+          terrain = x >= 22 && x <= 26 && y >= 24 && y <= 28 ? 'arcane_inlay' : 'sanctum_marble';
+        }
+        // Steps up to the dais
+        if ((y === 21 && x >= 23 && x <= 25) || (y === 31 && x >= 23 && x <= 25)) {
+          z = 0;
+          terrain = 'stairs_stone';
+        }
       }
 
-      if ((x === 8 && (y === 4 || y === 5)) || (y === 8 && (x === 4 || x === 5))) {
-        z = 1;
-        terrain = 'stairs_stone';
-      }
-
-      if ((x === 11 && (y === 14 || y === 15)) || (y === 11 && (x === 14 || x === 15))) {
-        z = 1;
-        terrain = 'stairs_stone';
-      }
-
-      if (x >= 8 && x <= 11 && y >= 8 && y <= 11) {
-        terrain = 'arcane_inlay';
-      }
-
-      if (x <= 3 && y >= 15) {
-        terrain = 'abyss_water';
+      // Perimeter boundary walls
+      if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
         walkable = false;
       }
 
@@ -1825,8 +2059,9 @@ export function createSanctumWorldMap(): IsometricWorldMap {
   const props: WorldPropEntity[] = [];
   const lights: PointLightSource[] = [];
 
-  const addWall = (x: number, y: number, name = 'Mur Twierdzy'): void => {
-    const z = tiles[y]?.[x]?.z ?? 0;
+  const addWall = (x: number, y: number, name = 'Mur Kamienny Głębin'): void => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const z = tiles[y][x].z;
     props.push({
       id: `wall_${x}_${y}`,
       name,
@@ -1843,49 +2078,31 @@ export function createSanctumWorldMap(): IsometricWorldMap {
     });
   };
 
-  for (let i = 0; i <= 7; i++) {
-    if (i !== 4 && i !== 5) {
-      addWall(8, i, 'Mur Dziedzińca');
-      addWall(i, 8, 'Mur Dziedzińca');
+  // Outer Perimeter Walls
+  for (let x = 0; x < width; x++) {
+    addWall(x, 0, 'Ściana Skalna Głębin');
+    addWall(x, height - 1, 'Ściana Skalna Głębin');
+  }
+  for (let y = 1; y < height - 1; y++) {
+    addWall(0, y, 'Ściana Skalna Głębin');
+    addWall(width - 1, y, 'Ściana Skalna Głębin');
+  }
+
+  // --- Dividing Wall between Zone 1 (Caverns) and Zone 2 (Catacombs) (x=15, y: 1..17) ---
+  for (let y = 1; y <= 17; y++) {
+    if (y !== 8) {
+      addWall(15, y, 'Kamienny Mur Katakumb');
     }
   }
 
-  for (let x = 13; x <= 18; x++) {
-    addWall(x, 2, 'Ściana Skarbca Konklawe');
-    if (x !== 15) {
-      addWall(x, 7, 'Ściana Skarbca Konklawe');
-    }
-  }
-  for (let y = 3; y <= 6; y++) {
-    if (y !== 5) {
-      addWall(13, y, 'Ściana Skarbca Konklawe');
-    }
-    addWall(18, y, 'Ściana Skarbca Konklawe');
-  }
-
+  // Reinforced Door separating Caverns from Catacombs at (15, 8)
   props.push({
-    id: 'door_vault_west',
-    name: 'Okute Wrota Skarbca',
-    kind: 'door',
-    x: 13,
-    y: 5,
-    z: tiles[5][13].z,
-    sizeX: 1,
-    sizeY: 1,
-    heightZ: 2.5,
-    blocksMovement: true,
-    blocksSight: true,
-    interactive: true,
-    isOpen: false
-  });
-
-  props.push({
-    id: 'door_vault_south',
-    name: 'Południowa krata Sanktuarium',
+    id: 'door_cavern_gate',
+    name: 'Ciężkie Żelazne Wrota Krypt',
     kind: 'door',
     x: 15,
-    y: 7,
-    z: tiles[7][15].z,
+    y: 8,
+    z: tiles[8][15].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.5,
@@ -1895,37 +2112,356 @@ export function createSanctumWorldMap(): IsometricWorldMap {
     isOpen: false
   });
 
-  const pillarCoords = [
-    [7, 11],
-    [11, 7],
-    [12, 12],
-    [16, 12],
-    [12, 16]
+  // --- Crypt Internal Chamber Partition Walls (Zone 2) ---
+  // North Vault (x: 24..34, y: 8) with door at (28, 8)
+  for (let x = 24; x <= 34; x++) {
+    if (x !== 28) {
+      addWall(x, 8, 'Ściana Krypty Rycerskiej');
+    }
+  }
+  props.push({
+    id: 'door_crypt_north',
+    name: 'Okute Drzwi Krypty Rycerskiej',
+    kind: 'door',
+    x: 28,
+    y: 8,
+    z: tiles[8][28].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.5,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: false
+  });
+
+  // Dividing Wall between Zone 2 (Catacombs) and Zone 3 (Sanctum) (y=18, x: 14..34)
+  for (let x = 14; x <= 34; x++) {
+    if (x !== 24) {
+      addWall(x, 18, 'Wielki Portal Sanktuarium');
+    }
+  }
+
+  // Grand Portal Door leading into Boss Sanctum at (24, 18)
+  props.push({
+    id: 'door_sanctum_gate',
+    name: 'Wielkie Runiczne Wrota Wewnętrznego Sanktuarium',
+    kind: 'door',
+    x: 24,
+    y: 18,
+    z: tiles[18][24].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.6,
+    blocksMovement: true,
+    blocksSight: true,
+    interactive: true,
+    isOpen: false
+  });
+
+  // ==========================================
+  // ZONE 1: UPPER CAVERNS PROPS & DECORATION
+  // ==========================================
+
+  // Surface Travel Signposts (Exit back to Polana / Osada)
+  props.push({
+    id: 'signpost_to_forest_clearing',
+    name: 'Schody na Powierzchnię: Polana Wilczego Ognia ↑',
+    kind: 'travel_signpost',
+    x: 4,
+    y: 3,
+    z: tiles[3][4].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true
+  });
+
+  props.push({
+    id: 'signpost_to_slavic_village',
+    name: 'Tunel do Słowiańskiej Osady ↑',
+    kind: 'travel_signpost',
+    x: 4,
+    y: 4,
+    z: tiles[4][4].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 2.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: true
+  });
+
+  // Mine Timber Supports (`dungeon_support`)
+  const mineSupports = [
+    { x: 6, y: 5, id: 'sup_1' },
+    { x: 10, y: 5, id: 'sup_2' },
+    { x: 8, y: 9, id: 'sup_3' },
+    { x: 13, y: 9, id: 'sup_4' },
+    { x: 7, y: 15, id: 'sup_5' },
+    { x: 12, y: 15, id: 'sup_6' }
   ];
-  for (const [px, py] of pillarCoords) {
+  for (const s of mineSupports) {
     props.push({
-      id: `pillar_${px}_${py}`,
-      name: 'Kolumna Starożytnych',
-      kind: 'pillar',
-      x: px,
-      y: py,
-      z: tiles[py][px].z,
+      id: s.id,
+      name: 'Drewniana Podpora Kopalniana',
+      kind: 'dungeon_support',
+      x: s.x,
+      y: s.y,
+      z: tiles[s.y][s.x].z,
       sizeX: 1,
       sizeY: 1,
-      heightZ: 3.0,
+      heightZ: 2.4,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: false
+    });
+  }
+
+  // Supply Crates in Caverns (`dungeon_crate`)
+  const cavernCrates = [
+    { x: 5, y: 6, id: 'cra_cav_1' },
+    { x: 9, y: 7, id: 'cra_cav_2' },
+    { x: 13, y: 6, id: 'cra_cav_3' }
+  ];
+  for (const c of cavernCrates) {
+    props.push({
+      id: c.id,
+      name: 'Porzucona Skrzynia Poszukiwaczy',
+      kind: 'dungeon_crate',
+      x: c.x,
+      y: c.y,
+      z: tiles[c.y][c.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.1,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: true,
+      isOpen: false
+    });
+  }
+
+  // Rock Cliffs in Caverns
+  const cavernCliffs = [
+    { x: 2, y: 8, v: 0 },
+    { x: 5, y: 15, v: 4 },
+    { x: 14, y: 4, v: 2 }
+  ];
+  for (const rc of cavernCliffs) {
+    props.push({
+      id: `cavcliff_${rc.x}_${rc.y}`,
+      name: 'Skalny Występ Jaskiniowy',
+      kind: 'rock_cliff',
+      variant: rc.v,
+      x: rc.x,
+      y: rc.y,
+      z: tiles[rc.y][rc.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.2,
       blocksMovement: true,
       blocksSight: true,
       interactive: false
     });
   }
 
+  // ==========================================
+  // ZONE 2: CATACOMBS & CRYPTS PROPS
+  // ==========================================
+
+  // Pillars in Crypts
+  const cryptPillars = [
+    { x: 18, y: 5 },
+    { x: 22, y: 5 },
+    { x: 18, y: 12 },
+    { x: 22, y: 12 },
+    { x: 26, y: 12 },
+    { x: 30, y: 12 }
+  ];
+  for (const p of cryptPillars) {
+    props.push({
+      id: `cpillar_${p.x}_${p.y}`,
+      name: 'Kamienna Kolumna Katakumb',
+      kind: 'pillar',
+      x: p.x,
+      y: p.y,
+      z: tiles[p.y][p.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 2.8,
+      blocksMovement: true,
+      blocksSight: true,
+      interactive: false
+    });
+  }
+
+  // Barrels in Crypts (`dungeon_barrel`)
+  const cryptBarrels = [
+    { x: 17, y: 6, id: 'bar_cr_1' },
+    { x: 22, y: 9, id: 'bar_cr_2' },
+    { x: 27, y: 5, id: 'bar_cr_3' },
+    { x: 32, y: 11, id: 'bar_cr_4' }
+  ];
+  for (const b of cryptBarrels) {
+    props.push({
+      id: b.id,
+      name: 'Okuta Beczka ze Smołą',
+      kind: 'dungeon_barrel',
+      x: b.x,
+      y: b.y,
+      z: tiles[b.y][b.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.2,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: true,
+      isOpen: false
+    });
+  }
+
+  // Dungeon Tables (`dungeon_table`)
+  props.push({
+    id: 'tbl_crypt_guard',
+    name: 'Kamienny Stół Straży Krypt',
+    kind: 'dungeon_table',
+    x: 20,
+    y: 9,
+    z: tiles[9][20].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.2,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: false
+  });
+
+  props.push({
+    id: 'tbl_crypt_cult',
+    name: 'Stół Rytualny Guślarzy',
+    kind: 'dungeon_table',
+    x: 26,
+    y: 15,
+    z: tiles[15][26].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.2,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: false
+  });
+
+  // Ancient Crypt Sarcophagi
+  props.push({
+    id: 'sarcophagus_crypt_1',
+    name: 'Sarkofag Rycerza Zakonu Cienia',
+    kind: 'sarcophagus',
+    x: 31,
+    y: 5,
+    z: tiles[5][31].z,
+    sizeX: 1,
+    sizeY: 2,
+    heightZ: 1.6,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['torso_przeszywanica', 'weapon_slavic_axe']
+  });
+
+  props.push({
+    id: 'sarcophagus_crypt_2',
+    name: 'Sarkofag Zapomnianego Inkwizytora',
+    kind: 'sarcophagus',
+    x: 18,
+    y: 15,
+    z: tiles[15][18].z,
+    sizeX: 1,
+    sizeY: 2,
+    heightZ: 1.6,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['helm_arcane_circlet', 'ring_emerald_seal']
+  });
+
+  // Treasure Chests in Crypts
+  props.push({
+    id: 'chest_crypt_north',
+    name: 'Żelazna Skrzynia Strażników Krypt',
+    kind: 'chest',
+    x: 33,
+    y: 6,
+    z: tiles[6][33].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['weapon_sunblade_longsword', 'cloak_crimson_mantle', 'item_old_mead']
+  });
+
+  props.push({
+    id: 'chest_crypt_south',
+    name: 'Okuty Kufer Kultu Cieni',
+    kind: 'chest',
+    x: 29,
+    y: 15,
+    z: tiles[15][29].z,
+    sizeX: 1,
+    sizeY: 1,
+    heightZ: 1.1,
+    blocksMovement: true,
+    blocksSight: false,
+    interactive: true,
+    isOpen: false,
+    lootItems: ['torso_warden_brigandine', 'legs_leather_boots', 'item_moon_herbs']
+  });
+
+  // ==========================================
+  // ZONE 3: INNER SANCTUM & BOSS CHAMBER PROPS
+  // ==========================================
+
+  // Grand Columns flanking Boss Chamber Dais
+  const sanctumPillars = [
+    { x: 20, y: 22 },
+    { x: 28, y: 22 },
+    { x: 20, y: 29 },
+    { x: 28, y: 29 }
+  ];
+  for (const sp of sanctumPillars) {
+    props.push({
+      id: `spillar_${sp.x}_${sp.y}`,
+      name: 'Monolityczna Kolumna Sanktuarium',
+      kind: 'pillar',
+      x: sp.x,
+      y: sp.y,
+      z: tiles[sp.y][sp.x].z,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 3.2,
+      blocksMovement: true,
+      blocksSight: true,
+      interactive: false
+    });
+  }
+
+  // Runic Sacrificial Altar in Center of Dais (24, 25)
   props.push({
     id: 'altar_sunken_crown',
     name: 'Ołtarz Zatopionej Korony (2x1)',
     kind: 'runic_altar',
-    x: 15,
-    y: 15,
-    z: tiles[15][15].z,
+    x: 23,
+    y: 25,
+    z: tiles[25][23].z,
     sizeX: 2,
     sizeY: 1,
     heightZ: 1.8,
@@ -1934,122 +2470,74 @@ export function createSanctumWorldMap(): IsometricWorldMap {
     interactive: true
   });
 
+  // Royal Sarcophagus of First Archon
   props.push({
     id: 'sarcophagus_ancient_king',
     name: 'Sarkofag Pierwszego Archonta (1x2)',
     kind: 'sarcophagus',
-    x: 3,
-    y: 11,
-    z: tiles[11][3].z,
+    x: 21,
+    y: 27,
+    z: tiles[27][21].z,
     sizeX: 1,
     sizeY: 2,
-    heightZ: 1.5,
-    blocksMovement: true,
-    blocksSight: false,
-    interactive: true
-  });
-
-  props.push({
-    id: 'chest_courtyard',
-    name: 'Okuta Skrzynia Gwardii',
-    kind: 'chest',
-    x: 2,
-    y: 2,
-    z: tiles[2][2].z,
-    sizeX: 1,
-    sizeY: 1,
-    heightZ: 1.1,
+    heightZ: 1.6,
     blocksMovement: true,
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['torso_aethel_plate', 'helm_dread_plate', 'weapon_Executioner_axe']
+    lootItems: ['torso_aethel_plate', 'trinket_kolowrot']
   });
 
+  // Grand Treasure Vault Chest with Legendary Loot
   props.push({
-    id: 'chest_vault',
-    name: 'Relikwiarz Konklawe',
+    id: 'chest_sanctum_vault',
+    name: 'Królewski Relikwiarz Zatopionej Korony',
     kind: 'chest',
-    x: 16,
-    y: 4,
-    z: tiles[4][16].z,
+    x: 26,
+    y: 27,
+    z: tiles[27][26].z,
     sizeX: 1,
     sizeY: 1,
-    heightZ: 1.1,
+    heightZ: 1.2,
     blocksMovement: true,
     blocksSight: false,
     interactive: true,
     isOpen: false,
-    lootItems: ['torso_archmage_robes', 'helm_arcane_circlet', 'weapon_astral_staff', 'offhand_grimoire']
+    lootItems: [
+      'weapon_Executioner_axe',
+      'torso_aethel_plate',
+      'helm_dread_plate',
+      'offhand_heraldic_shield',
+      'weapon_astral_staff'
+    ]
   });
 
-  const torchLocations = [
-    { x: 6, y: 4, id: 'torch_courtyard' },
-    { x: 9, y: 6, id: 'torch_gate_north' },
-    { x: 6, y: 9, id: 'torch_gate_west' },
-    { x: 12, y: 5, id: 'torch_vault_entry' },
-    { x: 16, y: 3, id: 'torch_vault_inner' },
-    { x: 13, y: 14, id: 'torch_dais_left' }
+  // Glowing Arcane Crystals in Boss Chamber
+  const arcaneCrystals = [
+    { x: 21, y: 23, id: 'crys_boss_nw' },
+    { x: 27, y: 23, id: 'crys_boss_ne' },
+    { x: 24, y: 30, id: 'crys_boss_s' }
   ];
-
-  for (const t of torchLocations) {
-    const tz = tiles[t.y][t.x].z;
-    const lightId = `light_${t.id}`;
+  for (const ac of arcaneCrystals) {
+    const lid = `light_${ac.id}`;
+    const cz = tiles[ac.y][ac.x].z;
     lights.push({
-      id: lightId,
-      x: t.x,
-      y: t.y,
-      z: tz + 1.5,
-      color: { r: 255, g: 166, b: 68 },
-      intensity: 1.35,
-      radius: 6.5,
-      flickerSpeed: 4.2,
-      enabled: true
-    });
-    props.push({
-      id: t.id,
-      name: 'Pochodnia Ścienna',
-      kind: 'torch_sconce',
-      x: t.x,
-      y: t.y,
-      z: tz,
-      sizeX: 1,
-      sizeY: 1,
-      heightZ: 1.8,
-      blocksMovement: true,
-      blocksSight: false,
-      interactive: true,
-      isOpen: true,
-      linkedLightId: lightId
-    });
-  }
-
-  const crystalLocations = [
-    { x: 9, y: 9, id: 'crystal_nexus' },
-    { x: 16, y: 16, id: 'crystal_sanctum' },
-    { x: 5, y: 14, id: 'crystal_abyss' }
-  ];
-
-  for (const c of crystalLocations) {
-    const cz = tiles[c.y][c.x].z;
-    const lightId = `light_${c.id}`;
-    lights.push({
-      id: lightId,
-      x: c.x,
-      y: c.y,
-      z: cz + 1.4,
+      id: lid,
+      x: ac.x,
+      y: ac.y,
+      z: cz + 1.5,
       color: { r: 64, g: 224, b: 255 },
-      intensity: 1.45,
-      radius: 6.0,
-      flickerSpeed: 1.8,
+      intensity: 1.65,
+      radius: 6.8,
+      flickerSpeed: 2.2,
       enabled: true
     });
     props.push({
-      id: c.id,
-      name: 'Monolit Eteryczny',
+      id: ac.id,
+      name: 'Kryształ Wiecznego Eteru',
       kind: 'arcane_crystal',
-      x: c.x,
-      y: c.y,
+      x: ac.x,
+      y: ac.y,
       z: cz,
       sizeX: 1,
       sizeY: 1,
@@ -2058,14 +2546,66 @@ export function createSanctumWorldMap(): IsometricWorldMap {
       blocksSight: false,
       interactive: true,
       isOpen: true,
-      linkedLightId: lightId
+      linkedLightId: lid
+    });
+  }
+
+  // Torches across All 3 Zones
+  const dungeonTorches = [
+    // Caverns
+    { x: 3, y: 5, id: 'torch_cav_spawn' },
+    { x: 9, y: 4, id: 'torch_cav_mine' },
+    { x: 14, y: 7, id: 'torch_cav_gate' },
+    { x: 8, y: 13, id: 'torch_cav_lake' },
+    // Crypts
+    { x: 16, y: 7, id: 'torch_cr_entry' },
+    { x: 21, y: 6, id: 'torch_cr_hall' },
+    { x: 27, y: 7, id: 'torch_cr_vault_door' },
+    { x: 32, y: 7, id: 'torch_cr_vault_inner' },
+    { x: 23, y: 17, id: 'torch_cr_sanctum_gate_l' },
+    { x: 25, y: 17, id: 'torch_cr_sanctum_gate_r' },
+    // Sanctum
+    { x: 19, y: 24, id: 'torch_boss_w' },
+    { x: 29, y: 24, id: 'torch_boss_e' },
+    { x: 24, y: 22, id: 'torch_boss_n' }
+  ];
+
+  for (const dt of dungeonTorches) {
+    const tz = tiles[dt.y][dt.x].z;
+    const lid = `light_${dt.id}`;
+    lights.push({
+      id: lid,
+      x: dt.x,
+      y: dt.y,
+      z: tz + 1.5,
+      color: { r: 255, g: 166, b: 68 },
+      intensity: 1.35,
+      radius: 6.2,
+      flickerSpeed: 4.2,
+      enabled: true
+    });
+    props.push({
+      id: dt.id,
+      name: 'Pochodnia Ścienna',
+      kind: 'torch_sconce',
+      x: dt.x,
+      y: dt.y,
+      z: tz,
+      sizeX: 1,
+      sizeY: 1,
+      heightZ: 1.8,
+      blocksMovement: true,
+      blocksSight: false,
+      interactive: true,
+      isOpen: true,
+      linkedLightId: lid
     });
   }
 
   return {
     id: 'sanctum_dungeon',
-    name: 'Sanktuarium Zatopionej Korony',
-    subtitle: 'Dziedziniec Aethelgardu — Poziom I (20×20)',
+    name: 'Lochy i Jaskinie Aethelgardu',
+    subtitle: 'Wielostrefowy labirynt podziemi (36×36) — Górne Jaskinie, Katakumby i Tron Czempiona',
     width,
     height,
     maxElevation: 3,
