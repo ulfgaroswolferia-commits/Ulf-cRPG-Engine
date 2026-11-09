@@ -2318,26 +2318,33 @@ export class CrpgGameState {
     this.player.combat!.dazedHeadTurns = 0;
     this.player.combat!.crippledLegsTurns = 0;
 
-    this.player.tileX = 15;
-    this.player.tileY = 17;
-    this.player.x = 15.5;
-    this.player.y = 17.5;
-    this.player.z = this.map.tiles[17][15].z;
+    const respawnX =
+      this.map.id === 'forest_clearing' ? 15 : this.map.id === 'slavic_village' ? 22 : 4;
+    const respawnY =
+      this.map.id === 'forest_clearing' ? 17 : this.map.id === 'slavic_village' ? 26 : 4;
+
+    this.player.tileX = respawnX;
+    this.player.tileY = respawnY;
+    this.player.x = respawnX + 0.5;
+    this.player.y = respawnY + 0.5;
+    this.player.z = this.map.tiles[respawnY][respawnX].z;
     this.player.path = [];
     this.player.isMoving = false;
 
     this.sayPlayerBark(
-      'Ten przeciwnik był zbyt silny... Muszę dobrać lepszy pancerz i broń przy ognisku!',
+      'Ten przeciwnik był zbyt silny... Muszę dobrać lepszy pancerz i broń!',
       5.0
     );
     this.addLog(
-      '💀 Zostałeś powalony w walce! Ocucono Cię przy ognisku obozowym (pełne HP). Wskazówka: na trudnego wroga użyj Dwuręcznego Topora Kata (przebicie pancerza) lub Kostura Runicznego!'
+      '💀 Zostałeś powalony w walce! Ocucono Cię w bezpiecznym miejscu (pełne HP). Wskazówka: na trudnego wroga użyj Dwuręcznego Topora Kata (przebicie pancerza) lub Kostura Runicznego!'
     );
     this.recomputeFov();
   }
 
   public fleeCombat(): void {
     if (!this.combatState.active) return;
+    this.isSequentialEnemyTurnActive = false;
+    this.pendingEnemyCombatTurnIds = [];
     this.combatState.active = false;
     this.combatState.activeTurnActorId = null;
     this.combatState.selectedTargetId = null;

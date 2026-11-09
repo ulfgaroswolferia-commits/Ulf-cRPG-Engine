@@ -1156,19 +1156,15 @@ export class HudOverlay {
     `;
 
     const mapSwitcherHtml = `
-          <button class="compass-angle-btn ${this.game.map.id === 'forest_clearing' ? 'active' : ''}" data-map-id="forest_clearing" title="Lokacja leśna 32×32: Polana Wilczego Ognia">
+          <button class="compass-angle-btn ${this.game.map.id === 'forest_clearing' ? 'active' : ''}" data-map-id="forest_clearing" title="Lokacja leśna (32×32): Polana Wilczego Ognia">
             🌲 Polana
           </button>
-          <button class="compass-angle-btn ${this.game.map.id === 'slavic_village' ? 'active' : ''}" data-map-id="slavic_village" title="Słowiańska Osada i Targowisko 32×32: Chaty, Kramy, Studnia i Posąg Światowida">
+          <button class="compass-angle-btn ${this.game.map.id === 'slavic_village' ? 'active' : ''}" data-map-id="slavic_village" title="Słowiańska Osada i Targowisko (44×44): Chaty, Kramy, Studnia, Gaj i Kurhan">
             🏘️ Słowiańska Osada
           </button>
-          ${
-            this.devMode
-              ? `<button class="compass-angle-btn ${this.game.map.id === 'sanctum_dungeon' ? 'active' : ''}" data-map-id="sanctum_dungeon" title="Lokacja lochów 20×20: Sanktuarium Korony">
-            🏰 Sanktuarium
-          </button>`
-              : ''
-          }
+          <button class="compass-angle-btn ${this.game.map.id === 'sanctum_dungeon' ? 'active' : ''}" data-map-id="sanctum_dungeon" title="Lochy i Jaskinie Aethelgardu (36×36): Górne Jaskinie, Katakumby i Tron Czempiona">
+            🗝️ Lochy i Jaskinie
+          </button>
           <span style="opacity:0.3;margin:0 4px;">|</span>
       `;
 
@@ -1331,7 +1327,7 @@ export class HudOverlay {
           <span class="brand-crest">${this.devMode ? '🛠️' : '❖'}</span>
           <div>
             <div class="world-title">${this.devMode ? `EDYTOR POZIOMÓW <span style="opacity:0.75;font-weight:500;">— ${this.game.map.name} (${this.game.map.width}×${this.game.map.height})</span>` : this.game.map.name}</div>
-            <div class="world-subtitle">${this.devMode ? 'Tryb projektowania mapy: maluj teren LPM, stawiaj obiekty Glionox/Slavic, zmieniaj wysokość Z i eksportuj JSON' : 'Otoczona puszczą polana obozowa — Zbierz ekwipunek, upiecz kiełbasę na ognisku i porozmawiaj z towarzyszami'}</div>
+            <div class="world-subtitle">${this.devMode ? 'Tryb projektowania mapy: maluj teren LPM, stawiaj obiekty Glionox/Slavic, zmieniaj wysokość Z i eksportuj JSON' : escapeHtml(this.game.map.subtitle)}</div>
           </div>
         </div>
 
