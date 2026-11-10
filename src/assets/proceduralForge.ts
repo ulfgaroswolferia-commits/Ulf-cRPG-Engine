@@ -548,10 +548,19 @@ export function generatePropPbrBuffers(
   } else if (kind === 'travel_signpost' && variant > 0) {
     const signpost = getOgaSignpostPbr(variant);
     if (signpost) return signpost;
-  } else if (kind === 'pillar' && variant > 0) {
-    const obelisk = getOgaPillarOrObeliskPbr(variant);
-    if (obelisk) return obelisk;
-  } else if (kind === 'chest' && variant > 0) {
+  } else if (kind === 'pillar') {
+    if (variant > 0) {
+      const obelisk = getOgaPillarOrObeliskPbr(variant);
+      if (obelisk) return obelisk;
+    } else {
+      const stoneCol = getKenneyDungeonPropPbr('stoneColumn_N.png', 0.5, 384 / 512, 28, 14, 0.72, 0.08);
+      if (stoneCol) return stoneCol;
+    }
+  } else if (kind === 'chest') {
+    if (variant === 3) {
+      const dChest = getKenneyDungeonPropPbr(isOpen ? 'chestOpen_N.png' : 'chestClosed_N.png', 0.5, 384 / 512, 28, 14, 0.68, 0.15);
+      if (dChest) return dChest;
+    }
     const ogaChest = getOgaChestPbr(isOpen, variant);
     if (ogaChest) return ogaChest;
   } else if (kind === 'rock_cliff') {
@@ -571,10 +580,13 @@ export function generatePropPbrBuffers(
   } else if (kind === 'dungeon_support') {
     const support = getKenneyDungeonPropPbr('woodenSupports_N.png', 0.5, 384 / 512, 28, 14, 0.78, 0.06);
     if (support) return support;
-  } else if (kind === 'wall_block' && variant > 0) {
+  } else if (kind === 'dungeon_column') {
+    const col = getKenneyDungeonPropPbr('stoneColumn_N.png', 0.5, 384 / 512, 28, 14, 0.72, 0.08);
+    if (col) return col;
+  } else if (kind === 'wall_block') {
     const wall = getKenneyDungeonPropPbr(variant === 2 ? 'stoneWallBroken_N.png' : 'stoneWall_N.png', 0.5, 384 / 512, 32, 16, 0.7, 0.1);
     if (wall) return wall;
-  } else if (kind === 'door' && variant > 0) {
+  } else if (kind === 'door') {
     const door = getKenneyDungeonPropPbr(isOpen ? 'stoneWallDoorOpen_N.png' : 'stoneWallDoorClosed_N.png', 0.5, 384 / 512, 32, 16, 0.7, 0.1);
     if (door) return door;
   }
@@ -1657,6 +1669,11 @@ export function generatePropPbrBuffers(
     renderIsoPrism(baseAnchorPxX - 14, baseAnchorPxY, 6, 3, 48, { r: 132, g: 92, b: 52 }, { r: 96, g: 64, b: 36 }, 0.72, 0.08);
     renderIsoPrism(baseAnchorPxX + 14, baseAnchorPxY, 6, 3, 48, { r: 132, g: 92, b: 52 }, { r: 96, g: 64, b: 36 }, 0.72, 0.08);
     renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 48, 34, 8, 8, { r: 152, g: 108, b: 62 }, { r: 112, g: 78, b: 44 }, 0.68, 0.12);
+  } else if (kind === 'dungeon_column') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 34, 17);
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY, 32, 16, 14, { r: 108, g: 112, b: 126 }, { r: 88, g: 92, b: 106 }, 0.5, 0.25);
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 12, 22, 11, 68, { r: 122, g: 126, b: 140 }, { r: 96, g: 100, b: 114 }, 0.42, 0.32);
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 78, 30, 15, 12, { r: 136, g: 140, b: 154 }, { r: 112, g: 116, b: 130 }, 0.38, 0.35);
   } else if (
     kind === 'runic_altar' ||
     kind === 'sarcophagus' ||

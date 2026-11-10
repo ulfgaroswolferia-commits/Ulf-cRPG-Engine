@@ -45,7 +45,8 @@ export type PropKind =
   | 'dungeon_barrel' // 1x1 dungeon wooden barrel
   | 'dungeon_crate' // 1x1 dungeon supply crate
   | 'dungeon_table' // 1x1 dungeon table
-  | 'dungeon_support'; // 1x1 mine timber support frame
+  | 'dungeon_support' // 1x1 mine timber support frame
+  | 'dungeon_column'; // 1x1 dungeon stone column
 
 export interface TileCell {
   x: number;

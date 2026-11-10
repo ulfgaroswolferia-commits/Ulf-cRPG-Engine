@@ -73,4 +73,25 @@ describe('proceduralForge - High-Detail Isometric Tile & Prop PBR Normal/Albedo 
       expect(opaque).toBeGreaterThan(250);
     }
   });
+
+  it('synthesizes Kenney CC0 dungeon props (dungeon_column, dungeon_barrel, dungeon_crate, dungeon_table, dungeon_support, chest)', () => {
+    const col = generatePropPbrBuffers('dungeon_column', false, 1, 1, 0);
+    const barrel = generatePropPbrBuffers('dungeon_barrel', false, 1, 1, 0);
+    const crate = generatePropPbrBuffers('dungeon_crate', false, 1, 1, 0);
+    const table = generatePropPbrBuffers('dungeon_table', false, 1, 1, 0);
+    const support = generatePropPbrBuffers('dungeon_support', false, 1, 1, 0);
+    const chest0 = generatePropPbrBuffers('chest', false, 1, 1, 0);
+    const chestOpen = generatePropPbrBuffers('chest', true, 1, 1, 0);
+    const chestKenney = generatePropPbrBuffers('chest', false, 1, 1, 3);
+
+    for (const buf of [col, barrel, crate, table, support, chest0, chestOpen, chestKenney]) {
+      expect(buf.width).toBeGreaterThanOrEqual(128);
+      expect(buf.height).toBeGreaterThanOrEqual(128);
+      let opaque = 0;
+      for (let i = 3; i < buf.albedoRGBA.length; i += 4) {
+        if (buf.albedoRGBA[i] > 16) opaque++;
+      }
+      expect(opaque).toBeGreaterThan(150);
+    }
+  });
 });

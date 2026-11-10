@@ -140,6 +140,8 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
         'stoneWallDoorClosed_N.png',
         'stoneWallDoorOpen_N.png',
         'stoneColumn_N.png',
+        'chestClosed_N.png',
+        'chestOpen_N.png',
         'barrel_N.png',
         'barrels_N.png',
         'woodenCrate_N.png',

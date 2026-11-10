@@ -93,7 +93,8 @@ const PROP_OPTIONS: ReadonlyArray<{ id: PropKind; label: string; maxVariants: nu
   { id: 'dungeon_barrel', label: '🛢️ Beczka Lochów Kenney CC0 (Warianty 0..1)', maxVariants: 2 },
   { id: 'dungeon_crate', label: '📦 Skrzynia Drewniana Lochów Kenney CC0 (Warianty 0..1)', maxVariants: 2 },
   { id: 'dungeon_table', label: '🪵 Okrągły Stół z Ławami Kenney CC0 (Wariant 0)', maxVariants: 1 },
-  { id: 'dungeon_support', label: '⛏️ Drewniana Podpora Kopalniana Kenney CC0 (Wariant 0)', maxVariants: 1 }
+  { id: 'dungeon_support', label: '⛏️ Drewniana Podpora Kopalniana Kenney CC0 (Wariant 0)', maxVariants: 1 },
+  { id: 'dungeon_column', label: '🏛️ Kamienna Kolumna Lochów Kenney CC0 (Wariant 0)', maxVariants: 1 }
 ];
 
 export class InspectorPanel {

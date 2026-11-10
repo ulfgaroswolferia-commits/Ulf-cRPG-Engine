@@ -573,6 +573,7 @@ export class IsoSceneView {
       const sightBlockingKinds: ReadonlyArray<PropKind> = [
         'wall_block',
         'pillar',
+        'dungeon_column',
         'door',
         'pine_tree',
         'ancient_oak',
@@ -1917,6 +1918,8 @@ export class IsoSceneView {
                 prop.kind === 'pine_tree' ||
                 prop.kind === 'ancient_oak' ||
                 prop.kind === 'pillar' ||
+                prop.kind === 'dungeon_column' ||
+                prop.kind === 'dungeon_support' ||
                 prop.kind === 'dead_tree' ||
                 prop.kind === 'watchtower' ||
                 prop.kind === 'rock_cliff' ||
