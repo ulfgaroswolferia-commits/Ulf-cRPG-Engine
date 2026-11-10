@@ -30,7 +30,7 @@ describe('Inventory UI Revamp - Categories & Paperdoll Slot Highlights', () => {
     expect(fakeRoot.innerHTML).toContain('data-bag-filter="trinkets"');
     expect(fakeRoot.innerHTML).toContain('data-bag-filter="consumables"');
 
-    expect(fakeRoot.innerHTML).toContain('Broń i Tarcze');
+    expect(fakeRoot.innerHTML).toContain('Broń');
     expect(fakeRoot.innerHTML).toContain('Pancerz');
     expect(fakeRoot.innerHTML).toContain('Biżuteria');
     expect(fakeRoot.innerHTML).toContain('Prowiant');

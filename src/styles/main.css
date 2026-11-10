@@ -3222,3 +3222,101 @@ body,
   font-size: 11px;
   color: #94a3b8;
 }
+
+
+/* Compact Paperdoll Comparison Card under character sheet */
+.live-comparison-box {
+  background: rgba(12, 16, 26, 0.94);
+  border: 1px solid rgba(196, 158, 84, 0.3);
+  border-radius: 7px;
+  padding: 6px 8px;
+  min-height: 72px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.comp-card-empty {
+  font-size: 10.5px;
+  color: #718096;
+  text-align: center;
+  line-height: 1.4;
+  padding: 4px 6px;
+}
+
+.comp-card-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.comp-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 3px;
+}
+
+.comp-card-slot {
+  color: var(--gold-accent);
+}
+
+.comp-card-weight {
+  color: #94a3b8;
+}
+
+.comp-card-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.comp-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.comp-item-tag {
+  font-size: 9.5px;
+  color: #64748b;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.comp-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comp-card-deltas {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.comp-card-warn {
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+/* Let backpack column take full available vertical height */
+.backpack-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.backpack-grid {
+  flex: 1;
+  overflow-y: auto;
+}

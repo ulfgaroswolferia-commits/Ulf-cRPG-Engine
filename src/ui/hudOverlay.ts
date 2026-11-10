@@ -730,27 +730,29 @@ export class HudOverlay {
           : `<span class="muted">Bez zmian parametrów</span>`;
 
       return `
-        <div class="side-by-side-comparison">
-          <div class="comp-slot-tag">Slot: <strong>${slotLabel}</strong></div>
-          <div class="comp-col current">
-            <span class="comp-col-label">ZAŁOŻONE:</span>
-            ${
-              currentDef
-                ? `<strong style="color:${currentRarity!.colorHex}">${currentDef.name}</strong>`
-                : '<span class="muted">Pusty slot</span>'
-            }
+        <div class="comp-card-compact">
+          <div class="comp-card-header">
+            <span class="comp-card-slot">Slot: <strong>${slotLabel}</strong></span>
+            <span class="comp-card-weight">⚖️ ${def.weight.toFixed(1)} kg</span>
           </div>
-          <div class="comp-arrow">➔</div>
-          <div class="comp-col candidate">
-            <span class="comp-col-label">WYBRANY:</span>
-            <strong style="color:${rarity.colorHex}">${def.name}</strong>
-            ${def.isTwoHanded ? '<span class="comp-badge-2h">2H</span>' : ''}
+          <div class="comp-card-items">
+            <div class="comp-item-row">
+              <span class="comp-item-tag">Założone:</span>
+              ${
+                currentDef
+                  ? `<span class="comp-item-name" style="color:${currentRarity!.colorHex}">${currentDef.name}</span>`
+                  : '<span class="muted">Pusty slot</span>'
+              }
+            </div>
+            <div class="comp-item-row">
+              <span class="comp-item-tag">Wybrany:</span>
+              <strong class="comp-item-name" style="color:${rarity.colorHex}">${def.name}</strong>
+              ${def.isTwoHanded ? '<span class="comp-badge-2h">2H</span>' : ''}
+            </div>
           </div>
-          <div class="comp-deltas-wrap">
-            ${deltasHtml}
-            ${reqHtml}
-            ${twoHandedWarn}
-          </div>
+          ${deltasHtml ? `<div class="comp-card-deltas">${deltasHtml}</div>` : ''}
+          ${reqHtml ? `<div class="comp-card-warn">${reqHtml}</div>` : ''}
+          ${twoHandedWarn ? `<div class="comp-card-warn">${twoHandedWarn}</div>` : ''}
         </div>
       `;
     }
@@ -1038,7 +1040,7 @@ export class HudOverlay {
 
     const filterTabs = [
       { id: 'all' as const, label: `Wszystko (${countAll})`, icon: '🎒' },
-      { id: 'weapons' as const, label: `Broń i Tarcze (${countWeapons})`, icon: '⚔️' },
+      { id: 'weapons' as const, label: `Broń (${countWeapons})`, icon: '⚔️' },
       { id: 'armor' as const, label: `Pancerz (${countArmor})`, icon: '🛡️' },
       { id: 'trinkets' as const, label: `Biżuteria (${countTrinkets})`, icon: '💍' },
       { id: 'consumables' as const, label: `Prowiant (${countConsumables})`, icon: '🧪' }
@@ -1089,6 +1091,11 @@ export class HudOverlay {
 
             <div id="character-stat-sheet-panel" class="stat-sheet-box">
               ${this.buildCharacterStatSheetHtml(null)}
+            </div>
+
+            <!-- Compact comparison card under character panel -->
+            <div id="live-comparison-box" class="live-comparison-box">
+              ${this.buildLiveComparisonHtml(null, null)}
             </div>
           </div>
 
@@ -1217,10 +1224,6 @@ export class HudOverlay {
           </div>
         </div>
 
-        <!-- BOTTOM COMPACT ITEM INFO / COMPARISON BAR -->
-        <div id="live-comparison-box" class="live-comparison-box">
-          ${this.buildLiveComparisonHtml(null, null)}
-        </div>
       </div>
     `
       : '';
