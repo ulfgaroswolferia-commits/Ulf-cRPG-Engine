@@ -840,11 +840,7 @@ export class HudOverlay {
 
       const badge = el.querySelector<HTMLElement>('.pd-slot-status-badge');
       if (badge) {
-        if (isTarget) {
-          const isOccupied = el.classList.contains('occupied');
-          badge.textContent = isOccupied ? '⚡ OBECNIE ZAŁOŻONE' : '✨ WOLNY SLOT – ZAŁÓŻ';
-          badge.className = `pd-slot-status-badge visible ${isOccupied ? 'occupied' : 'empty'}`;
-        } else if (isBlockedBy2H) {
+        if (isBlockedBy2H) {
           badge.textContent = '⚠️ ZABLOKUJE 2H';
           badge.className = 'pd-slot-status-badge visible blocked';
         } else {
