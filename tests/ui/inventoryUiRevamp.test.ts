@@ -56,4 +56,27 @@ describe('Inventory UI Revamp - Categories & Paperdoll Slot Highlights', () => {
     expect(fakeRoot.innerHTML).toContain('has-candidate-in-bag');
     expect(fakeRoot.innerHTML).toContain('Możesz założyć');
   });
+
+  it('renders detailed comparison card with full item name and description without clipping', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const staff = createItemInstance('weapon_astral_staff', 1);
+    game.backpack.tryAddItem(staff);
+
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const hud = new HudOverlay(fakeRoot, game, scene);
+    hud.toggleInventory();
+
+    // Access buildLiveComparisonHtml via any casting for unit testing
+    const compHtml = (hud as any).buildLiveComparisonHtml(staff, null);
+    expect(compHtml).toContain('Kostur Runiczny Zatopionej Korony');
+    expect(compHtml).toContain('Zwieńczony świecącym kryształem eterycznym');
+    expect(compHtml).toContain('comp-detailed-card');
+    expect(compHtml).toContain('comp-desc-block');
+  });
 });

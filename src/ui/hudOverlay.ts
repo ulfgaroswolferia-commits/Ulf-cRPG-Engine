@@ -695,17 +695,32 @@ export class HudOverlay {
         const rarity = RARITY_META[def.rarity];
         const eff = def.visualDef.consumableEffect;
         return `
-          <div class="compact-comp-bar">
-            <div class="compact-comp-main">
-              <strong style="color:${rarity.colorHex}">${def.name}${hoveredBagItem.stackCount > 1 ? ` (×${hoveredBagItem.stackCount})` : ''}</strong>
-              <span class="compact-comp-desc">${def.description}</span>
+          <div class="comp-detailed-card">
+            <div class="comp-detailed-header">
+              <span class="comp-slot-pill">🧪 PROWIANT / UŻYTKOWE</span>
+              <span class="comp-weight-pill">⚖️ ${(def.weight * hoveredBagItem.stackCount).toFixed(1)} kg</span>
             </div>
-            <div class="compact-comp-pills">
-              ${eff?.might ? `<span class="stat-delta-pill delta-up">▲ +${eff.might} SIŁ</span>` : ''}
-              ${eff?.resolve ? `<span class="stat-delta-pill delta-up">▲ +${eff.resolve} DET</span>` : ''}
-              ${eff?.perception ? `<span class="stat-delta-pill delta-up">▲ +${eff.perception} PER</span>` : ''}
-              ${eff?.lore ? `<span class="stat-delta-pill delta-up">▲ +${eff.lore} WIE</span>` : ''}
-              <span class="comp-weight">⚖️ ${(def.weight * hoveredBagItem.stackCount).toFixed(1)} kg</span>
+            <div class="comp-title-block">
+              <div class="comp-candidate-name" style="color:${rarity.colorHex}">
+                ${escapeHtml(def.name)}${hoveredBagItem.stackCount > 1 ? ` (×${hoveredBagItem.stackCount})` : ''}
+              </div>
+              <div class="comp-rarity-row">
+                <span class="comp-rarity-label" style="color:${rarity.colorHex}">${rarity.label}</span>
+                <span class="comp-price-pill">💰 ${getItemPriceInSiekance(hoveredBagItem)} siek.</span>
+              </div>
+            </div>
+            ${def.description ? `<div class="comp-desc-block">„${escapeHtml(def.description)}”</div>` : ''}
+            <div class="comp-deltas-section">
+              <div class="comp-section-title">Działanie po użyciu:</div>
+              <div class="comp-deltas-grid">
+                ${eff?.might ? `<span class="stat-delta-pill delta-up">▲ +${eff.might} SIŁ</span>` : ''}
+                ${eff?.resolve ? `<span class="stat-delta-pill delta-up">▲ +${eff.resolve} DET</span>` : ''}
+                ${eff?.perception ? `<span class="stat-delta-pill delta-up">▲ +${eff.perception} PER</span>` : ''}
+                ${eff?.lore ? `<span class="stat-delta-pill delta-up">▲ +${eff.lore} WIE</span>` : ''}
+              </div>
+            </div>
+            <div class="comp-action-hint">
+              <span>💡 Kliknij LPM, aby użyć / skonsumować</span>
             </div>
           </div>
         `;
@@ -725,12 +740,12 @@ export class HudOverlay {
 
       const reqHtml = report.meetsRequirements
         ? ''
-        : `<span class="req-badge req-fail">⚠️ Wymaga: ${report.missingRequirements
+        : `<div class="comp-req-alert">⚠️ Wymagania: ${report.missingRequirements
             .map((r) => `${STAT_META[r.stat].shortLabel} ≥ ${r.minValue}`)
-            .join(', ')}</span>`;
+            .join(', ')}</div>`;
 
       const twoHandedWarn = def.isTwoHanded && this.game.equipmentManager.getEquipped('offHand')
-        ? `<span class="two-hand-warn">⚠️ Broń 2H (zdejmie tarczę/oręż z drugiej ręki)</span>`
+        ? `<div class="comp-2h-alert">⚠️ Broń dwuręczna (2H) — zdejmie przedmiot z drugiej ręki!</div>`
         : '';
 
       const deltasHtml =
@@ -741,32 +756,53 @@ export class HudOverlay {
                 return `<span class="compact-delta-item">${meta.icon} ${meta.shortLabel} ${formatDeltaBadge(d.stat, d.delta)}</span>`;
               })
               .join('')
-          : `<span class="muted">Bez zmian parametrów</span>`;
+          : `<span class="muted">Brak bezpośrednich modyfikatorów</span>`;
 
       return `
-        <div class="comp-card-compact">
-          <div class="comp-card-header">
-            <span class="comp-card-slot">Slot: <strong>${slotLabel}</strong></span>
-            <span class="comp-card-weight">⚖️ ${def.weight.toFixed(1)} kg</span>
+        <div class="comp-detailed-card">
+          <div class="comp-detailed-header">
+            <span class="comp-slot-pill">SLOT: ${slotLabel.toUpperCase()}</span>
+            ${def.isTwoHanded ? '<span class="comp-2h-pill">BROŃ 2H (DWURĘCZNA)</span>' : ''}
+            <span class="comp-weight-pill">⚖️ ${def.weight.toFixed(1)} kg</span>
           </div>
-          <div class="comp-card-items">
-            <div class="comp-item-row">
-              <span class="comp-item-tag">Założone:</span>
-              ${
-                currentDef
-                  ? `<span class="comp-item-name" style="color:${currentRarity!.colorHex}">${currentDef.name}</span>`
-                  : '<span class="muted">Pusty slot</span>'
-              }
+
+          <div class="comp-title-block">
+            <div class="comp-candidate-name" style="color:${rarity.colorHex}">
+              ${escapeHtml(def.name)}
             </div>
-            <div class="comp-item-row">
-              <span class="comp-item-tag">Wybrany:</span>
-              <strong class="comp-item-name" style="color:${rarity.colorHex}">${def.name}</strong>
-              ${def.isTwoHanded ? '<span class="comp-badge-2h">2H</span>' : ''}
+            <div class="comp-rarity-row">
+              <span class="comp-rarity-label" style="color:${rarity.colorHex}">${rarity.label}</span>
+              <span class="comp-type-label">• ${def.itemType === 'Weapon' ? 'Oręż bojowy' : def.itemType === 'Armor' ? 'Pancerz' : def.itemType}</span>
+              <span class="comp-price-pill">💰 ${getItemPriceInSiekance(hoveredBagItem)} siek.</span>
             </div>
           </div>
-          ${deltasHtml ? `<div class="comp-card-deltas">${deltasHtml}</div>` : ''}
-          ${reqHtml ? `<div class="comp-card-warn">${reqHtml}</div>` : ''}
-          ${twoHandedWarn ? `<div class="comp-card-warn">${twoHandedWarn}</div>` : ''}
+
+          ${def.description ? `<div class="comp-desc-block">„${escapeHtml(def.description)}”</div>` : ''}
+
+          <div class="comp-equipped-status">
+            <span class="comp-status-label">Obecnie w tym slocie:</span>
+            ${
+              currentDef
+                ? `<strong class="comp-equipped-name" style="color:${currentRarity!.colorHex}">• ${escapeHtml(currentDef.name)}</strong>`
+                : '<span class="comp-empty-slot-text">• Pusty slot (brak rynsztunku)</span>'
+            }
+          </div>
+
+          <div class="comp-deltas-section">
+            <div class="comp-section-title">Wpływ na statystyki:</div>
+            <div class="comp-deltas-grid">${deltasHtml}</div>
+          </div>
+
+          ${(reqHtml || twoHandedWarn) ? `
+            <div class="comp-warnings-section">
+              ${reqHtml}
+              ${twoHandedWarn}
+            </div>
+          ` : ''}
+
+          <div class="comp-action-hint">
+            <span>💡 Kliknij LPM, aby ${currentDef ? 'założyć i zamienić' : 'założyć do wolnego slotu'}</span>
+          </div>
         </div>
       `;
     }
@@ -776,8 +812,10 @@ export class HudOverlay {
       const slotMeta = EQUIP_SLOT_LABELS[hoveredSlot];
       if (!eqItem) {
         return `
-          <div class="comparison-empty-hint">
-            <span>${slotMeta.icon} <strong>${slotMeta.label}</strong> — Pusty slot. Kliknij przedmiot w plecaku, aby założyć.</span>
+          <div class="comp-card-idle">
+            <div class="comp-idle-crest">${slotMeta.icon}</div>
+            <div class="comp-idle-title">Slot: ${slotMeta.label}</div>
+            <div class="comp-idle-desc">Ten slot na postaci jest pusty. Wybierz przedmiot z plecaka, aby go założyć.</div>
           </div>
         `;
       }
@@ -786,26 +824,38 @@ export class HudOverlay {
       const rarity = RARITY_META[def.rarity];
       const mods = getAllItemModifiers(eqItem);
       return `
-        <div class="compact-comp-bar">
-          <div class="compact-comp-main">
-            <strong style="color:${rarity.colorHex}">${def.name}</strong>
-            <span class="comp-badge">(Założono: ${slotMeta.label} • Kliknij LPM, aby zdjąć)</span>
+        <div class="comp-detailed-card">
+          <div class="comp-detailed-header">
+            <span class="comp-slot-pill">ZAŁOŻONO: ${slotMeta.label.toUpperCase()}</span>
+            ${def.isTwoHanded ? '<span class="comp-2h-pill">BROŃ 2H</span>' : ''}
+            <span class="comp-weight-pill">⚖️ ${def.weight.toFixed(1)} kg</span>
           </div>
-          <div class="compact-comp-pills">
-            ${mods
-              .map(
-                (m) =>
-                  `<span class="stat-delta-pill delta-up">${STAT_META[m.targetStat].icon} +${m.value}${STAT_META[m.targetStat].isPercent ? '%' : ''} ${STAT_META[m.targetStat].shortLabel}</span>`
-              )
-              .join('')}
+          <div class="comp-title-block">
+            <div class="comp-candidate-name" style="color:${rarity.colorHex}">${escapeHtml(def.name)}</div>
+            <div class="comp-rarity-row">
+              <span class="comp-rarity-label" style="color:${rarity.colorHex}">${rarity.label}</span>
+              <span class="comp-type-label">• ${def.itemType}</span>
+            </div>
+          </div>
+          ${def.description ? `<div class="comp-desc-block">„${escapeHtml(def.description)}”</div>` : ''}
+          <div class="comp-deltas-section">
+            <div class="comp-section-title">Aktywne modyfikatory rynsztunku:</div>
+            <div class="comp-deltas-grid">
+              ${mods.map((m) => `<span class="stat-delta-pill delta-up">${STAT_META[m.targetStat].icon} +${m.value}${STAT_META[m.targetStat].isPercent ? '%' : ''} ${STAT_META[m.targetStat].shortLabel}</span>`).join('')}
+            </div>
+          </div>
+          <div class="comp-action-hint">
+            <span>💡 Kliknij LPM, aby zdjąć do plecaka</span>
           </div>
         </div>
       `;
     }
 
     return `
-      <div class="comparison-empty-hint">
-        <span>💡 <strong>LPM na przedmiocie</strong> = Załóż / Użyj / Zdejmij • Najedź kursorem, aby porównać statystyki.</span>
+      <div class="comp-card-idle">
+        <div class="comp-idle-crest">📜</div>
+        <div class="comp-idle-title">Karta Porównania Rynsztunku</div>
+        <div class="comp-idle-desc">Najedź kursorem na oręż, pancerz lub prowiant w plecaku, aby przeanalizować pełny opis, różnice statystyk oraz wpływ na postać.</div>
       </div>
     `;
   }
