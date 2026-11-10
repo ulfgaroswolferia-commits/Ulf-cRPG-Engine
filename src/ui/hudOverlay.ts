@@ -310,6 +310,18 @@ export class HudOverlay {
     }
   }
 
+  private hasBackpackItemForSlot(slot: EquipSlot): boolean {
+    return this.game.backpack.getSlots().some((s) => {
+      if (!s) return false;
+      const def = getItemDefinition(s.definitionId);
+      if (!def || !def.equipSlot) return false;
+      if (slot === 'ring1' || slot === 'ring2') {
+        return def.equipSlot === 'ring1' || def.equipSlot === 'ring2';
+      }
+      return def.equipSlot === slot;
+    });
+  }
+
   private renderPaperdollSlot(slot: EquipSlot): string {
     const slotMeta = EQUIP_SLOT_LABELS[slot];
     const equipped = this.game.equipmentManager.getEquipped(slot);
@@ -331,14 +343,16 @@ export class HudOverlay {
     }
 
     if (!equipped) {
+      const canEquipFromBag = this.hasBackpackItemForSlot(slot);
       return `
-        <div class="paperdoll-slot empty" data-equip-slot="${slot}" title="Pusty slot: ${slotMeta.label}">
+        <div class="paperdoll-slot empty ${canEquipFromBag ? 'has-candidate-in-bag' : ''}" data-equip-slot="${slot}" title="Pusty slot: ${slotMeta.label}${canEquipFromBag ? ' (Masz pasujący przedmiot w plecaku!)' : ''}">
           <div class="pd-slot-icon">${slotMeta.icon}</div>
           <div class="pd-slot-info">
             <div class="pd-slot-label">${slotMeta.icon} ${slotMeta.label}</div>
-            <div class="pd-slot-name muted">Pusty slot</div>
+            <div class="pd-slot-name muted">${canEquipFromBag ? '<span class="can-equip-hint">✦ Możesz założyć</span>' : 'Pusty slot'}</div>
             <span class="pd-slot-status-badge"></span>
           </div>
+          ${canEquipFromBag ? '<span class="pd-available-dot" title="W plecaku czeka przedmiot do tego slotu">✦</span>' : ''}
         </div>
       `;
     }
@@ -842,7 +856,16 @@ export class HudOverlay {
 
       const badge = el.querySelector<HTMLElement>('.pd-slot-status-badge');
       if (badge) {
-        if (isBlockedBy2H) {
+        if (isTarget) {
+          const isOccupied = el.classList.contains('occupied');
+          if (!isOccupied) {
+            badge.textContent = '✨ WOLNY SLOT – ZAŁÓŻ';
+            badge.className = 'pd-slot-status-badge visible empty';
+          } else {
+            badge.textContent = '';
+            badge.className = 'pd-slot-status-badge';
+          }
+        } else if (isBlockedBy2H) {
           badge.textContent = '⚠️ ZABLOKUJE 2H';
           badge.className = 'pd-slot-status-badge visible blocked';
         } else {

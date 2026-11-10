@@ -36,8 +36,12 @@ describe('Inventory UI Revamp - Categories & Paperdoll Slot Highlights', () => {
     expect(fakeRoot.innerHTML).toContain('Prowiant');
   });
 
-  it('renders paperdoll slots with pd-slot-status-badge element for dynamic hovering highlight', () => {
+  it('renders paperdoll slots with pd-slot-status-badge element for dynamic hovering highlight and marks empty slots when candidate exists in bag', () => {
     const game = new CrpgGameState('forest_clearing');
+    // Unequip helmet and add helmet to backpack
+    game.equipmentManager.unequipToInventory('head');
+    game.backpack.tryAddItem(createItemInstance('helm_szyszak', 1));
+
     const scene = new IsoSceneView(game);
     const fakeRoot = {
       innerHTML: '',
@@ -49,5 +53,7 @@ describe('Inventory UI Revamp - Categories & Paperdoll Slot Highlights', () => {
     hud.toggleInventory();
 
     expect(fakeRoot.innerHTML).toContain('pd-slot-status-badge');
+    expect(fakeRoot.innerHTML).toContain('has-candidate-in-bag');
+    expect(fakeRoot.innerHTML).toContain('Możesz założyć');
   });
 });
