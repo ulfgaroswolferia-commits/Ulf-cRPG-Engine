@@ -2168,9 +2168,9 @@ export function createSanctumWorldMap(): IsometricWorldMap {
     id: 'signpost_to_forest_clearing',
     name: 'Schody na Powierzchnię: Polana Wilczego Ognia ↑',
     kind: 'travel_signpost',
-    x: 4,
+    x: 3,
     y: 3,
-    z: tiles[3][4].z,
+    z: tiles[3][3].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.1,
@@ -2184,9 +2184,9 @@ export function createSanctumWorldMap(): IsometricWorldMap {
     id: 'signpost_to_slavic_village',
     name: 'Tunel do Słowiańskiej Osady ↑',
     kind: 'travel_signpost',
-    x: 4,
+    x: 3,
     y: 4,
-    z: tiles[4][4].z,
+    z: tiles[4][3].z,
     sizeX: 1,
     sizeY: 1,
     heightZ: 2.1,
@@ -2224,9 +2224,9 @@ export function createSanctumWorldMap(): IsometricWorldMap {
 
   // Supply Crates in Caverns (`dungeon_crate`)
   const cavernCrates = [
-    { x: 5, y: 6, id: 'cra_cav_1' },
-    { x: 9, y: 7, id: 'cra_cav_2' },
-    { x: 13, y: 6, id: 'cra_cav_3' }
+    { x: 5, y: 6, id: 'cra_cav_1', loot: ['item_raw_sausage', 'item_healing_salve'] },
+    { x: 9, y: 7, id: 'cra_cav_2', loot: ['item_healing_salve'] },
+    { x: 13, y: 6, id: 'cra_cav_3', loot: ['item_old_mead'] }
   ];
   for (const c of cavernCrates) {
     props.push({
@@ -2242,7 +2242,8 @@ export function createSanctumWorldMap(): IsometricWorldMap {
       blocksMovement: true,
       blocksSight: false,
       interactive: true,
-      isOpen: false
+      isOpen: false,
+      lootItems: c.loot
     });
   }
 
@@ -2302,10 +2303,10 @@ export function createSanctumWorldMap(): IsometricWorldMap {
 
   // Barrels in Crypts (`dungeon_barrel`)
   const cryptBarrels = [
-    { x: 17, y: 6, id: 'bar_cr_1' },
-    { x: 22, y: 9, id: 'bar_cr_2' },
-    { x: 27, y: 5, id: 'bar_cr_3' },
-    { x: 32, y: 11, id: 'bar_cr_4' }
+    { x: 17, y: 6, id: 'bar_cr_1', loot: ['item_old_mead'] },
+    { x: 22, y: 9, id: 'bar_cr_2', loot: ['item_healing_salve'] },
+    { x: 27, y: 5, id: 'bar_cr_3', loot: ['item_raw_sausage'] },
+    { x: 32, y: 11, id: 'bar_cr_4', loot: ['item_old_mead'] }
   ];
   for (const b of cryptBarrels) {
     props.push({
@@ -2321,7 +2322,8 @@ export function createSanctumWorldMap(): IsometricWorldMap {
       blocksMovement: true,
       blocksSight: false,
       interactive: true,
-      isOpen: false
+      isOpen: false,
+      lootItems: b.loot
     });
   }
 

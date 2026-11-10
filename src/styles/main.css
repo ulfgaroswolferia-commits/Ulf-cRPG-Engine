@@ -256,6 +256,30 @@ body,
   border-color: rgba(229, 189, 104, 0.45);
 }
 
+.discrete-audio-btn {
+  background: rgba(25, 30, 42, 0.7);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.discrete-audio-btn:hover {
+  background: rgba(86, 226, 255, 0.18);
+  color: #a5f3fc;
+  border-color: rgba(86, 226, 255, 0.45);
+}
+
+.discrete-audio-btn.muted {
+  background: rgba(45, 25, 30, 0.75);
+  color: #ff8a80;
+  border-color: rgba(239, 83, 80, 0.35);
+}
+
 /* Bottom HUD */
 .bottom-hud {
   position: absolute;

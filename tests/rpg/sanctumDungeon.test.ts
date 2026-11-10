@@ -80,18 +80,26 @@ describe('Sanctum Dungeon Test Location ("Lochy i Jaskinie Aethelgardu")', () =>
     expect(barrel).toBeDefined();
     if (barrel) {
       expect(barrel.isOpen).toBeFalsy();
+      const prevCount = game.backpack.getOccupiedSlots().length;
       game.togglePropInteraction(barrel.id);
       expect(barrel.isOpen).toBe(true);
       expect(game.logs[0]).toContain('Przeszukano');
+      if (barrel.lootItems && barrel.lootItems.length > 0) {
+        expect(game.backpack.getOccupiedSlots().length).toBeGreaterThan(prevCount);
+      }
     }
 
     const crate = game.map.props.find((p) => p.kind === 'dungeon_crate');
     expect(crate).toBeDefined();
     if (crate) {
       expect(crate.isOpen).toBeFalsy();
+      const prevCount = game.backpack.getOccupiedSlots().length;
       game.togglePropInteraction(crate.id);
       expect(crate.isOpen).toBe(true);
       expect(game.logs[0]).toContain('Przeszukano');
+      if (crate.lootItems && crate.lootItems.length > 0) {
+        expect(game.backpack.getOccupiedSlots().length).toBeGreaterThan(prevCount);
+      }
     }
 
     const bossChest = game.map.props.find((p) => p.id === 'chest_sanctum_vault');
@@ -134,6 +142,47 @@ describe('Sanctum Dungeon Test Location ("Lochy i Jaskinie Aethelgardu")', () =>
     if (clearingSignFromVillage) {
       game.togglePropInteraction(clearingSignFromVillage.id);
       expect(game.map.id).toBe('forest_clearing');
+    }
+  });
+
+  it('guarantees that player spawn point (4, 4) in dungeon is fully walkable and not obstructed', () => {
+    const game = new CrpgGameState('sanctum_dungeon');
+    expect(game.player.tileX).toBe(4);
+    expect(game.player.tileY).toBe(4);
+
+    // Player spawn tile must be walkable
+    expect(game.isTileWalkable(4, 4, game.player.id)).toBe(true);
+
+    // No blocking prop should occupy (4, 4)
+    const blockingPropAtSpawn = game.map.props.find(
+      (p) => p.x === 4 && p.y === 4 && p.blocksMovement
+    );
+    expect(blockingPropAtSpawn).toBeUndefined();
+
+    // Travel signposts are adjacent at (3, 3) and (3, 4)
+    const signForest = game.map.props.find((p) => p.id === 'signpost_to_forest_clearing');
+    expect(signForest?.x).toBe(3);
+    expect(signForest?.y).toBe(3);
+
+    const signVillage = game.map.props.find((p) => p.id === 'signpost_to_slavic_village');
+    expect(signVillage?.x).toBe(3);
+    expect(signVillage?.y).toBe(4);
+  });
+
+  it('clears active enemy movement paths when player flees combat', () => {
+    const game = new CrpgGameState('sanctum_dungeon');
+    const enemy = game.npcs.find((n) => n.combat?.isHostile);
+    expect(enemy).toBeDefined();
+    if (enemy) {
+      enemy.path = [{ x: 5, y: 5, z: 0, direction: 2 }];
+      enemy.isMoving = true;
+      game.combatState.active = true;
+
+      game.fleeCombat();
+
+      expect(game.combatState.active).toBe(false);
+      expect(enemy.path.length).toBe(0);
+      expect(enemy.isMoving).toBe(false);
     }
   });
 });

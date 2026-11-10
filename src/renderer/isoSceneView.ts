@@ -593,7 +593,9 @@ export class IsoSceneView {
         'slavic_shrine',
         'slavic_well',
         'travel_signpost',
-        'watchtower'
+        'watchtower',
+        'dungeon_barrel',
+        'dungeon_crate'
       ];
 
       const z = map.tiles[centerY][centerX].z;
@@ -632,7 +634,11 @@ export class IsoSceneView {
         interactive: interactiveKinds.includes(kind),
         isOpen: false,
         lootItems:
-          kind === 'chest' || kind === 'market_stall' || kind === 'ground_loot'
+          kind === 'chest' ||
+          kind === 'market_stall' ||
+          kind === 'ground_loot' ||
+          kind === 'dungeon_barrel' ||
+          kind === 'dungeon_crate'
             ? ['item_raw_sausage']
             : undefined,
         linkedLightId

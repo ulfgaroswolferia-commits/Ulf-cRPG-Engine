@@ -2331,6 +2331,12 @@ export class CrpgGameState {
     this.player.path = [];
     this.player.isMoving = false;
 
+    // Reset hostile NPC paths so they do not chase old pre-defeat coordinates
+    for (const npc of this.npcs) {
+      npc.path = [];
+      npc.isMoving = false;
+    }
+
     this.sayPlayerBark(
       'Ten przeciwnik był zbyt silny... Muszę dobrać lepszy pancerz i broń!',
       5.0
@@ -2350,6 +2356,15 @@ export class CrpgGameState {
     this.combatState.selectedTargetId = null;
     this.player.combat!.ap = this.player.combat!.maxAp;
     this.player.combat!.defending = false;
+    this.player.path = [];
+    this.player.isMoving = false;
+
+    // Reset NPC chase paths on tactical retreat
+    for (const npc of this.npcs) {
+      npc.path = [];
+      npc.isMoving = false;
+    }
+
     this.sayPlayerBark('Taktyczny odwrót! Przegrupuję się.', 3.5);
     this.addLog('🏃 Wycofano się z walki turowej.');
   }
@@ -2691,8 +2706,18 @@ export class CrpgGameState {
     }
 
     if (prop.kind === 'dungeon_barrel' || prop.kind === 'dungeon_crate') {
-      prop.isOpen = !prop.isOpen;
-      this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}.`);
+      const wasOpen = Boolean(prop.isOpen);
+      prop.isOpen = true;
+      if (!wasOpen && prop.lootItems && prop.lootItems.length > 0) {
+        for (const itemId of prop.lootItems) {
+          this.backpack.tryAddItem(createItemInstance(itemId, 1), true);
+        }
+        const names = prop.lootItems.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
+        this.sayPlayerBark(`Znaleziono: ${names}`, 3.5);
+        this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}. Znaleziono: ${names}.`);
+      } else {
+        this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}.`);
+      }
       return;
     }
   }

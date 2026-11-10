@@ -48,7 +48,12 @@ export class CombatAudioEngine {
 
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.22, this.ctx.currentTime);
+      try {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('ulf_crpg_audio_muted') === 'true') {
+          this.isMuted = true;
+        }
+      } catch {}
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.22, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
     } catch {
       this.ctx = null;
@@ -63,6 +68,11 @@ export class CombatAudioEngine {
 
   public setMuted(muted: boolean): void {
     this.isMuted = muted;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ulf_crpg_audio_muted', muted ? 'true' : 'false');
+      }
+    } catch {}
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setValueAtTime(muted ? 0 : 0.22, this.ctx.currentTime);
     }

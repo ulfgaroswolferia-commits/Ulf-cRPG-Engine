@@ -89,7 +89,11 @@ const PROP_OPTIONS: ReadonlyArray<{ id: PropKind; label: string; maxVariants: nu
   { id: 'arcane_crystal', label: '💎 Monolit Astralny (+Światło PBR)', maxVariants: 1 },
   { id: 'chest', label: '🧰 Okuta Skrzynia & Skrzynie Drewniane OGA (0..3)', maxVariants: 4 },
   { id: 'runic_altar', label: '⛩️ Ołtarz Runiczny (2×1)', maxVariants: 1 },
-  { id: 'sarcophagus', label: '⚰️ Sarkofag Królewski (1×2)', maxVariants: 1 }
+  { id: 'sarcophagus', label: '⚰️ Sarkofag Królewski (1×2)', maxVariants: 1 },
+  { id: 'dungeon_barrel', label: '🛢️ Beczka Lochów Kenney CC0 (Warianty 0..1)', maxVariants: 2 },
+  { id: 'dungeon_crate', label: '📦 Skrzynia Drewniana Lochów Kenney CC0 (Warianty 0..1)', maxVariants: 2 },
+  { id: 'dungeon_table', label: '🪵 Okrągły Stół z Ławami Kenney CC0 (Wariant 0)', maxVariants: 1 },
+  { id: 'dungeon_support', label: '⛏️ Drewniana Podpora Kopalniana Kenney CC0 (Wariant 0)', maxVariants: 1 }
 ];
 
 export class InspectorPanel {

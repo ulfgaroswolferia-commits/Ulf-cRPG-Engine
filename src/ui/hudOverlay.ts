@@ -1,5 +1,6 @@
 import { generateRandomCharacterRecipe } from '../assets/characterBakery';
 import { getSlavicPortrait } from '../assets/slavicPortraits';
+import { CombatAudioEngine } from '../audio/combatAudio';
 import { EdgePanDirection } from '../core/isoMath';
 import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
@@ -193,6 +194,10 @@ export class HudOverlay {
           inst.render();
         } else if (inst.game.combatState.active && e.key.toLowerCase() === 'v') {
           inst.toggleCombatAdvanced();
+        } else if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
+          const audio = CombatAudioEngine.getInstance();
+          audio.setMuted(!audio.getMuted());
+          inst.render();
         } else if (e.key === 'Escape') {
           if (inst.isCreditsOpen) {
             inst.isCreditsOpen = false;
@@ -1204,6 +1209,18 @@ export class HudOverlay {
       </button>
     `;
 
+    const isMuted = CombatAudioEngine.getInstance().getMuted();
+    const audioBtnHtml = `
+      <button
+        type="button"
+        class="discrete-audio-btn ${isMuted ? 'muted' : ''}"
+        data-action="toggle-audio"
+        title="Wycisz lub włącz proceduralne efekty dźwiękowe walki i otoczenia [M]"
+      >
+        ${isMuted ? '🔇 Wycisz' : '🔊 Dźwięk'}
+      </button>
+    `;
+
     const telemetryOrControlsHtml = this.devMode
       ? `
         <div class="telemetry-badges">
@@ -1213,6 +1230,7 @@ export class HudOverlay {
             ${this.isPlaytestInEditor ? '🛠️ Wróć do Edytora' : '🎮 Testuj Rozgrywkę'}
           </button>
           ${discreetCreditsBtnHtml}
+          ${audioBtnHtml}
           ${discreetSaveBtnHtml}
           <span class="telemetry-pill">FPS: <strong>${this.scene.fps}</strong></span>
           <span class="telemetry-pill">Bake: <strong>${this.scene.lastBakeDurationMs} ms</strong></span>
@@ -1224,6 +1242,7 @@ export class HudOverlay {
         <div class="telemetry-badges">
           <span class="telemetry-pill">LPM: <strong>Ruch</strong> • I: <strong>Plecak</strong></span>
           ${discreetCreditsBtnHtml}
+          ${audioBtnHtml}
           ${discreetSaveBtnHtml}
           <button
             type="button"
@@ -1366,6 +1385,10 @@ export class HudOverlay {
           this.scene.rotateCamera(1);
         } else if (action === 'toggle-credits') {
           this.isCreditsOpen = !this.isCreditsOpen;
+          this.render();
+        } else if (action === 'toggle-audio') {
+          const audio = CombatAudioEngine.getInstance();
+          audio.setMuted(!audio.getMuted());
           this.render();
         } else if (action === 'close-credits') {
           this.isCreditsOpen = false;
