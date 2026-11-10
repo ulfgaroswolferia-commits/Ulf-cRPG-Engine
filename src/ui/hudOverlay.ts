@@ -691,32 +691,44 @@ export class HudOverlay {
       const def = getItemDefinition(hoveredBagItem.definitionId);
       if (!def) return '';
 
+      const rarity = RARITY_META[def.rarity];
+      const itemPrice = getItemPriceInSiekance(hoveredBagItem);
+
       if (def.itemType === 'Consumable') {
-        const rarity = RARITY_META[def.rarity];
         const eff = def.visualDef.consumableEffect;
         return `
           <div class="comp-detailed-card">
             <div class="comp-detailed-header">
               <span class="comp-slot-pill">🧪 PROWIANT / UŻYTKOWE</span>
-              <span class="comp-weight-pill">⚖️ ${(def.weight * hoveredBagItem.stackCount).toFixed(1)} kg</span>
+              <div class="comp-header-meta">
+                <span class="comp-weight-pill">⚖️ ${(def.weight * hoveredBagItem.stackCount).toFixed(1)} kg</span>
+                <span class="comp-price-pill">💰 ${itemPrice} siek.</span>
+              </div>
             </div>
             <div class="comp-title-block">
               <div class="comp-candidate-name" style="color:${rarity.colorHex}">
                 ${escapeHtml(def.name)}${hoveredBagItem.stackCount > 1 ? ` (×${hoveredBagItem.stackCount})` : ''}
               </div>
               <div class="comp-rarity-row">
-                <span class="comp-rarity-label" style="color:${rarity.colorHex}">${rarity.label}</span>
-                <span class="comp-price-pill">💰 ${getItemPriceInSiekance(hoveredBagItem)} siek.</span>
+                <span class="comp-rarity-badge" style="color:${rarity.colorHex}; border-color:${rarity.colorHex}55;">
+                  ★ ${rarity.label.toUpperCase()}
+                </span>
+                <span class="comp-type-label">• Przedmiot konsumpcyjny</span>
               </div>
             </div>
-            ${def.description ? `<div class="comp-desc-block">„${escapeHtml(def.description)}”</div>` : ''}
+            ${def.description ? `
+              <div class="comp-desc-block">
+                <span class="comp-quote-mark">“</span>
+                <span class="comp-quote-text">${escapeHtml(def.description)}</span>
+              </div>
+            ` : ''}
             <div class="comp-deltas-section">
-              <div class="comp-section-title">Działanie po użyciu:</div>
+              <div class="comp-section-title">Działanie po spożyciu / użyciu:</div>
               <div class="comp-deltas-grid">
-                ${eff?.might ? `<span class="stat-delta-pill delta-up">▲ +${eff.might} SIŁ</span>` : ''}
-                ${eff?.resolve ? `<span class="stat-delta-pill delta-up">▲ +${eff.resolve} DET</span>` : ''}
-                ${eff?.perception ? `<span class="stat-delta-pill delta-up">▲ +${eff.perception} PER</span>` : ''}
-                ${eff?.lore ? `<span class="stat-delta-pill delta-up">▲ +${eff.lore} WIE</span>` : ''}
+                ${eff?.might ? `<span class="stat-delta-pill delta-up">▲ +${eff.might} Siła</span>` : ''}
+                ${eff?.resolve ? `<span class="stat-delta-pill delta-up">▲ +${eff.resolve} Determinacja</span>` : ''}
+                ${eff?.perception ? `<span class="stat-delta-pill delta-up">▲ +${eff.perception} Percepcja</span>` : ''}
+                ${eff?.lore ? `<span class="stat-delta-pill delta-up">▲ +${eff.lore} Wiedza</span>` : ''}
               </div>
             </div>
             <div class="comp-action-hint">
@@ -731,7 +743,6 @@ export class HudOverlay {
         this.game.equipmentManager,
         this.game.statSheet
       );
-      const rarity = RARITY_META[def.rarity];
       const targetSlot = report.targetSlot;
       const slotLabel = targetSlot ? EQUIP_SLOT_LABELS[targetSlot].label : 'Brak slotu';
       const currentEquipped = targetSlot ? this.game.equipmentManager.getEquipped(targetSlot) : null;
@@ -740,12 +751,12 @@ export class HudOverlay {
 
       const reqHtml = report.meetsRequirements
         ? ''
-        : `<div class="comp-req-alert">⚠️ Wymagania: ${report.missingRequirements
-            .map((r) => `${STAT_META[r.stat].shortLabel} ≥ ${r.minValue}`)
+        : `<div class="comp-req-alert">⚠️ Wymagania cech: ${report.missingRequirements
+            .map((r) => `${STAT_META[r.stat].label} ≥ ${r.minValue}`)
             .join(', ')}</div>`;
 
       const twoHandedWarn = def.isTwoHanded && this.game.equipmentManager.getEquipped('offHand')
-        ? `<div class="comp-2h-alert">⚠️ Broń dwuręczna (2H) — zdejmie przedmiot z drugiej ręki!</div>`
+        ? `<div class="comp-2h-alert">⚠️ Broń dwuręczna (2H) — załóżenie zdejmie przedmiot/tarczę z drugiej ręki!</div>`
         : '';
 
       const deltasHtml =
@@ -753,17 +764,22 @@ export class HudOverlay {
           ? report.directDeltas
               .map((d) => {
                 const meta = STAT_META[d.stat];
-                return `<span class="compact-delta-item">${meta.icon} ${meta.shortLabel} ${formatDeltaBadge(d.stat, d.delta)}</span>`;
+                return `<span class="compact-delta-item">${meta.icon} ${meta.label}: ${formatDeltaBadge(d.stat, d.delta)}</span>`;
               })
               .join('')
-          : `<span class="muted">Brak bezpośrednich modyfikatorów</span>`;
+          : `<span class="comp-no-delta">Brak bezpośrednich zmian bazowych parametrów</span>`;
 
       return `
         <div class="comp-detailed-card">
           <div class="comp-detailed-header">
-            <span class="comp-slot-pill">SLOT: ${slotLabel.toUpperCase()}</span>
-            ${def.isTwoHanded ? '<span class="comp-2h-pill">BROŃ 2H (DWURĘCZNA)</span>' : ''}
-            <span class="comp-weight-pill">⚖️ ${def.weight.toFixed(1)} kg</span>
+            <div class="comp-header-badges">
+              <span class="comp-slot-pill">SLOT: ${slotLabel.toUpperCase()}</span>
+              ${def.isTwoHanded ? '<span class="comp-2h-pill">BROŃ 2H (DWURĘCZNA)</span>' : ''}
+            </div>
+            <div class="comp-header-meta">
+              <span class="comp-weight-pill">⚖️ ${def.weight.toFixed(1)} kg</span>
+              <span class="comp-price-pill">💰 ${itemPrice} siek.</span>
+            </div>
           </div>
 
           <div class="comp-title-block">
@@ -771,25 +787,34 @@ export class HudOverlay {
               ${escapeHtml(def.name)}
             </div>
             <div class="comp-rarity-row">
-              <span class="comp-rarity-label" style="color:${rarity.colorHex}">${rarity.label}</span>
-              <span class="comp-type-label">• ${def.itemType === 'Weapon' ? 'Oręż bojowy' : def.itemType === 'Armor' ? 'Pancerz' : def.itemType}</span>
-              <span class="comp-price-pill">💰 ${getItemPriceInSiekance(hoveredBagItem)} siek.</span>
+              <span class="comp-rarity-badge" style="color:${rarity.colorHex}; border-color:${rarity.colorHex}55;">
+                ★ ${rarity.label.toUpperCase()}
+              </span>
+              <span class="comp-type-label">• ${def.itemType === 'Weapon' ? 'Oręż bojowy' : def.itemType === 'Armor' ? 'Element pancerza' : def.itemType === 'Trinket' ? 'Biżuteria / Talizman' : def.itemType}</span>
             </div>
           </div>
 
-          ${def.description ? `<div class="comp-desc-block">„${escapeHtml(def.description)}”</div>` : ''}
+          ${def.description ? `
+            <div class="comp-desc-block">
+              <span class="comp-quote-mark">“</span>
+              <span class="comp-quote-text">${escapeHtml(def.description)}</span>
+            </div>
+          ` : ''}
 
           <div class="comp-equipped-status">
             <span class="comp-status-label">Obecnie w tym slocie:</span>
             ${
               currentDef
-                ? `<strong class="comp-equipped-name" style="color:${currentRarity!.colorHex}">• ${escapeHtml(currentDef.name)}</strong>`
-                : '<span class="comp-empty-slot-text">• Pusty slot (brak rynsztunku)</span>'
+                ? `<div class="comp-equipped-item">
+                    <span class="comp-eq-bullet">⚔️</span>
+                    <strong style="color:${currentRarity!.colorHex}">${escapeHtml(currentDef.name)}</strong>
+                  </div>`
+                : '<div class="comp-empty-slot-text">✨ Pusty slot (brak rynsztunku — zyskasz pełnię tych statystyk!)</div>'
             }
           </div>
 
           <div class="comp-deltas-section">
-            <div class="comp-section-title">Wpływ na statystyki:</div>
+            <div class="comp-section-title">Wpływ na statystyki rynsztunku:</div>
             <div class="comp-deltas-grid">${deltasHtml}</div>
           </div>
 
@@ -815,7 +840,7 @@ export class HudOverlay {
           <div class="comp-card-idle">
             <div class="comp-idle-crest">${slotMeta.icon}</div>
             <div class="comp-idle-title">Slot: ${slotMeta.label}</div>
-            <div class="comp-idle-desc">Ten slot na postaci jest pusty. Wybierz przedmiot z plecaka, aby go założyć.</div>
+            <div class="comp-idle-desc">Ten slot na postaci jest pusty. Wybierz oręż lub pancerz z plecaka, aby go wyekwipować.</div>
           </div>
         `;
       }
@@ -828,20 +853,30 @@ export class HudOverlay {
           <div class="comp-detailed-header">
             <span class="comp-slot-pill">ZAŁOŻONO: ${slotMeta.label.toUpperCase()}</span>
             ${def.isTwoHanded ? '<span class="comp-2h-pill">BROŃ 2H</span>' : ''}
-            <span class="comp-weight-pill">⚖️ ${def.weight.toFixed(1)} kg</span>
+            <div class="comp-header-meta">
+              <span class="comp-weight-pill">⚖️ ${def.weight.toFixed(1)} kg</span>
+              <span class="comp-price-pill">💰 ${getItemPriceInSiekance(eqItem)} siek.</span>
+            </div>
           </div>
           <div class="comp-title-block">
             <div class="comp-candidate-name" style="color:${rarity.colorHex}">${escapeHtml(def.name)}</div>
             <div class="comp-rarity-row">
-              <span class="comp-rarity-label" style="color:${rarity.colorHex}">${rarity.label}</span>
+              <span class="comp-rarity-badge" style="color:${rarity.colorHex}; border-color:${rarity.colorHex}55;">
+                ★ ${rarity.label.toUpperCase()}
+              </span>
               <span class="comp-type-label">• ${def.itemType}</span>
             </div>
           </div>
-          ${def.description ? `<div class="comp-desc-block">„${escapeHtml(def.description)}”</div>` : ''}
+          ${def.description ? `
+            <div class="comp-desc-block">
+              <span class="comp-quote-mark">“</span>
+              <span class="comp-quote-text">${escapeHtml(def.description)}</span>
+            </div>
+          ` : ''}
           <div class="comp-deltas-section">
-            <div class="comp-section-title">Aktywne modyfikatory rynsztunku:</div>
+            <div class="comp-section-title">Aktywne bonusy tego wyposażenia:</div>
             <div class="comp-deltas-grid">
-              ${mods.map((m) => `<span class="stat-delta-pill delta-up">${STAT_META[m.targetStat].icon} +${m.value}${STAT_META[m.targetStat].isPercent ? '%' : ''} ${STAT_META[m.targetStat].shortLabel}</span>`).join('')}
+              ${mods.map((m) => `<span class="stat-delta-pill delta-up">${STAT_META[m.targetStat].icon} +${m.value}${STAT_META[m.targetStat].isPercent ? '%' : ''} ${STAT_META[m.targetStat].label}</span>`).join('')}
             </div>
           </div>
           <div class="comp-action-hint">
@@ -854,8 +889,8 @@ export class HudOverlay {
     return `
       <div class="comp-card-idle">
         <div class="comp-idle-crest">📜</div>
-        <div class="comp-idle-title">Karta Porównania Rynsztunku</div>
-        <div class="comp-idle-desc">Najedź kursorem na oręż, pancerz lub prowiant w plecaku, aby przeanalizować pełny opis, różnice statystyk oraz wpływ na postać.</div>
+        <div class="comp-idle-title">Karta Wyposażenia & Porównanie</div>
+        <div class="comp-idle-desc">Najedź kursorem na oręż, pancerz lub prowiant w plecaku, aby przeanalizować pełny opis fabularny, różnice statystyk oraz wpływ na postać.</div>
       </div>
     `;
   }
