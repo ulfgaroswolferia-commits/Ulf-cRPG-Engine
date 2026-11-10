@@ -13,7 +13,7 @@ import {
   WeaponProficiencyCategory
 } from '../rpg/combatSystem';
 import { getMerchantWares, getPrzasneKolapsyForNpc } from '../rpg/dialogueSystem';
-import { CrpgGameState } from '../rpg/gameLoop';
+import { ChronicleEntry, CrpgGameState } from '../rpg/gameLoop';
 import {
   clearSave,
   hasSavedGame,
@@ -128,6 +128,7 @@ export class HudOverlay {
   private hoveredBagInstanceId: string | null = null;
   private hoveredEquipSlot: EquipSlot | null = null;
   private draggedSlotIndex: number | null = null;
+  private activeCombatReportModalId: string | null = null;
 
   constructor(
     root: HTMLElement,
@@ -199,7 +200,10 @@ export class HudOverlay {
           audio.setMuted(!audio.getMuted());
           inst.render();
         } else if (e.key === 'Escape') {
-          if (inst.isCreditsOpen) {
+          if (inst.activeCombatReportModalId) {
+            inst.activeCombatReportModalId = null;
+            inst.render();
+          } else if (inst.isCreditsOpen) {
             inst.isCreditsOpen = false;
             inst.render();
           } else if (inst.isCombatAdvancedOpen) {
@@ -1256,9 +1260,21 @@ export class HudOverlay {
         </div>
       `;
 
-    const visibleLogs = this.isChronicleExpanded
-      ? this.game.logs
-      : this.game.logs.slice(0, 6);
+    const chronicleList: ChronicleEntry[] = this.game.chronicleEntries.length > 0
+      ? this.game.chronicleEntries
+      : this.game.logs.map((text, idx) => ({
+          id: 'fb_' + idx,
+          text,
+          severity: 'info' as const,
+          timestamp: Date.now() - idx * 1000
+        }));
+
+    const visibleEntries = this.isChronicleExpanded
+      ? chronicleList
+      : chronicleList.slice(0, 6);
+
+    const isRecentLog = Date.now() - this.game.lastLogTimestamp < 2200;
+    const pulseClass = isRecentLog ? `pulse-${this.game.lastLogSeverity}` : '';
 
     const hTile = this.scene.hoveredWorldTile;
     const hoverCoordText = hTile
@@ -1321,9 +1337,9 @@ export class HudOverlay {
           </div>
         </div>
 
-        <div class="chronicle-log ${this.isChronicleExpanded ? 'expanded' : ''}">
+        <div class="chronicle-log ${this.isChronicleExpanded ? 'expanded' : ''} ${pulseClass}">
           <div class="log-header">
-            <span>Kronika Wydarzeń (${this.game.logs.length})</span>
+            <span class="log-header-title">📜 Kronika Wydarzeń (${this.game.chronicleEntries.length})</span>
             ${
               this.isChronicleExpanded
                 ? `<button type="button" class="chronicle-toggle-btn collapse-red" data-action="toggle-chronicle" title="Zwiń Kronikę Wydarzeń">Zwiń</button>`
@@ -1331,15 +1347,73 @@ export class HudOverlay {
             }
           </div>
           <div class="log-entries">
-            ${visibleLogs
-              .map((entry) => `<div class="log-line">• ${escapeHtml(entry)}</div>`)
-              .join('')}
+            ${visibleEntries.length === 0
+              ? '<div class="log-line log-severity-info"><span class="log-bullet">•</span> <span class="log-line-text">Kronika wydarzeń jest pusta.</span></div>'
+              : visibleEntries
+                  .map((entry, idx) => {
+                    const isNewest = idx === 0 && isRecentLog;
+                    const reportBtn = entry.combatReportId
+                      ? `<button type="button" class="combat-report-tag-btn" data-action="view-combat-report" data-report-id="${entry.combatReportId}" title="Zobacz szczegółowy raport z tego starcia">📜 Raport</button>`
+                      : '';
+                    return `<div class="log-line log-severity-${entry.severity} ${isNewest ? 'log-newest' : ''}">
+                      <span class="log-bullet">•</span>
+                      <span class="log-line-text">${escapeHtml(entry.text)}</span>
+                      ${reportBtn}
+                    </div>`;
+                  })
+                  .join('')
+            }
           </div>
         </div>
       </div>
     `;
 
+    let combatReportModalHtml = '';
+    if (this.activeCombatReportModalId && this.game.combatReports[this.activeCombatReportModalId]) {
+      const rep = this.game.combatReports[this.activeCombatReportModalId];
+      const outcomeBadge = rep.outcome === 'victory'
+        ? '<span class="report-badge victory">🏆 Zwycięstwo</span>'
+        : rep.outcome === 'defeat'
+          ? '<span class="report-badge defeat">💀 Porażka</span>'
+          : rep.outcome === 'fled'
+            ? '<span class="report-badge fled">🏃 Ucieczka</span>'
+            : '<span class="report-badge in-progress">⚔️ W toku</span>';
+
+      combatReportModalHtml = `
+        <div class="combat-report-modal-backdrop" data-action="close-combat-report">
+          <div class="combat-report-modal-dialog" onclick="event.stopPropagation()">
+            <div class="combat-report-header">
+              <div class="combat-report-title-area">
+                <span class="combat-report-icon">📜</span>
+                <div>
+                  <h3 class="combat-report-title">Raport z walki: ${escapeHtml(rep.targetName)}</h3>
+                  <div class="combat-report-subtitle">Szczegółowy rejestr starcia turowego, rzutów kością i obrażeń</div>
+                </div>
+              </div>
+              <div class="combat-report-header-right">
+                ${outcomeBadge}
+                <button type="button" class="combat-report-close-btn" data-action="close-combat-report" title="Zamknij raport (Esc)">✕</button>
+              </div>
+            </div>
+            <div class="combat-report-body">
+              ${rep.entries.length > 0
+                ? rep.entries
+                    .map((e) => `<div class="combat-report-row"><span class="report-bullet">•</span><span class="report-text">${escapeHtml(e)}</span></div>`)
+                    .join('')
+                : '<div class="combat-report-empty">Brak szczegółowych wpisów dla tego starcia.</div>'
+              }
+            </div>
+            <div class="combat-report-footer">
+              <span class="combat-report-count">Liczba zdarzeń w walce: ${rep.entries.length}</span>
+              <button type="button" class="hud-btn" data-action="close-combat-report">Zamknij</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     this.root.innerHTML = `
+      ${combatReportModalHtml}
       ${edgeOverlayHtml}
       <div class="top-bar">
         <div class="brand-block">
@@ -1410,6 +1484,15 @@ export class HudOverlay {
           this.render();
         } else if (action === 'toggle-chronicle') {
           this.toggleChronicleExpanded();
+        } else if (action === 'view-combat-report') {
+          const repId = btn.getAttribute('data-report-id');
+          if (repId) {
+            this.activeCombatReportModalId = repId;
+            this.render();
+          }
+        } else if (action === 'close-combat-report') {
+          this.activeCombatReportModalId = null;
+          this.render();
         } else if (action === 'toggle-combat-advanced') {
           this.toggleCombatAdvanced();
         } else if (action === 'toggle-fullscreen') {

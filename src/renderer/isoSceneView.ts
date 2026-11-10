@@ -1,3 +1,4 @@
+import { determineActionCursor, getCursorCss } from '../ui/cursorManager';
 import {
   Application,
   Container,
@@ -254,6 +255,7 @@ export class IsoSceneView {
   private cameraVelX = 0;
   private cameraVelY = 0;
   private isManualCameraPanning = false;
+  private currentAppliedCursor = '';
   public hoveredWorldTile: { x: number; y: number; z: number } | null = null;
   public lastBakeDurationMs = 1.2;
   public fps = 60;
@@ -1220,6 +1222,7 @@ export class IsoSceneView {
       this.isDraggingCamera = false;
       this.isPaintingWithBrush = false;
       this.lastPaintedTileKey = '';
+      this.updateCanvasCursor();
     });
 
     document.documentElement.addEventListener('mouseleave', () => {
@@ -1297,8 +1300,22 @@ export class IsoSceneView {
       el.classList.toggle('active', Boolean(dir && dir === this.activeEdgeDirection));
     });
 
+    this.updateCanvasCursor();
+  }
+
+  public updateCanvasCursor(): void {
     const canvas = this.app.renderer?.canvas;
-    if (canvas) {
+    if (!canvas) return;
+
+    if (this.isDraggingCamera) {
+      if (this.currentAppliedCursor !== 'grabbing') {
+        this.currentAppliedCursor = 'grabbing';
+        canvas.style.cursor = 'grabbing';
+      }
+      return;
+    }
+
+    if (this.activeEdgeDirection) {
       const cursorMap: Record<EdgePanDirection, string> = {
         N: 'n-resize',
         NE: 'ne-resize',
@@ -1309,9 +1326,66 @@ export class IsoSceneView {
         W: 'w-resize',
         NW: 'nw-resize'
       };
-      canvas.style.cursor = this.activeEdgeDirection
-        ? cursorMap[this.activeEdgeDirection]
-        : 'crosshair';
+      const edgeCursor = cursorMap[this.activeEdgeDirection] || 'default';
+      if (this.currentAppliedCursor !== edgeCursor) {
+        this.currentAppliedCursor = edgeCursor;
+        canvas.style.cursor = edgeCursor;
+      }
+      return;
+    }
+
+    if (this.isPointerOverUi || !this.isPointerInsideViewport) {
+      if (this.currentAppliedCursor !== 'default') {
+        this.currentAppliedCursor = 'default';
+        canvas.style.cursor = 'default';
+      }
+      return;
+    }
+
+    let hoveredNpc = null;
+    let hoveredProp = null;
+    let isWalkable = false;
+
+    if (this.hoveredWorldTile) {
+      const { x, y } = this.hoveredWorldTile;
+      isWalkable = this.game.isTileWalkable(x, y);
+
+      const npc = this.game.npcs.find((n) => n.tileX === x && n.tileY === y);
+      if (npc) {
+        hoveredNpc = {
+          id: npc.id,
+          isAlive: Boolean(!npc.combat || npc.combat.isAlive),
+          isHostile: Boolean(npc.combat?.isHostile),
+          isLooted: Boolean(npc.isLooted),
+          hasDialogue: Boolean(npc.dialogueId)
+        };
+      }
+
+      const prop = this.game.getPropAtTile(x, y);
+      if (prop) {
+        hoveredProp = {
+          id: prop.id,
+          kind: prop.kind,
+          interactive: Boolean(prop.interactive),
+          isOpen: Boolean(prop.isOpen),
+          lootItems: prop.lootItems
+        };
+      }
+    }
+
+    const action = determineActionCursor({
+      hasActiveEdgePan: Boolean(this.activeEdgeDirection),
+      hoveredWorldTile: this.hoveredWorldTile,
+      isTileWalkable: isWalkable,
+      hoveredNpc,
+      hoveredProp,
+      activeTool: this.activeTool
+    });
+
+    const targetCss = getCursorCss(action);
+    if (this.currentAppliedCursor !== targetCss) {
+      this.currentAppliedCursor = targetCss;
+      canvas.style.cursor = targetCss;
     }
   }
 
@@ -1371,6 +1445,7 @@ export class IsoSceneView {
 
     if (!picked) {
       this.hoveredWorldTile = null;
+      this.updateCanvasCursor();
       return;
     }
 
@@ -1386,6 +1461,7 @@ export class IsoSceneView {
       y: worldPt.y,
       z: picked.z
     };
+    this.updateCanvasCursor();
   }
 
   private updateParticles(dt: number): void {
@@ -1637,6 +1713,7 @@ export class IsoSceneView {
 
   private renderFrame(): void {
     this.displayPool.beginFrame();
+    this.updateCanvasCursor();
 
     let shakeX = 0;
     let shakeY = 0;

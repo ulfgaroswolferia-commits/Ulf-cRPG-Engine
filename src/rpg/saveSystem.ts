@@ -3,7 +3,7 @@ import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
 import { CharacterAttributes, CharacterVisualRecipe } from './characterData';
 import { ActorCombatComponent, CombatAttackMode } from './combatSystem';
-import { ActorEntity, CrpgGameState } from './gameLoop';
+import { ActorEntity, CrpgGameState, detectLogSeverity } from './gameLoop';
 import { EquipSlot, ItemInstance } from './inventorySystem';
 
 export const STORAGE_KEY_AUTOSAVE = 'ulf_crpg_save_autosave';
@@ -350,10 +350,19 @@ export function deserializeGameState(
       game.combatState.selectedTargetId = data.combatState.selectedTargetId;
     }
 
-    // 7. Restore Logs
+    // 7. Restore Logs & Chronicle
     if (Array.isArray(data.logs) && data.logs.length > 0) {
       game.logs.length = 0;
       game.logs.push(...data.logs);
+      game.chronicleEntries.length = 0;
+      data.logs.forEach((logText, idx) => {
+        game.chronicleEntries.push({
+          id: 'restored_' + idx,
+          text: logText,
+          severity: detectLogSeverity(logText),
+          timestamp: Date.now() - idx * 1000
+        });
+      });
     }
 
     // 8. Restore Settings

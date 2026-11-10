@@ -91,6 +91,45 @@ export interface CombatAttackEvent {
   outcome: CombatAttackOutcome;
 }
 
+export type LogSeverity = 'info' | 'important' | 'critical' | 'combat';
+
+export interface ChronicleEntry {
+  id: string;
+  text: string;
+  severity: LogSeverity;
+  timestamp: number;
+  combatReportId?: string;
+}
+
+export interface CombatReport {
+  id: string;
+  targetName: string;
+  timestamp: number;
+  outcome?: 'victory' | 'defeat' | 'fled';
+  entries: string[];
+}
+
+export function detectLogSeverity(message: string): LogSeverity {
+  if (message.startsWith('⚔️ Walka z:') || message.startsWith('📜 Raport z walki:') || message.includes('Walka z:') || message.includes('Raport z walki:')) {
+    return 'combat';
+  }
+  if (message.includes('☠️') || message.includes('Porażka') || message.includes('Zostałeś powalony')) {
+    return 'critical';
+  }
+  if (
+    message.includes('🏆') ||
+    message.includes('Pokonano') ||
+    message.includes('🛒') ||
+    message.includes('Zakupiono') ||
+    message.includes('💰') ||
+    message.includes('skarb') ||
+    message.includes('Awans')
+  ) {
+    return 'important';
+  }
+  return 'info';
+}
+
 export class CrpgGameState {
   public map!: IsometricWorldMap;
   public fov!: FovGridState;
@@ -134,6 +173,12 @@ export class CrpgGameState {
     floatingTexts: []
   };
   public readonly logs: string[] = [];
+  public readonly chronicleEntries: ChronicleEntry[] = [];
+  public readonly combatLogs: string[] = [];
+  public readonly combatReports: Record<string, CombatReport> = {};
+  public activeCombatReportId: string | null = null;
+  public lastLogSeverity: LogSeverity = 'info';
+  public lastLogTimestamp: number = 0;
   public activeDialogue: { actorId: string; node: DialogueNode } | null = null;
   public siekance: number = 45;
   public lastDuplicateSaleResult: {
@@ -1489,10 +1534,37 @@ export class CrpgGameState {
     this.addLog(`${this.player.recipe.name}: „${text}”`);
   }
 
-  public addLog(message: string): void {
+  public addLog(message: string, severity?: LogSeverity, combatReportId?: string): void {
+    const resolvedSeverity = severity ?? detectLogSeverity(message);
+    const now = Date.now();
+    this.lastLogSeverity = resolvedSeverity;
+    this.lastLogTimestamp = now;
+
     this.logs.unshift(message);
-    if (this.logs.length > 40) {
+    if (this.logs.length > 80) {
       this.logs.pop();
+    }
+
+    const entry: ChronicleEntry = {
+      id: 'log_' + now + '_' + Math.random().toString(36).slice(2, 6),
+      text: message,
+      severity: resolvedSeverity,
+      timestamp: now,
+      combatReportId
+    };
+    this.chronicleEntries.unshift(entry);
+    if (this.chronicleEntries.length > 80) {
+      this.chronicleEntries.pop();
+    }
+  }
+
+  public addCombatLog(message: string): void {
+    this.combatLogs.unshift(message);
+    if (this.combatLogs.length > 200) {
+      this.combatLogs.pop();
+    }
+    if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
+      this.combatReports[this.activeCombatReportId].entries.push(message);
     }
   }
 
@@ -1689,8 +1761,18 @@ export class CrpgGameState {
     this.combatState.activeTurnActorId = this.player.id;
     this.combatState.selectedTargetId = enemy.id;
 
+    const reportId = 'rep_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    this.activeCombatReportId = reportId;
+    this.combatReports[reportId] = {
+      id: reportId,
+      targetName: enemy.recipe.name,
+      timestamp: Date.now(),
+      entries: []
+    };
+
     const diffTag = enemy.combat.difficultyLabel ?? 'WRÓG';
-    this.addLog(
+    this.addLog(`⚔️ Walka z: ${enemy.recipe.name} (${diffTag})`, 'combat', reportId);
+    this.addCombatLog(
       `⚔️ ROZPOCZĘTO WALKĘ TUROWĄ (Runda 1)! Cel: ${enemy.recipe.name} (${diffTag}, ${enemy.combat.hp}/${enemy.combat.maxHp} HP). Twoja tura: masz ${this.player.combat!.ap} AP.`
     );
     this.pushFloatingCombatText(
@@ -1801,7 +1883,7 @@ export class CrpgGameState {
         `PUDŁO! (${outcome.hitChancePct}%)`,
         0xb0b7c6
       );
-      this.addLog(
+      this.addCombatLog(
         `💨 [${modeLabel}] Pudło w ${enemy.recipe.name}! (Szansa: ${outcome.hitChancePct}%, rzut: ${outcome.rollPct}%, koszt: -${outcome.apSpent} AP).`
       );
     } else {
@@ -1821,7 +1903,7 @@ export class CrpgGameState {
         floatLabel,
         outcome.critical ? 0xffca28 : 0xff5252
       );
-      this.addLog(
+      this.addCombatLog(
         `${outcome.critical ? '💥 KRYTYK!' : '🗡️ Trafienie!'} [${modeLabel}] Zadano ${outcome.damageDealt} obr. celowi ${enemy.recipe.name} (wytłumiono ${outcome.mitigatedByArmor} przez DT/DR, szansa: ${outcome.hitChancePct}%)${statusText}.`
       );
     }
@@ -1902,9 +1984,12 @@ export class CrpgGameState {
       0x4cd964
     );
 
-    this.addLog(
+    this.addCombatLog(
       `🏆 Pokonano przeciwnika: ${enemy.recipe.name}! Biegłość „${profLabel}” wzrosła o +${gain}% (do ${nextProf}%). Ciało wroga upadło na ziemię — podejdź i przeszukaj zwłoki.`
     );
+    if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
+      this.combatReports[this.activeCombatReportId].outcome = 'victory';
+    }
 
     // Check if any hostile participants remain alive
     const remainingEnemies = this.combatState.participantIds
@@ -1922,7 +2007,8 @@ export class CrpgGameState {
       this.player.combat!.dazedHeadTurns = 0;
       this.player.combat!.crippledLegsTurns = 0;
       this.sayPlayerBark('Starcie wygrane! Czas przejrzeć łupy.', 4.5);
-      this.addLog('✨ Walka turowa zakończona zwycięstwem! Punkty Akcji (AP) zostały odnowione.');
+      this.addCombatLog('✨ Walka turowa zakończona zwycięstwem! Punkty Akcji (AP) zostały odnowione.');
+      this.addLog(`📜 Raport z walki: Zwycięstwo nad ${enemy.recipe.name}!`, 'combat', this.activeCombatReportId ?? undefined);
     } else {
       this.combatState.selectedTargetId = remainingEnemies[0].id;
     }
@@ -1947,7 +2033,7 @@ export class CrpgGameState {
       '🛡️ POSTAWA OBRONNA (+20% Unik, +15% DR)',
       0x4da6ff
     );
-    this.addLog(
+    this.addCombatLog(
       '🛡️ Przyjęto Postawę Obronną (-2 AP): +20% Uniku, +2 DT oraz +15% Redukcji Obrażeń (DR) do kolejnej tury.'
     );
     return true;
@@ -1999,7 +2085,7 @@ export class CrpgGameState {
     this.player.combat!.ap = pSnap.derived.maxAp;
     this.player.combat!.defending = false;
 
-    this.addLog(
+    this.addCombatLog(
       `🔔 Runda ${this.combatState.round} — Twoja tura! Odnowiono ${this.player.combat!.ap}/${this.player.combat!.maxAp} AP.`
     );
   }
@@ -2051,7 +2137,7 @@ export class CrpgGameState {
               enemy.isMoving = true;
               this.currentEnemyTurnPhase = 'move';
               this.enemyTurnPhaseTimer = 0;
-              this.addLog(
+              this.addCombatLog(
                 `👣 ${enemy.recipe.name} przemieszcza się o ${stepsToTake} kafli (-${stepsToTake * moveApCost} AP).`
               );
               return;
@@ -2175,7 +2261,7 @@ export class CrpgGameState {
         `UNIK! (${enemy.recipe.name})`,
         0x69f0ae
       );
-      this.addLog(
+      this.addCombatLog(
         `🛡️ Uniknąłeś ataku ${enemy.recipe.name}! (Szansa wroga: ${out.hitChancePct}%, rzut: ${out.rollPct}%).`
       );
     } else {
@@ -2186,7 +2272,7 @@ export class CrpgGameState {
         `-${out.damageDealt} HP`,
         0xff453a
       );
-      this.addLog(
+      this.addCombatLog(
         `🩸 ${enemy.recipe.name} trafia Cię (${ATTACK_MODE_META[chosenMode].label}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
       );
     }
@@ -2280,7 +2366,7 @@ export class CrpgGameState {
             enemy.y = destNode.y + 0.5;
             enemy.z = destNode.z;
             enemy.direction = destNode.direction;
-            this.addLog(
+            this.addCombatLog(
               `👣 ${enemy.recipe.name} przemieszcza się o ${stepsToTake} kafli (-${stepsToTake * moveApCost} AP).`
             );
           }
@@ -2341,8 +2427,16 @@ export class CrpgGameState {
       'Ten przeciwnik był zbyt silny... Muszę dobrać lepszy pancerz i broń!',
       5.0
     );
-    this.addLog(
+    if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
+      this.combatReports[this.activeCombatReportId].outcome = 'defeat';
+    }
+    this.addCombatLog(
       '💀 Zostałeś powalony w walce! Ocucono Cię w bezpiecznym miejscu (pełne HP). Wskazówka: na trudnego wroga użyj Dwuręcznego Topora Kata (przebicie pancerza) lub Kostura Runicznego!'
+    );
+    this.addLog(
+      '📜 Raport z walki: Porażka w starciu z potworem!',
+      'critical',
+      this.activeCombatReportId ?? undefined
     );
     this.recomputeFov();
   }
@@ -2365,8 +2459,16 @@ export class CrpgGameState {
       npc.isMoving = false;
     }
 
+    if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
+      this.combatReports[this.activeCombatReportId].outcome = 'fled';
+    }
     this.sayPlayerBark('Taktyczny odwrót! Przegrupuję się.', 3.5);
-    this.addLog('🏃 Wycofano się z walki turowej.');
+    this.addCombatLog('🏃 Wycofano się z walki turowej.');
+    this.addLog(
+      '📜 Raport z walki: Ucieczka ze starcia.',
+      'info',
+      this.activeCombatReportId ?? undefined
+    );
   }
 
   public commandPlayerMoveTo(targetX: number, targetY: number): boolean {
@@ -2421,7 +2523,7 @@ export class CrpgGameState {
       this.player.path = [];
       this.player.isMoving = false;
       this.recomputeFov();
-      this.addLog(
+      this.addCombatLog(
         `👣 Ruch taktyczny o ${steps.length} kafli (-${apCost} AP, pozostało: ${this.player.combat.ap} AP).`
       );
       return true;
