@@ -61,7 +61,7 @@ const EDGE_ARROW_DEFS: ReadonlyArray<{
   { dir: 'SE', glyph: '◢', label: 'Przesuń ekran po skosie (Dół-Prawo)' }
 ];
 
-export type BackpackFilterCategory = 'all' | 'gear' | 'trinket' | 'consumable';
+export type BackpackFilterCategory = 'all' | 'weapons' | 'armor' | 'trinkets' | 'consumables';
 
 export interface HudOverlayOptions {
   devMode?: boolean;
@@ -322,8 +322,9 @@ export class HudOverlay {
         <div class="paperdoll-slot blocked-2h" data-equip-slot="${slot}" title="Zablokowane przez broń dwuręczną: ${mainHandDef.name}">
           <div class="pd-slot-icon">🔒</div>
           <div class="pd-slot-info">
-            <div class="pd-slot-label">${slotMeta.label}</div>
+            <div class="pd-slot-label">${slotMeta.icon} ${slotMeta.label}</div>
             <div class="pd-slot-name muted">Broń 2H</div>
+            <span class="pd-slot-status-badge"></span>
           </div>
         </div>
       `;
@@ -334,8 +335,9 @@ export class HudOverlay {
         <div class="paperdoll-slot empty" data-equip-slot="${slot}" title="Pusty slot: ${slotMeta.label}">
           <div class="pd-slot-icon">${slotMeta.icon}</div>
           <div class="pd-slot-info">
-            <div class="pd-slot-label">${slotMeta.label}</div>
-            <div class="pd-slot-name muted">Pusty</div>
+            <div class="pd-slot-label">${slotMeta.icon} ${slotMeta.label}</div>
+            <div class="pd-slot-name muted">Pusty slot</div>
+            <span class="pd-slot-status-badge"></span>
           </div>
         </div>
       `;
@@ -358,8 +360,9 @@ export class HudOverlay {
           ${def.isTwoHanded ? '<span class="pd-2h-tag">2H</span>' : ''}
         </div>
         <div class="pd-slot-info">
-          <div class="pd-slot-label">${slotMeta.label}</div>
+          <div class="pd-slot-label">${slotMeta.icon} ${slotMeta.label}</div>
           <div class="pd-slot-name">${def.name}</div>
+          <span class="pd-slot-status-badge"></span>
         </div>
         <span class="pd-unequip-hint">✕</span>
       </button>
@@ -700,35 +703,53 @@ export class HudOverlay {
         this.game.statSheet
       );
       const rarity = RARITY_META[def.rarity];
-      const slotLabel = report.targetSlot ? EQUIP_SLOT_LABELS[report.targetSlot].label : 'Brak';
+      const targetSlot = report.targetSlot;
+      const slotLabel = targetSlot ? EQUIP_SLOT_LABELS[targetSlot].label : 'Brak slotu';
+      const currentEquipped = targetSlot ? this.game.equipmentManager.getEquipped(targetSlot) : null;
+      const currentDef = currentEquipped ? getItemDefinition(currentEquipped.definitionId) : null;
+      const currentRarity = currentDef ? RARITY_META[currentDef.rarity] : null;
+
       const reqHtml = report.meetsRequirements
         ? ''
-        : `<span class="req-badge req-fail">Wymaga: ${report.missingRequirements
+        : `<span class="req-badge req-fail">⚠️ Wymaga: ${report.missingRequirements
             .map((r) => `${STAT_META[r.stat].shortLabel} ≥ ${r.minValue}`)
             .join(', ')}</span>`;
+
+      const twoHandedWarn = def.isTwoHanded && this.game.equipmentManager.getEquipped('offHand')
+        ? `<span class="two-hand-warn">⚠️ Broń 2H (zdejmie tarczę/oręż z drugiej ręki)</span>`
+        : '';
 
       const deltasHtml =
         report.directDeltas.length > 0
           ? report.directDeltas
-              .slice(0, 4)
               .map((d) => {
                 const meta = STAT_META[d.stat];
                 return `<span class="compact-delta-item">${meta.icon} ${meta.shortLabel} ${formatDeltaBadge(d.stat, d.delta)}</span>`;
               })
               .join('')
-          : `<span class="muted">Bez zmian statystyk</span>`;
+          : `<span class="muted">Bez zmian parametrów</span>`;
 
       return `
-        <div class="compact-comp-bar">
-          <div class="compact-comp-main">
-            <strong style="color:${rarity.colorHex}">${def.name}</strong>
-            <span class="comp-badge">(${slotLabel}${def.isTwoHanded ? ' • 2H' : ''})</span>
-            ${reqHtml}
-            <span class="compact-comp-desc">${def.description}</span>
+        <div class="side-by-side-comparison">
+          <div class="comp-slot-tag">Slot: <strong>${slotLabel}</strong></div>
+          <div class="comp-col current">
+            <span class="comp-col-label">ZAŁOŻONE:</span>
+            ${
+              currentDef
+                ? `<strong style="color:${currentRarity!.colorHex}">${currentDef.name}</strong>`
+                : '<span class="muted">Pusty slot</span>'
+            }
           </div>
-          <div class="compact-comp-pills">
+          <div class="comp-arrow">➔</div>
+          <div class="comp-col candidate">
+            <span class="comp-col-label">WYBRANY:</span>
+            <strong style="color:${rarity.colorHex}">${def.name}</strong>
+            ${def.isTwoHanded ? '<span class="comp-badge-2h">2H</span>' : ''}
+          </div>
+          <div class="comp-deltas-wrap">
             ${deltasHtml}
-            <span class="comp-weight">⚖️ ${def.weight.toFixed(1)} kg</span>
+            ${reqHtml}
+            ${twoHandedWarn}
           </div>
         </div>
       `;
@@ -798,10 +819,39 @@ export class HudOverlay {
     compBox.innerHTML = this.buildLiveComparisonHtml(bagItem, this.hoveredEquipSlot);
     statSheetContainer.innerHTML = this.buildCharacterStatSheetHtml(report);
 
-    // Highlight target paperdoll slot when hovering a backpack item
+    // Dynamic high-visibility highlight for target paperdoll slot and 2H block
+    let targetSlot: EquipSlot | null = null;
+    let is2H = false;
+    if (bagItem) {
+      const def = getItemDefinition(bagItem.definitionId);
+      if (def?.equipSlot) {
+        targetSlot = def.equipSlot;
+        is2H = Boolean(def.isTwoHanded);
+      }
+    }
+
     this.root.querySelectorAll<HTMLElement>('.paperdoll-slot').forEach((el) => {
       const slot = el.dataset.equipSlot as EquipSlot | undefined;
-      el.classList.toggle('compare-target', Boolean(report && slot === report.targetSlot));
+      const isTarget = Boolean(targetSlot && slot === targetSlot);
+      const isBlockedBy2H = Boolean(targetSlot && is2H && slot === 'offHand');
+
+      el.classList.toggle('compare-target', isTarget);
+      el.classList.toggle('compare-blocked-by-2h', isBlockedBy2H);
+
+      const badge = el.querySelector<HTMLElement>('.pd-slot-status-badge');
+      if (badge) {
+        if (isTarget) {
+          const isOccupied = el.classList.contains('occupied');
+          badge.textContent = isOccupied ? '⚡ OBECNIE ZAŁOŻONE' : '✨ WOLNY SLOT – ZAŁÓŻ';
+          badge.className = `pd-slot-status-badge visible ${isOccupied ? 'occupied' : 'empty'}`;
+        } else if (isBlockedBy2H) {
+          badge.textContent = '⚠️ ZABLOKUJE 2H';
+          badge.className = 'pd-slot-status-badge visible blocked';
+        } else {
+          badge.textContent = '';
+          badge.className = 'pd-slot-status-badge';
+        }
+      }
     });
   }
 
@@ -967,6 +1017,37 @@ export class HudOverlay {
     let emptyRenderedCount = 0;
 
     const isNearMerchant = this.game.isNearMerchant();
+
+    const countAll = occupiedCount;
+    const countWeapons = allSlots.filter((s) => {
+      if (!s) return false;
+      const d = getItemDefinition(s.definitionId);
+      return d && (d.itemType === 'Weapon' || d.equipSlot === 'mainHand' || d.equipSlot === 'offHand');
+    }).length;
+    const countArmor = allSlots.filter((s) => {
+      if (!s) return false;
+      const d = getItemDefinition(s.definitionId);
+      return d && d.itemType === 'Armor' && d.equipSlot !== 'ring1' && d.equipSlot !== 'ring2';
+    }).length;
+    const countTrinkets = allSlots.filter((s) => {
+      if (!s) return false;
+      const d = getItemDefinition(s.definitionId);
+      return d && (d.itemType === 'Trinket' || d.equipSlot === 'ring1' || d.equipSlot === 'ring2');
+    }).length;
+    const countConsumables = allSlots.filter((s) => {
+      if (!s) return false;
+      const d = getItemDefinition(s.definitionId);
+      return d && d.itemType === 'Consumable';
+    }).length;
+
+    const filterTabs = [
+      { id: 'all' as const, label: `Wszystko (${countAll})`, icon: '🎒' },
+      { id: 'weapons' as const, label: `Broń i Tarcze (${countWeapons})`, icon: '⚔️' },
+      { id: 'armor' as const, label: `Pancerz (${countArmor})`, icon: '🛡️' },
+      { id: 'trinkets' as const, label: `Biżuteria (${countTrinkets})`, icon: '💍' },
+      { id: 'consumables' as const, label: `Prowiant (${countConsumables})`, icon: '🧪' }
+    ];
+
     const inventoryDrawerHtml = this.isInventoryOpen
       ? `
       <div class="inventory-drawer" data-layout="compact-backpack">
@@ -1019,20 +1100,15 @@ export class HudOverlay {
           <div class="backpack-column">
             <div class="backpack-toolbar">
               <div class="filter-tabs">
-                ${(
-                  [
-                    { id: 'all', label: `Wszystkie (${occupiedCount})` },
-                    { id: 'gear', label: '⚔️ Ekwipunek' },
-                    { id: 'consumable', label: '🍖 Użytkowe' }
-                  ] as const
-                )
+                ${filterTabs
                   .map(
                     (tab) => `
                   <button
                     type="button"
                     class="filter-tab-btn ${this.activeFilter === tab.id ? 'active' : ''}"
                     data-bag-filter="${tab.id}"
-                  >${tab.label}</button>
+                    title="${tab.label}"
+                  ><span class="filter-icon">${tab.icon}</span> ${tab.label}</button>
                 `
                   )
                   .join('')}
@@ -1063,9 +1139,15 @@ export class HudOverlay {
 
                   const matchesFilter =
                     this.activeFilter === 'all' ||
-                    (this.activeFilter === 'gear' &&
-                      (def.itemType === 'Weapon' || def.itemType === 'Armor' || def.itemType === 'Trinket')) ||
-                    (this.activeFilter === 'consumable' && def.itemType === 'Consumable');
+                    (this.activeFilter === 'weapons' &&
+                      (def.itemType === 'Weapon' || def.equipSlot === 'mainHand' || def.equipSlot === 'offHand')) ||
+                    (this.activeFilter === 'armor' &&
+                      def.itemType === 'Armor' &&
+                      def.equipSlot !== 'ring1' &&
+                      def.equipSlot !== 'ring2') ||
+                    (this.activeFilter === 'trinkets' &&
+                      (def.itemType === 'Trinket' || def.equipSlot === 'ring1' || def.equipSlot === 'ring2')) ||
+                    (this.activeFilter === 'consumables' && def.itemType === 'Consumable');
 
                   if (!matchesFilter) {
                     return '';

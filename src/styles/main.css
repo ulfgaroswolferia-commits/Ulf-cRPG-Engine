@@ -502,21 +502,21 @@ body,
 /* Inventory, Paperdoll & Live Comparison Window (Compact Mode) */
 .inventory-drawer {
   position: absolute;
-  left: 24px;
-  bottom: 142px;
+  left: 20px;
+  bottom: 140px;
   top: auto;
-  width: min(720px, calc(100vw - 32px));
-  height: 480px;
-  max-height: calc(100vh - 165px);
-  background: rgba(12, 16, 25, 0.96);
+  width: min(860px, calc(100vw - 32px));
+  height: 540px;
+  max-height: calc(100vh - 150px);
+  background: rgba(10, 14, 22, 0.97);
   border: 1px solid var(--border-brass-bright);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.88);
-  backdrop-filter: blur(10px);
+  gap: 10px;
+  box-shadow: 0 16px 52px rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(12px);
   z-index: 20;
   box-sizing: border-box;
 }
@@ -557,7 +557,7 @@ body,
 
 .inventory-workspace {
   display: grid;
-  grid-template-columns: 215px 1fr;
+  grid-template-columns: 295px 1fr;
   gap: 12px;
   flex: 1;
   min-height: 0;
@@ -574,7 +574,7 @@ body,
 
 .paperdoll-stage {
   display: grid;
-  grid-template-columns: 1fr 56px 1fr;
+  grid-template-columns: 1fr 68px 1fr;
   gap: 4px;
   align-items: center;
   background: radial-gradient(circle at 50% 45%, rgba(34, 46, 70, 0.5), rgba(9, 12, 19, 0.88));
@@ -617,16 +617,16 @@ body,
 .paperdoll-slot {
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(11, 14, 22, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 5px;
-  padding: 3px 4px;
+  gap: 6px;
+  background: rgba(12, 16, 25, 0.92);
+  border: 1px solid rgba(196, 158, 84, 0.28);
+  border-radius: 6px;
+  padding: 4px 6px;
   text-align: left;
   color: var(--text-primary);
-  min-height: 30px;
+  min-height: 42px;
   position: relative;
-  transition: all 0.14s ease;
+  transition: all 0.16s ease;
   min-width: 0;
 }
 
@@ -640,9 +640,194 @@ body,
 }
 
 .paperdoll-slot.compare-target {
-  border-color: var(--cyan-accent);
-  box-shadow: 0 0 10px rgba(86, 226, 255, 0.45);
+  border-color: #fde047 !important;
+  background: rgba(48, 38, 12, 0.96) !important;
+  box-shadow: 0 0 22px rgba(253, 224, 71, 0.9), inset 0 0 10px rgba(253, 224, 71, 0.3) !important;
+  animation: pulseCompareSlot 1.2s infinite alternate ease-in-out;
+  z-index: 10;
 }
+
+.paperdoll-slot.compare-blocked-by-2h {
+  border-color: #f87171 !important;
+  background: rgba(50, 14, 18, 0.96) !important;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.85), inset 0 0 10px rgba(239, 68, 68, 0.3) !important;
+  animation: pulseBlockedSlot 1.2s infinite alternate ease-in-out;
+  z-index: 10;
+}
+
+@keyframes pulseCompareSlot {
+  0% {
+    box-shadow: 0 0 14px rgba(253, 224, 71, 0.65), inset 0 0 6px rgba(253, 224, 71, 0.2);
+    border-color: #eab308;
+  }
+  100% {
+    box-shadow: 0 0 26px rgba(253, 224, 71, 0.98), inset 0 0 14px rgba(253, 224, 71, 0.4);
+    border-color: #fef08a;
+  }
+}
+
+@keyframes pulseBlockedSlot {
+  0% {
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6), inset 0 0 6px rgba(239, 68, 68, 0.2);
+    border-color: #dc2626;
+  }
+  100% {
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.92), inset 0 0 12px rgba(239, 68, 68, 0.4);
+    border-color: #fca5a5;
+  }
+}
+
+.pd-slot-status-badge {
+  display: none;
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  white-space: nowrap;
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.pd-slot-status-badge.visible {
+  display: inline-block;
+}
+
+.pd-slot-status-badge.occupied {
+  background: #fde047;
+  color: #1a1500;
+  box-shadow: 0 0 6px rgba(253, 224, 71, 0.6);
+}
+
+.pd-slot-status-badge.empty {
+  background: #38bdf8;
+  color: #032b44;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+
+.pd-slot-status-badge.blocked {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+/* Side-by-side comparison layout */
+.side-by-side-comparison {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(14, 19, 30, 0.95);
+  border: 1px solid rgba(196, 158, 84, 0.35);
+  border-radius: 6px;
+  padding: 6px 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.comp-slot-tag {
+  font-size: 11px;
+  color: var(--gold-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-right: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
+.comp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.comp-col.current {
+  color: #94a3b8;
+}
+
+.comp-col.candidate {
+  color: #ffffff;
+}
+
+.comp-col-label {
+  font-size: 9.5px;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.comp-arrow {
+  color: var(--gold-accent);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 0 2px;
+}
+
+.comp-badge-2h {
+  display: inline-block;
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+
+.comp-deltas-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.two-hand-warn {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.filter-tab-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(20, 26, 38, 0.88);
+  border: 1px solid rgba(196, 158, 84, 0.3);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+
+.filter-tab-btn:hover {
+  background: rgba(36, 46, 68, 0.95);
+  color: #ffffff;
+  border-color: rgba(196, 158, 84, 0.6);
+}
+
+.filter-tab-btn.active {
+  background: rgba(196, 158, 84, 0.22);
+  border-color: var(--gold-accent);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(196, 158, 84, 0.35);
+}
+
+.filter-icon {
+  font-size: 12px;
+}
+
 
 .paperdoll-slot.blocked-2h {
   opacity: 0.55;
