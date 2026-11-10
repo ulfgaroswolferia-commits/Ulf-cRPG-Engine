@@ -128,7 +128,7 @@ function rgbaBufferToTexture(
     ctx.putImageData(imgData, 0, 0);
   }
   const tex = Texture.from(canvas);
-  tex.source.scaleMode = 'nearest';
+  tex.source.scaleMode = 'linear';
   return tex;
 }
 
@@ -250,6 +250,10 @@ export class IsoSceneView {
   public edgePanSpeed = 520;
   public activeEdgeDirection: EdgePanDirection | null = null;
   public forcedEdgeDirection: EdgePanDirection | null = null;
+  public targetZoom = 1.0;
+  private cameraVelX = 0;
+  private cameraVelY = 0;
+  private isManualCameraPanning = false;
   public hoveredWorldTile: { x: number; y: number; z: number } | null = null;
   public lastBakeDurationMs = 1.2;
   public fps = 60;
@@ -352,7 +356,7 @@ export class IsoSceneView {
 
     this.postFilter = createAtmosphericPostFilter();
     if (this.postFilter) {
-      this.worldContainer.filters = [this.postFilter];
+      this.app.stage.filters = [this.postFilter];
     }
 
     this.bindInputEvents(this.app.canvas);
@@ -367,30 +371,16 @@ export class IsoSceneView {
         }
         const viewportW = this.app.screen?.width || window.innerWidth || 1280;
         const viewportH = this.app.screen?.height || window.innerHeight || 720;
-        this.handleKeyboardCameraPan(dt);
-        this.stepCameraEdgePan(dt, viewportW, viewportH);
 
-        // Smooth camera follow lerp when player hero is moving along path
-        if (
-          this.game.player.isMoving &&
-          !this.isDraggingCamera &&
-          !this.activeEdgeDirection &&
-          this.keysDown.size === 0
-        ) {
-          const { width: mapW, height: mapH } = this.game.map;
-          const pRot = toRotatedContinuous(
-            this.game.player.x,
-            this.game.player.y,
-            mapW,
-            mapH,
-            this.rotation
-          );
-          const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
-          const targetCamX = viewportW * 0.5 - pScr.x * this.zoom;
-          const targetCamY = viewportH * 0.46 - pScr.y * this.zoom;
-          const lerp = Math.min(1.0, dt * 4.5);
-          this.cameraOffsetX += (targetCamX - this.cameraOffsetX) * lerp;
-          this.cameraOffsetY += (targetCamY - this.cameraOffsetY) * lerp;
+        // Smooth zoom transition centered on screen
+        if (Math.abs(this.targetZoom - this.zoom) > 0.001) {
+          const prevZoom = this.zoom;
+          this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 10.0);
+          const zoomRatio = this.zoom / prevZoom;
+          const cx = viewportW * 0.5;
+          const cy = viewportH * 0.46;
+          this.cameraOffsetX = cx - (cx - this.cameraOffsetX) * zoomRatio;
+          this.cameraOffsetY = cy - (cy - this.cameraOffsetY) * zoomRatio;
         }
 
         const prevMapId = this.game.map.id;
@@ -398,6 +388,7 @@ export class IsoSceneView {
         const prevDialogue = this.game.activeDialogue;
         const prevCombatActive = this.game.combatState.active;
 
+        // 1. Update game simulation first so render uses fresh actor positions
         this.game.update(dt);
 
         if (this.game.map.id !== prevMapId) {
@@ -411,13 +402,45 @@ export class IsoSceneView {
           this.onUiStateChange?.();
         }
 
+        // 2. Handle manual camera controls (keyboard & edge panning)
+        this.handleKeyboardCameraPan(dt);
+        this.stepCameraEdgePan(dt, viewportW, viewportH);
+
+        // 3. Smooth camera follow lerp when following player hero
+        if (
+          !this.isDraggingCamera &&
+          !this.activeEdgeDirection &&
+          this.keysDown.size === 0 &&
+          !this.isManualCameraPanning
+        ) {
+          const { width: mapW, height: mapH } = this.game.map;
+          const pRot = toRotatedContinuous(
+            this.game.player.x,
+            this.game.player.y,
+            mapW,
+            mapH,
+            this.rotation
+          );
+          const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
+          const targetCamX = viewportW * 0.5 - pScr.x * this.zoom;
+          const targetCamY = viewportH * 0.46 - pScr.y * this.zoom;
+
+          const dist = Math.hypot(targetCamX - this.cameraOffsetX, targetCamY - this.cameraOffsetY);
+          if (dist > 0.1) {
+            const followSpeed = this.game.player.isMoving ? 9.0 : 6.5;
+            const followLerp = 1.0 - Math.exp(-followSpeed * dt);
+            this.cameraOffsetX += (targetCamX - this.cameraOffsetX) * followLerp;
+            this.cameraOffsetY += (targetCamY - this.cameraOffsetY) * followLerp;
+          }
+        }
+
         this.updateParticles(dt);
         this.renderFrame();
       } catch (err) {
         console.error('Błąd w pętli renderowania klatki IsoSceneView:', err);
-        if (this.worldContainer.filters && this.worldContainer.filters.length > 0) {
+        if (this.app.stage.filters && this.app.stage.filters.length > 0) {
           console.warn('Wyłączam post-filter z powodu błędu, aby scena pozostała widoczna.');
-          this.worldContainer.filters = [];
+          this.app.stage.filters = [];
           this.postFilter = null;
         }
       }
@@ -896,6 +919,10 @@ export class IsoSceneView {
       720;
     this.cameraOffsetX = screenW * 0.5 - pScr.x * this.zoom;
     this.cameraOffsetY = screenH * 0.46 - pScr.y * this.zoom;
+    this.isManualCameraPanning = false;
+    this.cameraVelX = 0;
+    this.cameraVelY = 0;
+    this.targetZoom = this.zoom;
   }
 
   public getCharacterTextures(actor: ActorEntity): CharacterDualFrameTextures {
@@ -1051,6 +1078,8 @@ export class IsoSceneView {
         this.rotateCamera(-1);
       } else if (k === 'e') {
         this.rotateCamera(1);
+      } else if (k === 'c') {
+        this.centerCameraOnPlayer();
       } else if (k === 'r' && this.activeTool === 'place_prop') {
         this.editorPropOrientation =
           this.editorPropOrientation === '1x1'
@@ -1076,8 +1105,8 @@ export class IsoSceneView {
       'wheel',
       (e) => {
         e.preventDefault();
-        const factor = e.deltaY < 0 ? 1.1 : 0.9;
-        this.zoom = Math.min(1.85, Math.max(0.55, Number((this.zoom * factor).toFixed(2))));
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        this.targetZoom = Math.min(1.85, Math.max(0.55, Number((this.targetZoom * factor).toFixed(2))));
         this.onUiStateChange?.();
       },
       { passive: false }
@@ -1086,12 +1115,14 @@ export class IsoSceneView {
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button === 1 || e.button === 2) {
         this.isDraggingCamera = true;
+        this.isManualCameraPanning = true;
         this.dragLastX = e.clientX;
         this.dragLastY = e.clientY;
         return;
       }
 
       if (e.button === 0) {
+        this.isManualCameraPanning = false;
         this.updateHoveredTileFromPointer(e.clientX, e.clientY);
         if (!this.hoveredWorldTile) return;
         const { x, y } = this.hoveredWorldTile;
@@ -1247,6 +1278,7 @@ export class IsoSceneView {
     }
 
     if (res.direction) {
+      this.isManualCameraPanning = true;
       const step = this.edgePanSpeed * dt;
       this.cameraOffsetX += res.offsetDeltaX * step;
       this.cameraOffsetY += res.offsetDeltaY * step;
@@ -1284,26 +1316,33 @@ export class IsoSceneView {
   }
 
   private handleKeyboardCameraPan(dt: number): void {
-    const panSpeed = 420 * dt;
-    let moved = false;
-    if (this.keysDown.has('w') || this.keysDown.has('arrowup')) {
-      this.cameraOffsetY += panSpeed;
-      moved = true;
+    let targetVx = 0;
+    let targetVy = 0;
+    const speed = 540;
+
+    if (this.keysDown.has('w') || this.keysDown.has('arrowup')) targetVy += speed;
+    if (this.keysDown.has('s') || this.keysDown.has('arrowdown')) targetVy -= speed;
+    if (this.keysDown.has('a') || this.keysDown.has('arrowleft')) targetVx += speed;
+    if (this.keysDown.has('d') || this.keysDown.has('arrowright')) targetVx -= speed;
+
+    if (targetVx !== 0 || targetVy !== 0) {
+      this.isManualCameraPanning = true;
+      if (targetVx !== 0 && targetVy !== 0) {
+        targetVx *= 0.7071;
+        targetVy *= 0.7071;
+      }
     }
-    if (this.keysDown.has('s') || this.keysDown.has('arrowdown')) {
-      this.cameraOffsetY -= panSpeed;
-      moved = true;
-    }
-    if (this.keysDown.has('a') || this.keysDown.has('arrowleft')) {
-      this.cameraOffsetX += panSpeed;
-      moved = true;
-    }
-    if (this.keysDown.has('d') || this.keysDown.has('arrowright')) {
-      this.cameraOffsetX -= panSpeed;
-      moved = true;
-    }
-    if (moved && this.app.renderer?.canvas && this.isPointerInsideViewport && !this.isPointerOverUi) {
-      this.updateHoveredTileFromPointer(this.pointerClientX, this.pointerClientY);
+
+    const accel = 16.0;
+    this.cameraVelX += (targetVx - this.cameraVelX) * Math.min(1.0, dt * accel);
+    this.cameraVelY += (targetVy - this.cameraVelY) * Math.min(1.0, dt * accel);
+
+    if (Math.abs(this.cameraVelX) > 0.05 || Math.abs(this.cameraVelY) > 0.05) {
+      this.cameraOffsetX += this.cameraVelX * dt;
+      this.cameraOffsetY += this.cameraVelY * dt;
+      if (this.app.renderer?.canvas && this.isPointerInsideViewport && !this.isPointerOverUi) {
+        this.updateHoveredTileFromPointer(this.pointerClientX, this.pointerClientY);
+      }
     }
   }
 
@@ -1624,8 +1663,8 @@ export class IsoSceneView {
       this.game.ambientLightIntensity,
       this.elapsedSeconds,
       this.bufferMode === 'final_pbr',
-      this.cameraOffsetX,
-      this.cameraOffsetY,
+      this.cameraOffsetX + shakeX,
+      this.cameraOffsetY + shakeY,
       this.zoom,
       screenLights
     );
@@ -1638,7 +1677,7 @@ export class IsoSceneView {
       (this.app.renderer ? this.app.screen.height : 0) ||
       (typeof window !== 'undefined' ? window.innerHeight : 0) ||
       720;
-    const cullPad = 220;
+    const cullPad = 380;
     const minLocalX = (-this.cameraOffsetX - cullPad) / Math.max(0.25, this.zoom);
     const maxLocalX = (viewW - this.cameraOffsetX + cullPad) / Math.max(0.25, this.zoom);
     const minLocalY = (-this.cameraOffsetY - cullPad) / Math.max(0.25, this.zoom);
@@ -1865,10 +1904,10 @@ export class IsoSceneView {
 
       const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
       if (
-        scr.x < minLocalX - 300 ||
-        scr.x > maxLocalX + 300 ||
-        scr.y < minLocalY - 450 ||
-        scr.y > maxLocalY + 300
+        scr.x < minLocalX - 500 ||
+        scr.x > maxLocalX + 500 ||
+        scr.y < minLocalY - 600 ||
+        scr.y > maxLocalY + 500
       ) {
         continue;
       }

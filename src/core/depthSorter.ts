@@ -99,7 +99,10 @@ export function sortEntitiesTopological<T extends DepthBox3D>(entities: T[]): T[
     // Pick available zero-in-degree node with smallest depth key
     for (let i = 0; i < n; i++) {
       if (!visited[i] && inDegree[i] === 0) {
-        if (keys[i] < bestKey || (keys[i] === bestKey && entities[i].id < entities[bestIdx]?.id)) {
+        if (
+          keys[i] < bestKey ||
+          (keys[i] === bestKey && (bestIdx === -1 || entities[i].id < entities[bestIdx].id))
+        ) {
           bestKey = keys[i];
           bestIdx = i;
         }
@@ -109,9 +112,14 @@ export function sortEntitiesTopological<T extends DepthBox3D>(entities: T[]): T[
     // Cycle fallback: if mutually overlapping boxes form a cycle, break cycle deterministically
     if (bestIdx === -1) {
       for (let i = 0; i < n; i++) {
-        if (!visited[i] && keys[i] < bestKey) {
-          bestKey = keys[i];
-          bestIdx = i;
+        if (!visited[i]) {
+          if (
+            keys[i] < bestKey ||
+            (keys[i] === bestKey && (bestIdx === -1 || entities[i].id < entities[bestIdx].id))
+          ) {
+            bestKey = keys[i];
+            bestIdx = i;
+          }
         }
       }
     }
