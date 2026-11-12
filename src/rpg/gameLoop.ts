@@ -30,6 +30,13 @@ import {
 } from './combatSystem';
 import { DIALOGUE_TREES, DialogueChoice, DialogueNode, getMerchantWares } from './dialogueSystem';
 import {
+  accusative,
+  dative,
+  declinePolish,
+  genitive,
+  instrumental
+} from './polishDeclension';
+import {
   CharacterStatSheet,
   createItemInstance,
   EquipmentManager,
@@ -838,7 +845,7 @@ export class CrpgGameState {
 
     // 3. Patrolling Forest Ranger walking across the clearing & hill stairs
     const patrolRecipe = generateRandomCharacterRecipe(408, 'npc_warden_patrol');
-    patrolRecipe.name = 'Tropiciell Aldric';
+    patrolRecipe.name = 'Tropiciel Aldric';
     patrolRecipe.title = 'Strażnik Szlaku';
     this.npcs.push({
       id: 'npc_warden_patrol',
@@ -1797,7 +1804,7 @@ export class CrpgGameState {
     };
 
     const diffTag = enemy.combat.difficultyLabel ?? 'WRÓG';
-    this.addLog(`⚔️ Walka z: ${enemy.recipe.name} (${diffTag})`, 'combat', reportId);
+    this.addLog(`⚔️ Walka z: ${instrumental(enemy.recipe.name)} (${diffTag})`, 'combat', reportId);
     this.addCombatLog(
       `⚔️ ROZPOCZĘTO WALKĘ TUROWĄ (Runda 1)! Cel: ${enemy.recipe.name} (${diffTag}, ${enemy.combat.hp}/${enemy.combat.maxHp} HP). Twoja tura: masz ${this.player.combat!.ap} AP.`
     );
@@ -1910,7 +1917,7 @@ export class CrpgGameState {
         0xb0b7c6
       );
       this.addCombatLog(
-        `💨 [${modeLabel}] Pudło w ${enemy.recipe.name}! (Szansa: ${outcome.hitChancePct}%, rzut: ${outcome.rollPct}%, koszt: -${outcome.apSpent} AP).`
+        `💨 [${modeLabel}] Pudło w ${accusative(enemy.recipe.name)}! (Szansa: ${outcome.hitChancePct}%, rzut: ${outcome.rollPct}%, koszt: -${outcome.apSpent} AP).`
       );
     } else {
       const statusText =
@@ -1930,7 +1937,7 @@ export class CrpgGameState {
         outcome.critical ? 0xffca28 : 0xff5252
       );
       this.addCombatLog(
-        `${outcome.critical ? '💥 KRYTYK!' : '🗡️ Trafienie!'} [${modeLabel}] Zadano ${outcome.damageDealt} obr. celowi ${enemy.recipe.name} (wytłumiono ${outcome.mitigatedByArmor} przez DT/DR, szansa: ${outcome.hitChancePct}%)${statusText}.`
+        `${outcome.critical ? '💥 KRYTYK!' : '🗡️ Trafienie!'} [${modeLabel}] Zadano ${outcome.damageDealt} obr. celowi: ${dative(enemy.recipe.name)} (wytłumiono ${outcome.mitigatedByArmor} przez DT/DR, szansa: ${outcome.hitChancePct}%)${statusText}.`
       );
     }
 
@@ -2011,7 +2018,7 @@ export class CrpgGameState {
     );
 
     this.addCombatLog(
-      `🏆 Pokonano przeciwnika: ${enemy.recipe.name}! Biegłość „${profLabel}” wzrosła o +${gain}% (do ${nextProf}%). Ciało wroga upadło na ziemię — podejdź i przeszukaj zwłoki.`
+      `🏆 Pokonano: ${accusative(enemy.recipe.name)}! Biegłość „${profLabel}” wzrosła o +${gain}% (do ${nextProf}%). Ciało wroga upadło na ziemię — podejdź i przeszukaj zwłoki.`
     );
     if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
       this.combatReports[this.activeCombatReportId].outcome = 'victory';
@@ -2034,7 +2041,7 @@ export class CrpgGameState {
       this.player.combat!.crippledLegsTurns = 0;
       this.sayPlayerBark('Starcie wygrane! Czas przejrzeć łupy.', 4.5);
       this.addCombatLog('✨ Walka turowa zakończona zwycięstwem! Punkty Akcji (AP) zostały odnowione.');
-      this.addLog(`📜 Raport z walki: Zwycięstwo nad ${enemy.recipe.name}!`, 'combat', this.activeCombatReportId ?? undefined);
+      this.addLog(`📜 Raport z walki: Zwycięstwo nad ${instrumental(enemy.recipe.name)}!`, 'combat', this.activeCombatReportId ?? undefined);
     } else {
       this.combatState.selectedTargetId = remainingEnemies[0].id;
     }
@@ -2288,7 +2295,7 @@ export class CrpgGameState {
         0x69f0ae
       );
       this.addCombatLog(
-        `🛡️ Uniknąłeś ataku ${enemy.recipe.name}! (Szansa wroga: ${out.hitChancePct}%, rzut: ${out.rollPct}%).`
+        `🛡️ Uniknąłeś ataku ${genitive(enemy.recipe.name)}! (Szansa wroga: ${out.hitChancePct}%, rzut: ${out.rollPct}%).`
       );
     } else {
       const critPrefix = out.critical ? '💥 KRYTYK! ' : '';
@@ -2637,7 +2644,7 @@ export class CrpgGameState {
     const enemy = this.npcs.find((n) => n.id === enemyId);
     if (!enemy || !enemy.combat || enemy.combat.isAlive) return false;
     if (enemy.isLooted) {
-      this.addLog(`💀 Ciało „${enemy.recipe.name}” zostało już przeszukane (brak dodatkowego łupu).`);
+      this.addLog(`💀 Ciało ${genitive(enemy.recipe.name)} zostało już przeszukane (brak dodatkowego łupu).`);
       return false;
     }
     const dist = Math.hypot(enemy.tileX - this.player.tileX, enemy.tileY - this.player.tileY);
@@ -2670,7 +2677,7 @@ export class CrpgGameState {
       lootNames.length > 0
         ? ` Przedmioty: ${lootNames.join(', ')} oraz +${coinReward} siekańców.`
         : ` Znaleziono +${coinReward} siekańców.`;
-    this.addLog(`💰 Przeszukano ciało: ${enemy.recipe.name}.${lootSummary}`);
+    this.addLog(`💰 Przeszukano ciało ${genitive(enemy.recipe.name)}.${lootSummary}`);
     this.pushFloatingCombatText(enemy.x, enemy.y, enemy.z + 1.8, `+${coinReward} 🪙`, 0xf5c451);
     CombatAudioEngine.getInstance().playSound('armor_clang', 0.85);
     return true;

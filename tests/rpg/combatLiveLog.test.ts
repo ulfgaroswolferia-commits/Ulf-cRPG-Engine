@@ -26,9 +26,9 @@ describe('Live Combat Log - Dedicated In-Battle Journal Component', () => {
 
     // Start combat
     game.startCombatWithEnemy(enemy.id);
-    game.addCombatLog('🗡️ Trafienie! [Szybki Cios] Zadano 14 obr. celowi Wilk (wytłumiono 3 przez DT/DR, szansa: 72%).');
-    game.addCombatLog('💥 KRYTYK! [Silny Cios] Zadano 28 obr. celowi Wilk (wytłumiono 2 przez DT/DR, szansa: 60%) + OGŁUSZENIE!');
-    game.addCombatLog('💨 [Szybki Cios] Pudło w Wilk! (Szansa: 50%, rzut: 79%, koszt: -3 AP).');
+    game.addCombatLog('🗡️ Trafienie! [Szybki Cios] Zadano 14 obr. celowi: Wilkowi (wytłumiono 3 przez DT/DR, szansa: 72%).');
+    game.addCombatLog('💥 KRYTYK! [Silny Cios] Zadano 28 obr. celowi: Wilkowi (wytłumiono 2 przez DT/DR, szansa: 60%) + OGŁUSZENIE!');
+    game.addCombatLog('💨 [Szybki Cios] Pudło w Wilka! (Szansa: 50%, rzut: 79%, koszt: -3 AP).');
 
     hud.render();
 
@@ -107,5 +107,41 @@ describe('Live Combat Log - Dedicated In-Battle Journal Component', () => {
     game.startCombatWithEnemy(nextEnemy.id);
     expect(game.combatLogs.length).toBe(1); // Only the new "ROZPOCZĘTO WALKĘ TUROWĄ" message
     expect(game.combatLogs[0]).toContain('ROZPOCZĘTO WALKĘ TUROWĄ');
+  });
+
+  it('generates properly inflected combat logs (biernik, celownik, narzednik, dopelniacz) in real combat flow', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const easyEnemy = game.npcs.find((n) => n.id === 'enemy_bandit_easy')!;
+    expect(easyEnemy).toBeDefined();
+
+    for (const n of game.npcs) {
+      if (n.id !== easyEnemy.id && n.combat) {
+        n.combat.isAlive = false;
+      }
+    }
+
+    game.player.tileX = easyEnemy.tileX;
+    game.player.tileY = easyEnemy.tileY - 1;
+    game.player.x = game.player.tileX + 0.5;
+    game.player.y = game.player.tileY + 0.5;
+
+    game.startCombatWithEnemy(easyEnemy.id);
+    expect(game.logs[0]).toContain('Walka z: Zdziczałym Maruderem Szlaku');
+
+    // Miss -> Pudło w Zdziczałego Marudera Szlaku!
+    game.performPlayerCombatAttack(easyEnemy.id, 'quick', () => 0.99);
+    expect(game.combatLogs.some((l) => l.includes('Pudło w Zdziczałego Marudera Szlaku!'))).toBe(true);
+
+    // Hit -> Zadano X obr. celowi: Zdziczałemu Maruderowi Szlaku
+    game.performPlayerCombatAttack(easyEnemy.id, 'quick', () => 0.01);
+    expect(game.combatLogs.some((l) => l.includes('celowi: Zdziczałemu Maruderowi Szlaku'))).toBe(true);
+
+    // Defeat -> Pokonano: Zdziczałego Marudera Szlaku!
+    game.player.combat!.ap = 10;
+    easyEnemy.combat!.hp = 1;
+    const finalAtk = game.performPlayerCombatAttack(easyEnemy.id, 'power', () => 0.01);
+    expect(finalAtk).not.toBeNull();
+    expect(game.combatLogs.some((l) => l.includes('Pokonano: Zdziczałego Marudera Szlaku!'))).toBe(true);
+    expect(game.chronicleEntries.some((l) => l.text.includes('Zwycięstwo nad Zdziczałym Maruderem Szlaku!'))).toBe(true);
   });
 });
