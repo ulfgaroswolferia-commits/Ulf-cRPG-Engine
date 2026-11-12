@@ -5,7 +5,7 @@
  * across all grammatical cases:
  * - Mianownik (Nominative): Kto? Co? (np. Bandyta, Zdziczały Maruder Szlaku)
  * - Dopełniacz (Genitive): Kogo? Czego? (np. Bandyty, Uniknąłeś ataku Bandyty, Ciało Bandyty)
- * - Celownik (Dative): Komu? Czemu? (np. Bandycie, Zadano obrażenia celowi: Bandycie)
+ * - Celownik (Dative): Komu? Czemu? (np. Bandycie, Zadano obrażenia: Bandycie)
  * - Biernik (Accusative): Kogo? Co? (np. Bandytę, Pokonano Bandytę, Pudło w Bandytę)
  * - Narzędnik (Instrumental): Z kim? Nad kim? (np. Bandytą, Zwycięstwo nad Bandytą, Walka z Bandytą)
  * - Miejscownik (Locative): O kim? O czym?
@@ -575,7 +575,7 @@ export function genitive(name: string): string {
 
 /**
  * Shortcut for Celownik (Dative: Komu? Czemu?)
- * e.g. "Zadano obrażenia celowi: Bandycie"
+ * e.g. "Zadano obrażenia: Bandycie"
  */
 export function dative(name: string): string {
   return declinePolish(name, 'celownik');

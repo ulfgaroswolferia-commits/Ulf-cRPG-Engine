@@ -26,8 +26,8 @@ describe('Live Combat Log - Dedicated In-Battle Journal Component', () => {
 
     // Start combat
     game.startCombatWithEnemy(enemy.id);
-    game.addCombatLog('🗡️ Trafienie! [Szybki Cios] Zadano 14 obr. celowi: Wilkowi (wytłumiono 3 przez DT/DR, szansa: 72%).');
-    game.addCombatLog('💥 KRYTYK! [Silny Cios] Zadano 28 obr. celowi: Wilkowi (wytłumiono 2 przez DT/DR, szansa: 60%) + OGŁUSZENIE!');
+    game.addCombatLog('🗡️ Trafienie! [Szybki Cios] Zadano 14 obr.: Wilkowi (wytłumiono 3 przez DT/DR, szansa: 72%).');
+    game.addCombatLog('💥 KRYTYK! [Silny Cios] Zadano 28 obr.: Wilkowi (wytłumiono 2 przez DT/DR, szansa: 60%) + OGŁUSZENIE!');
     game.addCombatLog('💨 [Szybki Cios] Pudło w Wilka! (Szansa: 50%, rzut: 79%, koszt: -3 AP).');
 
     hud.render();
@@ -132,9 +132,9 @@ describe('Live Combat Log - Dedicated In-Battle Journal Component', () => {
     game.performPlayerCombatAttack(easyEnemy.id, 'quick', () => 0.99);
     expect(game.combatLogs.some((l) => l.includes('Pudło w Zdziczałego Marudera Szlaku!'))).toBe(true);
 
-    // Hit -> Zadano X obr. celowi: Zdziczałemu Maruderowi Szlaku
+    // Hit -> Zadano X obr.: Zdziczałemu Maruderowi Szlaku
     game.performPlayerCombatAttack(easyEnemy.id, 'quick', () => 0.01);
-    expect(game.combatLogs.some((l) => l.includes('celowi: Zdziczałemu Maruderowi Szlaku'))).toBe(true);
+    expect(game.combatLogs.some((l) => l.includes('obr.: Zdziczałemu Maruderowi Szlaku'))).toBe(true);
 
     // Defeat -> Pokonano: Zdziczałego Marudera Szlaku!
     game.player.combat!.ap = 10;

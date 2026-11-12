@@ -1937,7 +1937,7 @@ export class CrpgGameState {
         outcome.critical ? 0xffca28 : 0xff5252
       );
       this.addCombatLog(
-        `${outcome.critical ? '💥 KRYTYK!' : '🗡️ Trafienie!'} [${modeLabel}] Zadano ${outcome.damageDealt} obr. celowi: ${dative(enemy.recipe.name)} (wytłumiono ${outcome.mitigatedByArmor} przez DT/DR, szansa: ${outcome.hitChancePct}%)${statusText}.`
+        `${outcome.critical ? '💥 KRYTYK!' : '🗡️ Trafienie!'} [${modeLabel}] Zadano ${outcome.damageDealt} obr.: ${dative(enemy.recipe.name)} (wytłumiono ${outcome.mitigatedByArmor} przez DT/DR, szansa: ${outcome.hitChancePct}%)${statusText}.`
       );
     }
 
