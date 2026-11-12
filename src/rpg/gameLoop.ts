@@ -123,7 +123,21 @@ export function detectLogSeverity(message: string): LogSeverity {
     message.includes('Zakupiono') ||
     message.includes('💰') ||
     message.includes('skarb') ||
-    message.includes('Awans')
+    message.includes('Awans') ||
+    message.includes('Zadanie') ||
+    message.includes('Misj') ||
+    message.includes('Osiągnięcie') ||
+    message.includes('Wkroczono do') ||
+    message.includes('Awansował') ||
+    message.includes('Nowy poziom') ||
+    message.includes('Artefakt') ||
+    message.includes('Tajemnic') ||
+    message.includes('Klucz') ||
+    message.includes('⭐') ||
+    message.includes('🌟') ||
+    message.includes('Otrzymano') ||
+    message.includes('Zdobyto') ||
+    message.includes('Zwycięstwo')
   ) {
     return 'important';
   }

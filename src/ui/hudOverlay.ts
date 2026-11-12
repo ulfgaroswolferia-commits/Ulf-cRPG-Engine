@@ -122,6 +122,8 @@ export class HudOverlay {
   private isChronicleExpanded = false;
   private isCombatAdvancedOpen = false;
   private isCreditsOpen = false;
+  public activeBattleLogTab: 'combat' | 'chronicle' = 'combat';
+  public isCombatLogExpanded = false;
   private saveToastActive = false;
   private saveToastTimer: number | null = null;
   private activeFilter: BackpackFilterCategory = 'all';
@@ -298,7 +300,14 @@ export class HudOverlay {
       this.game.combatState.selectedTargetId = targetId;
       this.game.commandAttackEnemy(targetId);
     }
+    // Auto-collapse aiming drawer on strike for optimal battlefield view
+    this.isCombatAdvancedOpen = false;
     this.render();
+  }
+
+  public executeAttack(mode?: CombatAttackMode): void {
+    const activeMode = mode ?? this.game.combatState.selectedAttackMode;
+    this.executeQuickStrike(activeMode);
   }
 
   public toggleFullscreen(): void {
@@ -618,7 +627,7 @@ export class HudOverlay {
         ${
           this.isCombatAdvancedOpen
             ? `
-          <div class="combat-veteran-panel">
+          <div class="combat-veteran-panel combat-veteran-drawer">
             <div class="veteran-header-strip">
               <span class="veteran-title">🎯 PRECYZYJNE CELOWANIE ANATOMICZNE — Kliknij część ciała, aby od razu uderzyć</span>
               <span class="veteran-telemetry" title="Szczegółowe parametry bojowe celu i Twojej broni">
@@ -679,6 +688,89 @@ export class HudOverlay {
         `
             : ''
         }
+      </div>
+    `;
+  }
+
+  private buildCombatLiveLogHtml(): string {
+    const logs = this.game.combatLogs;
+    const livingEnemies = this.game.npcs.filter(
+      (n) => n.combat?.isHostile && n.combat.isAlive
+    );
+    const selectedEnemy =
+      livingEnemies.find((e) => e.id === this.game.combatState.selectedTargetId) ??
+      livingEnemies[0];
+
+    const targetName = selectedEnemy ? selectedEnemy.recipe.name : 'Przeciwnik';
+
+    const entriesHtml = logs.length === 0
+      ? '<div class="combat-log-empty">⚔️ Wybierz akcję bojową lub wciśnij [1], [2], [3], aby rozpocząć wymianę ciosów.</div>'
+      : logs
+          .slice(0, this.isCombatLogExpanded ? 50 : 16)
+          .map((entry, idx) => {
+            const isCrit = entry.includes('KRYTYK');
+            const isHit = !isCrit && (entry.includes('Trafienie') || entry.includes('Zadano'));
+            const isMiss = entry.includes('Pudło') || entry.includes('Unik');
+            const isDefend = entry.includes('Obronną') || entry.includes('Garda');
+            const isVictory = entry.includes('Pokonano') || entry.includes('zakończona zwycięstwem');
+            const isStatus = entry.includes('OGŁUSZENIE') || entry.includes('OKALECZENIE');
+
+            let entryClass = 'combat-entry-info';
+            let badge = '';
+
+            if (isCrit) {
+              entryClass = 'combat-entry-crit';
+              badge = '<span class="c-badge c-badge-crit">💥 KRYTYK</span>';
+            } else if (isHit) {
+              entryClass = 'combat-entry-hit';
+              badge = '<span class="c-badge c-badge-hit">🗡️ TRAFIENIE</span>';
+            } else if (isMiss) {
+              entryClass = 'combat-entry-miss';
+              badge = '<span class="c-badge c-badge-miss">💨 PUDŁO</span>';
+            } else if (isDefend) {
+              entryClass = 'combat-entry-defend';
+              badge = '<span class="c-badge c-badge-defend">🛡️ GARDA</span>';
+            } else if (isVictory) {
+              entryClass = 'combat-entry-victory';
+              badge = '<span class="c-badge c-badge-victory">🏆 ZWYCIĘSTWO</span>';
+            }
+
+            const statusPill = isStatus
+              ? '<span class="c-badge c-badge-status">💫 STATUS</span>'
+              : '';
+
+            const isNewest = idx === 0 ? 'combat-entry-newest' : '';
+
+            return `
+              <div class="combat-log-row ${entryClass} ${isNewest}">
+                <div class="c-row-header">
+                  ${badge}
+                  ${statusPill}
+                </div>
+                <div class="c-row-text">${escapeHtml(entry)}</div>
+              </div>
+            `;
+          })
+          .join('');
+
+    return `
+      <div class="combat-live-log ${this.isCombatLogExpanded ? 'expanded' : ''}">
+        <div class="combat-log-header">
+          <div class="combat-log-tabs">
+            <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-combat">⚔️ Dziennik Walki (${logs.length})</button>
+            <button type="button" class="combat-tab-btn" data-action="set-battle-tab-chronicle" title="Przełącz na Kronikę Świata">📜 Kronika</button>
+          </div>
+          <span class="combat-log-target-pill" title="Aktualny cel starcia">🎯 ${escapeHtml(targetName)} • Runda ${this.game.combatState.round}</span>
+        </div>
+        <div class="combat-log-entries">
+          ${entriesHtml}
+        </div>
+        <div class="combat-log-footer">
+          <span class="combat-log-hint">Rzuty k100, obrażenia, DT/DR pancerza</span>
+          <button type="button" class="combat-log-expand-btn" data-action="toggle-combat-log-expanded" title="Rozwiń/zwiń wysokość dziennika walki">
+            ${this.isCombatLogExpanded ? '▼ Mniej' : '▲ Więcej'}
+          </button>
+        </div>
       </div>
     `;
   }
@@ -1460,10 +1552,19 @@ export class HudOverlay {
 
     const visibleEntries = this.isChronicleExpanded
       ? chronicleList
-      : chronicleList.slice(0, 6);
+      : chronicleList.slice(0, 16);
 
     const isRecentLog = Date.now() - this.game.lastLogTimestamp < 2200;
     const pulseClass = isRecentLog ? `pulse-${this.game.lastLogSeverity}` : '';
+
+    let headerBadge = '';
+    if (isRecentLog && this.game.lastLogSeverity === 'important') {
+      headerBadge = '<span class="chronicle-header-badge important">⭐ Ważne wydarzenie!</span>';
+    } else if (isRecentLog && this.game.lastLogSeverity === 'critical') {
+      headerBadge = '<span class="chronicle-header-badge critical">⚠️ Zagrożenie!</span>';
+    } else if (isRecentLog && this.game.lastLogSeverity === 'combat') {
+      headerBadge = '<span class="chronicle-header-badge combat">⚔️ Starcie!</span>';
+    }
 
     const hTile = this.scene.hoveredWorldTile;
     const hoverCoordText = hTile
@@ -1485,9 +1586,8 @@ export class HudOverlay {
         : `
       ${dialogueHtml}
       ${inventoryDrawerHtml}
-      ${this.buildCombatOverlayHtml()}
 
-      <div class="bottom-hud">
+      <div class="bottom-hud ${this.game.combatState.active ? 'combat-mode-active' : ''}">
         <div class="hero-card">
           <div class="portrait-frame">
             <img src="${charTex.portraitDataUrl}" alt="Portret Bohatera" class="hero-portrait-img" />
@@ -1526,13 +1626,28 @@ export class HudOverlay {
           </div>
         </div>
 
+        ${this.buildCombatOverlayHtml()}
+
+        ${
+          this.game.combatState.active && this.activeBattleLogTab === 'combat'
+            ? this.buildCombatLiveLogHtml()
+            : `
         <div class="chronicle-log ${this.isChronicleExpanded ? 'expanded' : ''} ${pulseClass}">
           <div class="log-header">
-            <span class="log-header-title">📜 Kronika Wydarzeń (${this.game.chronicleEntries.length})</span>
+            ${
+              this.game.combatState.active
+                ? `
+                <div class="combat-log-tabs">
+                  <button type="button" class="combat-tab-btn" data-action="set-battle-tab-combat" title="Przełącz na Dziennik Walki">⚔️ Dziennik Walki (${this.game.combatLogs.length})</button>
+                  <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-chronicle">📜 Kronika</button>
+                </div>
+                `
+                : `<span class="log-header-title">📜 Kronika Wydarzeń (${this.game.chronicleEntries.length})${headerBadge}</span>`
+            }
             ${
               this.isChronicleExpanded
-                ? `<button type="button" class="chronicle-toggle-btn collapse-red" data-action="toggle-chronicle" title="Zwiń Kronikę Wydarzeń">Zwiń</button>`
-                : `<button type="button" class="chronicle-toggle-btn expand-btn" data-action="toggle-chronicle" title="Rozwiń Kronikę Wydarzeń na całą wysokość ekranu">Rozwiń</button>`
+                ? `<button type="button" class="chronicle-close-x-btn" data-action="toggle-chronicle" title="Zwiń Kronikę (Esc)">✕</button>`
+                : `<button type="button" class="chronicle-toggle-btn expand-btn" data-action="toggle-chronicle" title="Rozwiń Kronikę Wydarzeń na całą wysokość ekranu">▲ Rozwiń</button>`
             }
           </div>
           <div class="log-entries">
@@ -1541,19 +1656,62 @@ export class HudOverlay {
               : visibleEntries
                   .map((entry, idx) => {
                     const isNewest = idx === 0 && isRecentLog;
+                    const isImportant = entry.severity === 'important';
+                    const isCritical = entry.severity === 'critical';
+                    const isCombat = entry.severity === 'combat';
+
+                    const bulletIcon = isImportant
+                      ? '⭐'
+                      : isCritical
+                        ? '⚠️'
+                        : isCombat
+                          ? '⚔️'
+                          : '•';
+                    const bulletClass = isImportant
+                      ? 'log-bullet log-bullet-important'
+                      : isCritical
+                        ? 'log-bullet log-bullet-critical'
+                        : isCombat
+                          ? 'log-bullet log-bullet-combat'
+                          : 'log-bullet';
+
+                    const badgeHtml = isImportant
+                      ? '<span class="log-badge-important">WAŻNE</span>'
+                      : isCritical
+                        ? '<span class="log-badge-critical">ALARM</span>'
+                        : '';
+
                     const reportBtn = entry.combatReportId
                       ? `<button type="button" class="combat-report-tag-btn" data-action="view-combat-report" data-report-id="${entry.combatReportId}" title="Zobacz szczegółowy raport z tego starcia">📜 Raport</button>`
                       : '';
-                    return `<div class="log-line log-severity-${entry.severity} ${isNewest ? 'log-newest' : ''}">
-                      <span class="log-bullet">•</span>
-                      <span class="log-line-text">${escapeHtml(entry.text)}</span>
+
+                    const newestClass = isNewest
+                      ? (isImportant ? 'log-newest log-newest-important' : 'log-newest')
+                      : '';
+
+                    return `<div class="log-line log-severity-${entry.severity} ${newestClass}">
+                      <span class="${bulletClass}">${bulletIcon}</span>
+                      <span class="log-line-text">${badgeHtml}${escapeHtml(entry.text)}</span>
                       ${reportBtn}
                     </div>`;
                   })
                   .join('')
             }
           </div>
+          ${
+            this.isChronicleExpanded
+              ? `
+              <div class="chronicle-footer">
+                <span class="chronicle-footer-hint">📜 Wpisów: ${this.game.chronicleEntries.length} • [Esc] zamyka</span>
+                <button type="button" class="chronicle-collapse-btn-bottom collapse-red" data-action="toggle-chronicle" title="Zwiń Kronikę Wydarzeń">
+                  ▼ Zwiń
+                </button>
+              </div>`
+              : ''
+          }
         </div>
+        `
+        }
       </div>
     `;
 
@@ -1673,6 +1831,15 @@ export class HudOverlay {
           this.render();
         } else if (action === 'toggle-chronicle') {
           this.toggleChronicleExpanded();
+        } else if (action === 'set-battle-tab-chronicle') {
+          this.activeBattleLogTab = 'chronicle';
+          this.render();
+        } else if (action === 'set-battle-tab-combat') {
+          this.activeBattleLogTab = 'combat';
+          this.render();
+        } else if (action === 'toggle-combat-log-expanded') {
+          this.isCombatLogExpanded = !this.isCombatLogExpanded;
+          this.render();
         } else if (action === 'view-combat-report') {
           const repId = btn.getAttribute('data-report-id');
           if (repId) {
@@ -1818,13 +1985,17 @@ export class HudOverlay {
         if (act === 'attack') {
           const targetId = this.game.combatState.selectedTargetId;
           if (targetId) {
+            this.isCombatAdvancedOpen = false;
             this.game.commandAttackEnemy(targetId);
           }
         } else if (act === 'defend') {
+          this.isCombatAdvancedOpen = false;
           this.game.activatePlayerDefendStance();
         } else if (act === 'end-turn') {
+          this.isCombatAdvancedOpen = false;
           this.game.endPlayerCombatTurn(true);
         } else if (act === 'flee') {
+          this.isCombatAdvancedOpen = false;
           this.game.fleeCombat();
         }
         this.render();

@@ -7,6 +7,8 @@ describe('chronicleLog - Dedicated Chronicle & Combat Log Separation', () => {
     expect(detectLogSeverity('📜 Raport z walki: Zwycięstwo nad Wilk')).toBe('combat');
     expect(detectLogSeverity('🏆 Pokonano przeciwnika: Pradawny Bies!')).toBe('important');
     expect(detectLogSeverity('🛒 Zakupiono u kupca: Miecz')).toBe('important');
+    expect(detectLogSeverity('Zadanie ukończone: Odnaleziono zaginiony artefakt')).toBe('important');
+    expect(detectLogSeverity('Awansowałeś na nowy poziom! Zdobyto 3 punkty cech.')).toBe('important');
     expect(detectLogSeverity('☠️ Porażka w starciu z potworem!')).toBe('critical');
     expect(detectLogSeverity('Zbadano kafel terenu.')).toBe('info');
   });
@@ -61,5 +63,46 @@ describe('chronicleLog - Dedicated Chronicle & Combat Log Separation', () => {
       expect(report).toBeDefined();
       expect(report.entries.some((e) => e.includes('Trafienie') || e.includes('Pudło') || e.includes('KRYTYK'))).toBe(true);
     }
+  });
+
+  it('renders prominent markers for important events and expanded footer with bottom-right Zwiń button', async () => {
+    const { IsoSceneView } = await import('../../src/renderer/isoSceneView');
+    const { HudOverlay } = await import('../../src/ui/hudOverlay');
+
+    const game = new CrpgGameState('forest_clearing');
+    // Add multiple events to test expanded capacity before collapse
+    for (let i = 1; i <= 12; i++) {
+      game.addLog(`Zwykły wpis eksploracji ${i}`, 'info');
+    }
+    // Add an important event
+    game.addLog('🏆 Zdobyto legendarny Skarb Wilczego Lasu!', 'important');
+
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const hud = new HudOverlay(fakeRoot, game, scene);
+    hud.render();
+
+    // Collapsed chronicle should show more than 6 entries (up to 16)
+    expect(fakeRoot.innerHTML).toContain('Zwykły wpis eksploracji 1');
+    expect(fakeRoot.innerHTML).toContain('Zwykły wpis eksploracji 10');
+    // Important event should have prominent badge and star bullet
+    expect(fakeRoot.innerHTML).toContain('log-badge-important');
+    expect(fakeRoot.innerHTML).toContain('WAŻNE');
+    expect(fakeRoot.innerHTML).toContain('log-bullet-important');
+    expect(fakeRoot.innerHTML).toContain('⭐');
+    expect(fakeRoot.innerHTML).toContain('chronicle-header-badge important');
+
+    // When chronicle is expanded, Zwiń button must be at the bottom in chronicle-footer
+    hud.toggleChronicleExpanded();
+    expect(fakeRoot.innerHTML).toContain('chronicle-log expanded');
+    expect(fakeRoot.innerHTML).toContain('chronicle-footer');
+    expect(fakeRoot.innerHTML).toContain('chronicle-collapse-btn-bottom');
+    expect(fakeRoot.innerHTML).toContain('collapse-red');
+    expect(fakeRoot.innerHTML).toContain('▼ Zwiń');
   });
 });
