@@ -387,6 +387,11 @@ export class IsoSceneView {
 
         const prevMapId = this.game.map.id;
         const prevTopLog = this.game.logs[0];
+        const prevTopCombatLog = this.game.combatLogs[0];
+        const prevTurnActorId = this.game.combatState.activeTurnActorId;
+        const prevRound = this.game.combatState.round;
+        const prevPlayerHp = this.game.player.combat?.hp;
+        const prevPlayerAp = this.game.player.combat?.ap;
         const prevDialogue = this.game.activeDialogue;
         const prevCombatActive = this.game.combatState.active;
 
@@ -398,6 +403,11 @@ export class IsoSceneView {
           this.onUiStateChange?.();
         } else if (
           this.game.logs[0] !== prevTopLog ||
+          this.game.combatLogs[0] !== prevTopCombatLog ||
+          this.game.combatState.activeTurnActorId !== prevTurnActorId ||
+          this.game.combatState.round !== prevRound ||
+          this.game.player.combat?.hp !== prevPlayerHp ||
+          this.game.player.combat?.ap !== prevPlayerAp ||
           this.game.activeDialogue !== prevDialogue ||
           this.game.combatState.active !== prevCombatActive
         ) {
@@ -1089,10 +1099,6 @@ export class IsoSceneView {
             : this.editorPropOrientation === '2x1'
               ? '1x2'
               : '1x1';
-        this.onUiStateChange?.();
-      } else if (k === ' ' && this.game.combatState.active && this.game.combatState.activeTurnActorId === this.game.player.id && !this.game.isSequentialEnemyTurnActive) {
-        e.preventDefault();
-        this.game.endPlayerCombatTurn(true);
         this.onUiStateChange?.();
       }
     });

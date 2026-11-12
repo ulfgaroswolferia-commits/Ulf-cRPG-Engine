@@ -3,7 +3,7 @@ import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
 import { CharacterAttributes, CharacterVisualRecipe } from './characterData';
 import { ActorCombatComponent, CombatAttackMode } from './combatSystem';
-import { ActorEntity, CrpgGameState, detectLogSeverity } from './gameLoop';
+import { ActorEntity, ChronicleEntry, CombatReport, CrpgGameState, detectLogSeverity } from './gameLoop';
 import { EquipSlot, ItemInstance } from './inventorySystem';
 
 export const STORAGE_KEY_AUTOSAVE = 'ulf_crpg_save_autosave';
@@ -106,6 +106,8 @@ export interface SerializedGameState {
   mapProps: SerializedPropState[];
   npcs: SerializedNpcState[];
   logs: string[];
+  chronicleEntries?: ChronicleEntry[];
+  combatReports?: Record<string, CombatReport>;
   combatState?: {
     active: boolean;
     round: number;
@@ -196,6 +198,8 @@ export function serializeGameState(
     mapProps,
     npcs,
     logs: game.logs.slice(0, 80),
+    chronicleEntries: game.chronicleEntries ? JSON.parse(JSON.stringify(game.chronicleEntries.slice(0, 80))) : [],
+    combatReports: game.combatReports ? JSON.parse(JSON.stringify(game.combatReports)) : {},
     combatState: {
       active: game.combatState.active,
       round: game.combatState.round,
@@ -350,10 +354,14 @@ export function deserializeGameState(
       game.combatState.selectedTargetId = data.combatState.selectedTargetId;
     }
 
-    // 7. Restore Logs & Chronicle
-    if (Array.isArray(data.logs) && data.logs.length > 0) {
-      game.logs.length = 0;
-      game.logs.push(...data.logs);
+    // 7. Restore Logs, Chronicle & Combat Reports
+    if (data.combatReports && typeof data.combatReports === 'object') {
+      Object.assign(game.combatReports, JSON.parse(JSON.stringify(data.combatReports)));
+    }
+    if (Array.isArray(data.chronicleEntries) && data.chronicleEntries.length > 0) {
+      game.chronicleEntries.length = 0;
+      game.chronicleEntries.push(...JSON.parse(JSON.stringify(data.chronicleEntries)));
+    } else if (Array.isArray(data.logs) && data.logs.length > 0) {
       game.chronicleEntries.length = 0;
       data.logs.forEach((logText, idx) => {
         game.chronicleEntries.push({
@@ -363,6 +371,10 @@ export function deserializeGameState(
           timestamp: Date.now() - idx * 1000
         });
       });
+    }
+    if (Array.isArray(data.logs) && data.logs.length > 0) {
+      game.logs.length = 0;
+      game.logs.push(...data.logs);
     }
 
     // 8. Restore Settings

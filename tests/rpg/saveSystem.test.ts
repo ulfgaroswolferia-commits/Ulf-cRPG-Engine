@@ -266,4 +266,30 @@ describe('cRPG Save & Auto-Persist System (F5 / Refresh Protection & Discreet Sa
     // Clean up
     setAutosaveDisabled(false);
   });
+
+  it('persists and restores combatReports and chronicle entries with report IDs across save and load', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const reportId = 'rep_test_123';
+    game.combatReports[reportId] = {
+      id: reportId,
+      targetName: 'Bandyta',
+      timestamp: Date.now(),
+      outcome: 'victory',
+      entries: ['Trafienie za 12 obr.', 'Zwycięstwo!']
+    };
+    game.addLog('Pokonano Bandyta!', 'combat', reportId);
+
+    const serialized = serializeGameState(game);
+    expect(serialized.combatReports).toBeDefined();
+    expect(serialized.combatReports![reportId]).toBeDefined();
+    expect(serialized.chronicleEntries).toBeDefined();
+    expect(serialized.chronicleEntries![0].combatReportId).toBe(reportId);
+
+    const restoredGame = new CrpgGameState('forest_clearing');
+    deserializeGameState(serialized, restoredGame);
+
+    expect(restoredGame.combatReports[reportId]).toBeDefined();
+    expect(restoredGame.combatReports[reportId].outcome).toBe('victory');
+    expect(restoredGame.chronicleEntries[0].combatReportId).toBe(reportId);
+  });
 });

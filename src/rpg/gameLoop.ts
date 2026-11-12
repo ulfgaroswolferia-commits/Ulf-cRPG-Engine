@@ -419,6 +419,8 @@ export class CrpgGameState {
     this.lastDuplicateSaleResult = null;
     this.activeDialogue = null;
     this.logs.length = 0;
+    this.chronicleEntries.length = 0;
+    this.combatLogs.length = 0;
 
     this.combatState.active = false;
     this.isSequentialEnemyTurnActive = false;
@@ -1774,6 +1776,7 @@ export class CrpgGameState {
     this.combatState.participantIds = participants.map((p) => p.id);
     this.combatState.activeTurnActorId = this.player.id;
     this.combatState.selectedTargetId = enemy.id;
+    this.combatLogs.length = 0;
 
     const reportId = 'rep_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     this.activeCombatReportId = reportId;
@@ -2279,15 +2282,16 @@ export class CrpgGameState {
         `🛡️ Uniknąłeś ataku ${enemy.recipe.name}! (Szansa wroga: ${out.hitChancePct}%, rzut: ${out.rollPct}%).`
       );
     } else {
+      const critPrefix = out.critical ? '💥 KRYTYK! ' : '';
       this.pushFloatingCombatText(
         this.player.x,
         this.player.y,
         this.player.z + 1.85,
-        `-${out.damageDealt} HP`,
-        0xff453a
+        out.critical ? `💥 KRYTYK -${out.damageDealt} HP!` : `-${out.damageDealt} HP`,
+        out.critical ? 0xffca28 : 0xff453a
       );
       this.addCombatLog(
-        `🩸 ${enemy.recipe.name} trafia Cię (${ATTACK_MODE_META[chosenMode].label}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
+        `${critPrefix}🩸 ${enemy.recipe.name} trafia Cię (${ATTACK_MODE_META[chosenMode].label}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
       );
     }
 

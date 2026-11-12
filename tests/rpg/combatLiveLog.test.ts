@@ -71,4 +71,41 @@ describe('Live Combat Log - Dedicated In-Battle Journal Component', () => {
     hud.render();
     expect(fakeRoot.innerHTML).toContain('combat-live-log');
   });
+
+  it('correctly labels enemy attacks as hits or crits and clears combat log when starting a new fight', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const enemy = game.npcs.find((n) => n.combat?.isHostile);
+    expect(enemy).toBeDefined();
+    if (!enemy) return;
+
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const hud = new HudOverlay(fakeRoot, game, scene);
+    game.startCombatWithEnemy(enemy.id);
+
+    // Enemy hit and enemy crit
+    game.addCombatLog('🩸 Wilk cmentarny trafia Cię (Szybki Cios) za 9 obr.! (Pancerz DT/DR pochłonął 3 obr.).');
+    game.addCombatLog('💥 KRYTYK! 🩸 Mroczny Czempion trafia Cię (Silny Cios) za 24 obr.! (Pancerz DT/DR pochłonął 1 obr.).');
+
+    hud.render();
+    expect(fakeRoot.innerHTML).toContain('combat-entry-hit');
+    expect(fakeRoot.innerHTML).toContain('combat-entry-crit');
+    expect(fakeRoot.innerHTML).toContain('Wilk cmentarny trafia Cię');
+    expect(fakeRoot.innerHTML).toContain('Mroczny Czempion trafia Cię');
+
+    // Finish combat and start new combat
+    game.combatState.active = false;
+    expect(game.combatLogs.length).toBeGreaterThan(0);
+
+    // Starting next combat must clear previous combat logs
+    const nextEnemy = game.npcs.find((n) => n.id !== enemy.id && n.combat?.isHostile) ?? enemy;
+    game.startCombatWithEnemy(nextEnemy.id);
+    expect(game.combatLogs.length).toBe(1); // Only the new "ROZPOCZĘTO WALKĘ TUROWĄ" message
+    expect(game.combatLogs[0]).toContain('ROZPOCZĘTO WALKĘ TUROWĄ');
+  });
 });

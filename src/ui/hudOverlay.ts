@@ -152,79 +152,90 @@ export class HudOverlay {
       });
 
       window.addEventListener('keydown', (e) => {
-        const inst = HudOverlay.activeInstance;
-        if (!inst) return;
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
-        if (e.key.toLowerCase() === 'i') {
-          inst.isInventoryOpen = !inst.isInventoryOpen;
-          inst.render();
-        } else if (e.ctrlKey && e.key.toLowerCase() === 's') {
-          e.preventDefault();
-          inst.saveGameDiscreetly();
-        } else if (e.key === 'F5') {
-          // Immediately persist state before browser executes refresh
-          saveGame(inst.game, inst.scene, 'autosave');
-        } else if (
-          inst.game.combatState.active &&
-          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
-          !inst.game.isSequentialEnemyTurnActive &&
-          e.code === 'Space'
-        ) {
-          e.preventDefault();
-          inst.game.endPlayerCombatTurn(true);
-          inst.render();
-        } else if (
-          inst.game.combatState.active &&
-          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
-          !inst.game.isSequentialEnemyTurnActive &&
-          e.key === '1'
-        ) {
-          inst.executeQuickStrike('quick');
-        } else if (
-          inst.game.combatState.active &&
-          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
-          !inst.game.isSequentialEnemyTurnActive &&
-          e.key === '2'
-        ) {
-          inst.executeQuickStrike('power');
-        } else if (
-          inst.game.combatState.active &&
-          inst.game.combatState.activeTurnActorId === inst.game.player.id &&
-          !inst.game.isSequentialEnemyTurnActive &&
-          e.key === '3'
-        ) {
-          inst.game.activatePlayerDefendStance();
-          inst.render();
-        } else if (inst.game.combatState.active && e.key.toLowerCase() === 'v') {
-          inst.toggleCombatAdvanced();
-        } else if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
-          const audio = CombatAudioEngine.getInstance();
-          audio.setMuted(!audio.getMuted());
-          inst.render();
-        } else if (e.key === 'Escape') {
-          if (inst.activeCombatReportModalId) {
-            inst.activeCombatReportModalId = null;
-            inst.render();
-          } else if (inst.isCreditsOpen) {
-            inst.isCreditsOpen = false;
-            inst.render();
-          } else if (inst.isCombatAdvancedOpen) {
-            inst.isCombatAdvancedOpen = false;
-            inst.render();
-          } else if (inst.isChronicleExpanded) {
-            inst.isChronicleExpanded = false;
-            inst.render();
-          } else if (inst.isInventoryOpen) {
-            inst.isInventoryOpen = false;
-            inst.render();
-          }
-        }
+        HudOverlay.activeInstance?.handleGlobalKey(e);
       });
 
       if (typeof document !== 'undefined') {
         document.addEventListener('fullscreenchange', () => {
           HudOverlay.activeInstance?.render();
         });
+      }
+    }
+  }
+
+  public handleGlobalKey(e: {
+    key?: string;
+    code?: string;
+    ctrlKey?: boolean;
+    altKey?: boolean;
+    target?: any;
+    preventDefault?: () => void;
+  }): void {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+    if (e.key?.toLowerCase() === 'i') {
+      this.isInventoryOpen = !this.isInventoryOpen;
+      this.render();
+    } else if (e.ctrlKey && e.key?.toLowerCase() === 's') {
+      e.preventDefault?.();
+      this.saveGameDiscreetly();
+    } else if (e.key === 'F5') {
+      // Immediately persist state before browser executes refresh
+      saveGame(this.game, this.scene, 'autosave');
+    } else if (
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
+      (e.code === 'Space' || e.key === ' ')
+    ) {
+      e.preventDefault?.();
+      this.isCombatAdvancedOpen = false;
+      this.game.endPlayerCombatTurn(true);
+      this.render();
+    } else if (
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
+      e.key === '1'
+    ) {
+      this.executeQuickStrike('quick');
+    } else if (
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
+      e.key === '2'
+    ) {
+      this.executeQuickStrike('power');
+    } else if (
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
+      e.key === '3'
+    ) {
+      this.isCombatAdvancedOpen = false;
+      this.game.activatePlayerDefendStance();
+      this.render();
+    } else if (this.game.combatState.active && e.key?.toLowerCase() === 'v') {
+      this.toggleCombatAdvanced();
+    } else if (e.key?.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
+      const audio = CombatAudioEngine.getInstance();
+      audio.setMuted(!audio.getMuted());
+      this.render();
+    } else if (e.key === 'Escape') {
+      if (this.activeCombatReportModalId) {
+        this.activeCombatReportModalId = null;
+        this.render();
+      } else if (this.isCreditsOpen) {
+        this.isCreditsOpen = false;
+        this.render();
+      } else if (this.isCombatAdvancedOpen) {
+        this.isCombatAdvancedOpen = false;
+        this.render();
+      } else if (this.isChronicleExpanded) {
+        this.isChronicleExpanded = false;
+        this.render();
+      } else if (this.isInventoryOpen) {
+        this.isInventoryOpen = false;
+        this.render();
       }
     }
   }
@@ -709,7 +720,7 @@ export class HudOverlay {
           .slice(0, this.isCombatLogExpanded ? 50 : 16)
           .map((entry, idx) => {
             const isCrit = entry.includes('KRYTYK');
-            const isHit = !isCrit && (entry.includes('Trafienie') || entry.includes('Zadano'));
+            const isHit = !isCrit && (entry.includes('Trafienie') || entry.includes('Zadano') || entry.includes('trafia'));
             const isMiss = entry.includes('Pudło') || entry.includes('Unik');
             const isDefend = entry.includes('Obronną') || entry.includes('Garda');
             const isVictory = entry.includes('Pokonano') || entry.includes('zakończona zwycięstwem');
@@ -1728,7 +1739,7 @@ export class HudOverlay {
 
       combatReportModalHtml = `
         <div class="combat-report-modal-backdrop" data-action="close-combat-report">
-          <div class="combat-report-modal-dialog" onclick="event.stopPropagation()">
+          <div class="combat-report-modal-dialog">
             <div class="combat-report-header">
               <div class="combat-report-title-area">
                 <span class="combat-report-icon">📜</span>
@@ -2003,6 +2014,10 @@ export class HudOverlay {
     });
 
     this.root.querySelector('.credits-modal-window')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    this.root.querySelector('.combat-report-modal-dialog')?.addEventListener('click', (e) => {
       e.stopPropagation();
     });
 

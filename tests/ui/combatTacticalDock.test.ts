@@ -62,4 +62,31 @@ describe('Combat Tactical Dock & 1-Turn Auto-Collapsing Aiming Drawer', () => {
     // Aiming drawer should auto-collapse to false so battlefield is visible
     expect((hud as any).isCombatAdvancedOpen).toBe(false);
   });
+
+  it('auto-collapses aiming drawer when ending turn via Space or defending via Key 3', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const enemy = game.npcs.find((n) => n.combat?.isHostile);
+    expect(enemy).toBeDefined();
+    if (!enemy) return;
+
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const hud = new HudOverlay(fakeRoot, game, scene);
+    game.startCombatWithEnemy(enemy.id);
+
+    // 1. Defending via Key 3
+    (hud as any).isCombatAdvancedOpen = true;
+    hud.handleGlobalKey({ key: '3' });
+    expect((hud as any).isCombatAdvancedOpen).toBe(false);
+
+    // 2. Ending turn via Space
+    (hud as any).isCombatAdvancedOpen = true;
+    hud.handleGlobalKey({ code: 'Space' });
+    expect((hud as any).isCombatAdvancedOpen).toBe(false);
+  });
 });
