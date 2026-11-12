@@ -83,6 +83,7 @@ export interface ActorEntity {
   damageFlashTimer?: number;
   deathAnimTimer?: number;
   isLooted?: boolean;
+  aggroCooldownTimer?: number;
 }
 
 export interface CombatAttackEvent {
@@ -1550,6 +1551,14 @@ export class CrpgGameState {
     this.addLog(`${this.player.recipe.name}: „${text}”`);
   }
 
+  public sayNpcBark(npcId: string, text: string, durationSeconds = 3.5): void {
+    const npc = this.npcs.find((n) => n.id === npcId);
+    if (!npc) return;
+    npc.speechBubbleText = text;
+    npc.speechBubbleTimer = durationSeconds;
+    this.addLog(`${npc.recipe.name}: „${text}”`);
+  }
+
   public addLog(message: string, severity?: LogSeverity, combatReportId?: string): void {
     const resolvedSeverity = severity ?? detectLogSeverity(message);
     const now = Date.now();
@@ -2435,10 +2444,11 @@ export class CrpgGameState {
     this.player.path = [];
     this.player.isMoving = false;
 
-    // Reset hostile NPC paths so they do not chase old pre-defeat coordinates
+    // Reset hostile NPC paths and apply aggro cooldown so they do not chase old pre-defeat coordinates
     for (const npc of this.npcs) {
       npc.path = [];
       npc.isMoving = false;
+      npc.aggroCooldownTimer = 5.0;
     }
 
     this.sayPlayerBark(
@@ -2461,6 +2471,10 @@ export class CrpgGameState {
 
   public fleeCombat(): void {
     if (!this.combatState.active) return;
+    if (this.isSequentialEnemyTurnActive) {
+      this.addLog('⏳ Nie możesz uciekać podczas tury przeciwnika!');
+      return;
+    }
     this.isSequentialEnemyTurnActive = false;
     this.pendingEnemyCombatTurnIds = [];
     this.combatState.active = false;
@@ -2471,10 +2485,11 @@ export class CrpgGameState {
     this.player.path = [];
     this.player.isMoving = false;
 
-    // Reset NPC chase paths on tactical retreat
+    // Reset NPC chase paths and apply retreat aggro cooldown
     for (const npc of this.npcs) {
       npc.path = [];
       npc.isMoving = false;
+      npc.aggroCooldownTimer = 4.0;
     }
 
     if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
@@ -3121,6 +3136,17 @@ export class CrpgGameState {
       return this.consumeBackpackInstance(found.item.instanceId);
     }
 
+    if (this.combatState.active) {
+      if (this.combatState.activeTurnActorId !== this.player.id || this.isSequentialEnemyTurnActive) {
+        this.addLog('⏳ Poczekaj na swoją turę, aby zmienić wyposażenie!');
+        return false;
+      }
+      if (this.player.combat && this.player.combat.ap < 2) {
+        this.addLog('⚠️ Zmiana wyposażenia w walce wymaga 2 AP!');
+        return false;
+      }
+    }
+
     const res: EquipOperationResult = this.equipmentManager.equipFromInventory(
       instanceId,
       preferredSlot
@@ -3128,6 +3154,13 @@ export class CrpgGameState {
     if (!res.success) {
       this.addLog(`⚠️ Nie można założyć ${def.name}: ${res.reason}`);
       return false;
+    }
+
+    if (this.combatState.active && this.player.combat) {
+      this.player.combat.ap = Math.max(0, this.player.combat.ap - 2);
+      this.addCombatLog(
+        `🛡️ Zmiana wyposażenia w walce: ${def.name} (-2 AP, pozostało: ${this.player.combat.ap} AP).`
+      );
     }
 
     const unequippedNames = (res.unequippedItems ?? [])
@@ -3145,11 +3178,31 @@ export class CrpgGameState {
     const current = this.equipmentManager.getEquipped(slot);
     if (!current) return false;
     const def = getItemDefinition(current.definitionId);
+
+    if (this.combatState.active) {
+      if (this.combatState.activeTurnActorId !== this.player.id || this.isSequentialEnemyTurnActive) {
+        this.addLog('⏳ Poczekaj na swoją turę, aby zdjąć wyposażenie!');
+        return false;
+      }
+      if (this.player.combat && this.player.combat.ap < 2) {
+        this.addLog('⚠️ Zmiana wyposażenia w walce wymaga 2 AP!');
+        return false;
+      }
+    }
+
     const res = this.equipmentManager.unequipToInventory(slot);
     if (!res.success) {
       this.addLog(`⚠️ ${res.reason}`);
       return false;
     }
+
+    if (this.combatState.active && this.player.combat) {
+      this.player.combat.ap = Math.max(0, this.player.combat.ap - 2);
+      this.addCombatLog(
+        `🛡️ Zdjęcie wyposażenia w walce: ${def?.name ?? current.definitionId} (-2 AP, pozostało: ${this.player.combat.ap} AP).`
+      );
+    }
+
     this.addLog(`Zdjęto z wyposażenia do plecaka: ${def?.name ?? current.definitionId}.`);
     return true;
   }
@@ -3172,6 +3225,10 @@ export class CrpgGameState {
 
     if (item.consumableEffect) {
       if (this.combatState.active && this.player.combat) {
+        if (this.combatState.activeTurnActorId !== this.player.id || this.isSequentialEnemyTurnActive) {
+          this.addLog('⏳ Poczekaj na swoją turę, aby użyć przedmiotu!');
+          return false;
+        }
         if (this.player.combat.ap < 2) {
           this.addLog('⚠️ Użycie przedmiotu w walce wymaga 2 AP!');
           return false;
@@ -3315,7 +3372,35 @@ export class CrpgGameState {
     }
 
     for (const npc of this.npcs) {
+      if (npc.speechBubbleTimer && npc.speechBubbleTimer > 0) {
+        npc.speechBubbleTimer -= dtSeconds;
+        if (npc.speechBubbleTimer <= 0) {
+          npc.speechBubbleTimer = 0;
+          npc.speechBubbleText = null;
+        }
+      }
+
       if (npc.combat && !npc.combat.isAlive) continue;
+
+      if (npc.aggroCooldownTimer && npc.aggroCooldownTimer > 0) {
+        npc.aggroCooldownTimer -= dtSeconds;
+      }
+
+      // Aggro check: if hostile NPC detects player within aggro radius, initiate combat!
+      if (
+        npc.combat?.isHostile &&
+        !this.combatState.active &&
+        !this.activeDialogue &&
+        (!npc.aggroCooldownTimer || npc.aggroCooldownTimer <= 0)
+      ) {
+        const dist = Math.hypot(this.player.tileX - npc.tileX, this.player.tileY - npc.tileY);
+        const aggroDist = npc.combat.aggroRadius || 3.5;
+        if (dist <= aggroDist) {
+          this.sayNpcBark(npc.id, 'Stój! Kto idzie?! Zbrojni, do mnie!', 3.0);
+          this.startCombatWithEnemy(npc.id);
+          return;
+        }
+      }
 
       if (!npc.isMoving && npc.patrolPoints && npc.patrolPoints.length > 1) {
         npc.patrolWaitTimer = (npc.patrolWaitTimer ?? 1.5) - dtSeconds;
