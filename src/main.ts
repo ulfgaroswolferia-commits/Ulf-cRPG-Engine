@@ -97,9 +97,10 @@ async function bootstrapEngine(): Promise<void> {
   if (isDevMode) {
     // Periodic lightweight telemetry refresh for FPS counter in dev/editor mode
     window.setInterval(() => {
-      const fpsNodes = document.querySelectorAll('.telemetry-pill strong');
-      if (fpsNodes.length >= 1) {
-        fpsNodes[0].textContent = String(scene.fps);
+      const fpsEl = document.querySelector<HTMLElement>('[data-telemetry="fps"]') ??
+        document.querySelectorAll('.telemetry-pill strong')[0];
+      if (fpsEl) {
+        fpsEl.textContent = String(scene.fps);
       }
     }, 600);
   }
@@ -109,6 +110,9 @@ bootstrapEngine().catch((err) => {
   console.error('Błąd inicjalizacji silnika izometrycznego cRPG:', err);
   const viewportContainer = document.getElementById('viewport-container');
   if (viewportContainer) {
-    viewportContainer.innerHTML = `<div style="color:#ff6b6b;padding:24px;font-family:monospace;">Błąd inicjalizacji silnika: ${String(err)}</div>`;
+    const errBox = document.createElement('div');
+    errBox.style.cssText = 'color:#ff6b6b;padding:24px;font-family:monospace;';
+    errBox.textContent = `Błąd inicjalizacji silnika: ${String(err)}`;
+    viewportContainer.replaceChildren(errBox);
   }
 });

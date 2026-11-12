@@ -45,6 +45,69 @@ function octileHeuristic(x1: number, y1: number, x2: number, y2: number): number
  * 8-directional 3D A* pathfinder respecting elevation steps (stairs/ramps vs cliffs)
  * and preventing diagonal corner-cutting around walls.
  */
+let scratchCapacity = 0;
+let scratchGScore = new Float64Array(0);
+let scratchFScore = new Float64Array(0);
+let scratchCameFrom = new Int32Array(0);
+let scratchCameDir = new Uint8Array(0);
+let scratchClosed = new Uint8Array(0);
+const openHeap: number[] = [];
+
+function ensureAStarScratch(size: number): void {
+  if (size > scratchCapacity) {
+    scratchCapacity = size;
+    scratchGScore = new Float64Array(size);
+    scratchFScore = new Float64Array(size);
+    scratchCameFrom = new Int32Array(size);
+    scratchCameDir = new Uint8Array(size);
+    scratchClosed = new Uint8Array(size);
+  }
+  scratchGScore.fill(Infinity, 0, size);
+  scratchFScore.fill(Infinity, 0, size);
+  scratchCameFrom.fill(-1, 0, size);
+  scratchCameDir.fill(4, 0, size);
+  scratchClosed.fill(0, 0, size);
+  openHeap.length = 0;
+}
+
+function heapPush(node: number, fScores: Float64Array): void {
+  let idx = openHeap.length;
+  openHeap.push(node);
+  const f = fScores[node];
+  while (idx > 0) {
+    const parentIdx = (idx - 1) >> 1;
+    const parent = openHeap[parentIdx];
+    if (f >= fScores[parent]) break;
+    openHeap[idx] = parent;
+    idx = parentIdx;
+  }
+  openHeap[idx] = node;
+}
+
+function heapPop(fScores: Float64Array): number {
+  const top = openHeap[0];
+  const last = openHeap.pop()!;
+  const len = openHeap.length;
+  if (len > 0) {
+    let idx = 0;
+    const f = fScores[last];
+    while (true) {
+      const left = (idx << 1) + 1;
+      if (left >= len) break;
+      const right = left + 1;
+      let smallest = left;
+      if (right < len && fScores[openHeap[right]] < fScores[openHeap[left]]) {
+        smallest = right;
+      }
+      if (f <= fScores[openHeap[smallest]]) break;
+      openHeap[idx] = openHeap[smallest];
+      idx = smallest;
+    }
+    openHeap[idx] = last;
+  }
+  return top;
+}
+
 export function findPathAStar3D(
   grid: NavGridQuery,
   start: WorldGridPoint,
@@ -85,31 +148,21 @@ export function findPathAStar3D(
     ];
   }
 
-  const gScore = new Float64Array(width * height).fill(Infinity);
-  const fScore = new Float64Array(width * height).fill(Infinity);
-  const cameFrom = new Int32Array(width * height).fill(-1);
-  const cameDir = new Uint8Array(width * height).fill(4);
-  const closed = new Uint8Array(width * height);
+  ensureAStarScratch(width * height);
+  const gScore = scratchGScore;
+  const fScore = scratchFScore;
+  const cameFrom = scratchCameFrom;
+  const cameDir = scratchCameDir;
+  const closed = scratchClosed;
 
   gScore[startKey] = 0;
   fScore[startKey] = octileHeuristic(start.x, start.y, goal.x, goal.y);
 
-  const openSet: number[] = [startKey];
+  heapPush(startKey, fScore);
 
-  while (openSet.length > 0) {
-    let bestIdx = 0;
-    let current = openSet[0];
-    for (let i = 1; i < openSet.length; i++) {
-      if (fScore[openSet[i]] < fScore[current]) {
-        current = openSet[i];
-        bestIdx = i;
-      }
-    }
-
-    const last = openSet.pop()!;
-    if (bestIdx < openSet.length) {
-      openSet[bestIdx] = last;
-    }
+  while (openHeap.length > 0) {
+    const current = heapPop(fScore);
+    if (closed[current]) continue;
 
     if (current === goalKey) {
       const path: PathStepNode[] = [];
@@ -165,9 +218,7 @@ export function findPathAStar3D(
         cameDir[nKey] = n.dir;
         gScore[nKey] = tentativeG;
         fScore[nKey] = tentativeG + octileHeuristic(nx, ny, goal.x, goal.y);
-        if (!openSet.includes(nKey)) {
-          openSet.push(nKey);
-        }
+        heapPush(nKey, fScore);
       }
     }
   }

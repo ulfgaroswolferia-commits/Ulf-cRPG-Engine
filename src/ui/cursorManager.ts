@@ -213,20 +213,27 @@ export function determineActionCursor(ctx: CursorContextInput): ActionCursorType
     return 'loot';
   }
 
-  // 3. Alive Friendly/Neutral NPC -> Talk
-  if (ctx.hoveredNpc && ctx.hoveredNpc.isAlive && !ctx.hoveredNpc.isHostile) {
+  // 3. Alive Friendly/Neutral NPC with dialogue -> Talk
+  if (
+    ctx.hoveredNpc &&
+    ctx.hoveredNpc.isAlive &&
+    !ctx.hoveredNpc.isHostile &&
+    ctx.hoveredNpc.hasDialogue !== false
+  ) {
     return 'talk';
   }
 
-  // 4. Props with loot (ground loot, closed lootable barrels/chests) -> Loot
+  // 4. Props with loot (ground loot, closed non-empty lootable barrels/chests) -> Loot
   if (ctx.hoveredProp) {
+    const hasLootItems = !ctx.hoveredProp.lootItems || ctx.hoveredProp.lootItems.length > 0;
     const isLootProp =
       ctx.hoveredProp.kind === 'ground_loot' ||
       ((ctx.hoveredProp.kind === 'chest' ||
         ctx.hoveredProp.kind === 'dungeon_barrel' ||
         ctx.hoveredProp.kind === 'dungeon_crate' ||
         ctx.hoveredProp.kind === 'market_stall') &&
-        !ctx.hoveredProp.isOpen);
+        !ctx.hoveredProp.isOpen &&
+        hasLootItems);
 
     if (isLootProp) {
       return 'loot';

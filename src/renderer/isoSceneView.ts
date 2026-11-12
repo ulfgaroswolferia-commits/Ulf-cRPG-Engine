@@ -46,7 +46,7 @@ import {
   toWorldGrid
 } from '../core/mapRotation';
 import { findPathAStar3D, PathStepNode } from '../core/pathfinding';
-import { PropKind, TileTerrainType } from '../core/worldMap';
+import { PropKind, TileTerrainType, WorldPropEntity } from '../core/worldMap';
 import {
   computeAttackPreview,
   createDefaultProficiencies,
@@ -108,8 +108,10 @@ interface FloatingParticle {
 interface SlashArcVfx {
   startX: number;
   startY: number;
+  startZ: number;
   targetX: number;
   targetY: number;
+  targetZ: number;
   life: number;
   maxLife: number;
   color: number;
@@ -292,6 +294,12 @@ export class IsoSceneView {
   private isPointerInsideViewport = false;
   private isPointerOverUi = false;
   private readonly keysDown = new Set<string>();
+  private inputAbortController: AbortController | null = null;
+  private lastCursorKey = '';
+  private cachedParticleMapRef: unknown = null;
+  private cachedParticlePropsLen = -1;
+  private cachedFireProps: WorldPropEntity[] = [];
+  private cachedArcaneProps: WorldPropEntity[] = [];
   private onUiStateChange?: () => void;
 
   constructor(game: CrpgGameState, onUiStateChange?: () => void) {
@@ -313,7 +321,9 @@ export class IsoSceneView {
         evt.attacker.y,
         evt.target.x,
         evt.target.y,
-        evt.outcome.critical ? 0xffca28 : 0xedf2f7
+        evt.outcome.critical ? 0xffca28 : 0xedf2f7,
+        evt.attacker.z,
+        evt.target.z
       );
     });
   }
@@ -953,7 +963,7 @@ export class IsoSceneView {
         portraitDataUrl: 'data:image/png;base64,',
         bakeDurationMs: 0.5
       };
-      this.characterTextureCache.set(baked.recipeHash, headlessEntry);
+      this.characterTextureCache.set(fastHash, headlessEntry);
       return headlessEntry;
     }
 
@@ -1039,7 +1049,7 @@ export class IsoSceneView {
       bakeDurationMs
     };
 
-    this.characterTextureCache.set(baked.recipeHash, entry);
+    this.characterTextureCache.set(fastHash, entry);
     return entry;
   }
 
@@ -1081,7 +1091,49 @@ export class IsoSceneView {
     return pair;
   }
 
+  public destroy(): void {
+    this.inputAbortController?.abort();
+    this.inputAbortController = null;
+
+    for (const pair of this.tileTextureCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.tileTextureCache.clear();
+
+    for (const pair of this.propTextureCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.propTextureCache.clear();
+
+    for (const charTex of this.characterTextureCache.values()) {
+      for (const row of charTex.albedoFrames) {
+        for (const t of row) t.destroy(true);
+      }
+      for (const row of charTex.normalFrames) {
+        for (const t of row) t.destroy(true);
+      }
+    }
+    this.characterTextureCache.clear();
+
+    if (this.postFilter) {
+      this.postFilter.destroy();
+      this.postFilter = null;
+    }
+
+    try {
+      this.app.destroy(true, { children: true, texture: true });
+    } catch {
+      // Ignore if Pixi app was never mounted/initialized
+    }
+  }
+
   private bindInputEvents(canvas: HTMLCanvasElement): void {
+    this.inputAbortController?.abort();
+    this.inputAbortController = new AbortController();
+    const { signal } = this.inputAbortController;
+
     window.addEventListener('keydown', (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
       const k = e.key.toLowerCase();
@@ -1101,13 +1153,13 @@ export class IsoSceneView {
               : '1x1';
         this.onUiStateChange?.();
       }
-    });
+    }, { signal });
 
     window.addEventListener('keyup', (e) => {
       this.keysDown.delete(e.key.toLowerCase());
-    });
+    }, { signal });
 
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
 
     canvas.addEventListener(
       'wheel',
@@ -1117,7 +1169,7 @@ export class IsoSceneView {
         this.targetZoom = Math.min(1.85, Math.max(0.55, Number((this.targetZoom * factor).toFixed(2))));
         this.onUiStateChange?.();
       },
-      { passive: false }
+      { passive: false, signal }
     );
 
     canvas.addEventListener('pointerdown', (e) => {
@@ -1184,7 +1236,7 @@ export class IsoSceneView {
         this.game.commandPlayerMoveTo(x, y);
         this.onUiStateChange?.();
       }
-    });
+    }, { signal });
 
     const onPointerOrMouseMove = (e: MouseEvent | PointerEvent): void => {
       const target = e.target as HTMLElement | null;
@@ -1218,9 +1270,9 @@ export class IsoSceneView {
     if (typeof window !== 'undefined') {
       const hasPointer = 'PointerEvent' in (window as object);
       if (hasPointer) {
-        window.addEventListener('pointermove', onPointerOrMouseMove, { passive: true });
+        window.addEventListener('pointermove', onPointerOrMouseMove, { passive: true, signal });
       } else {
-        window.addEventListener('mousemove', onPointerOrMouseMove, { passive: true });
+        window.addEventListener('mousemove', onPointerOrMouseMove, { passive: true, signal });
       }
     }
 
@@ -1229,18 +1281,18 @@ export class IsoSceneView {
       this.isPaintingWithBrush = false;
       this.lastPaintedTileKey = '';
       this.updateCanvasCursor();
-    });
+    }, { signal });
 
     document.documentElement.addEventListener('mouseleave', () => {
       this.isPointerInsideViewport = false;
       this.forcedEdgeDirection = null;
-    });
+    }, { signal });
 
     window.addEventListener('blur', () => {
       this.isPointerInsideViewport = false;
       this.forcedEdgeDirection = null;
       this.keysDown.clear();
-    });
+    }, { signal });
   }
 
   public updateEdgePanPointerState(
@@ -1473,33 +1525,45 @@ export class IsoSceneView {
   private updateParticles(dt: number): void {
     // Spawn atmospheric crackling embers, sparks, and ethereal motes
     if (this.particles.length < 140 && Math.random() < 0.72) {
-      const fireProps = this.game.map.props.filter(
-        (p) => (p.kind === 'campfire' || p.kind === 'torch_sconce') && p.isOpen
-      );
-      const arcaneProps = this.game.map.props.filter(
-        (p) =>
-          p.kind === 'arcane_crystal' ||
-          p.kind === 'slavic_shrine' ||
-          p.kind === 'runic_altar'
-      );
+      if (
+        this.cachedParticleMapRef !== this.game.map ||
+        this.cachedParticlePropsLen !== this.game.map.props.length
+      ) {
+        this.cachedParticleMapRef = this.game.map;
+        this.cachedParticlePropsLen = this.game.map.props.length;
+        this.cachedFireProps = this.game.map.props.filter(
+          (p) => p.kind === 'campfire' || p.kind === 'torch_sconce'
+        );
+        this.cachedArcaneProps = this.game.map.props.filter(
+          (p) =>
+            p.kind === 'arcane_crystal' ||
+            p.kind === 'slavic_shrine' ||
+            p.kind === 'runic_altar'
+        );
+      }
+
+      const fireProps = this.cachedFireProps;
+      const arcaneProps = this.cachedArcaneProps;
 
       if (fireProps.length > 0 && Math.random() < 0.55) {
         // Crackling sparks & embers rising from campfires / torches
         const p = fireProps[Math.floor(Math.random() * fireProps.length)];
-        const isCampfire = p.kind === 'campfire';
-        const sparkColors = [0xffe066, 0xffa726, 0xff7043, 0xff3d00];
-        this.particles.push({
-          x: p.x + 0.5 + (Math.random() - 0.5) * (isCampfire ? 0.45 : 0.22),
-          y: p.y + 0.5 + (Math.random() - 0.5) * (isCampfire ? 0.45 : 0.22),
-          z: p.z + (isCampfire ? 0.35 : 1.35),
-          vx: (Math.random() - 0.5) * 0.35,
-          vy: (Math.random() - 0.5) * 0.35,
-          vz: 0.85 + Math.random() * 0.75,
-          life: 0,
-          maxLife: 0.8 + Math.random() * 0.85,
-          color: sparkColors[Math.floor(Math.random() * sparkColors.length)],
-          size: 1.6 + Math.random() * 1.4
-        });
+        if (p.isOpen) {
+          const isCampfire = p.kind === 'campfire';
+          const sparkColors = [0xffe066, 0xffa726, 0xff7043, 0xff3d00];
+          this.particles.push({
+            x: p.x + 0.5 + (Math.random() - 0.5) * (isCampfire ? 0.45 : 0.22),
+            y: p.y + 0.5 + (Math.random() - 0.5) * (isCampfire ? 0.45 : 0.22),
+            z: p.z + (isCampfire ? 0.35 : 1.35),
+            vx: (Math.random() - 0.5) * 0.35,
+            vy: (Math.random() - 0.5) * 0.35,
+            vz: 0.85 + Math.random() * 0.75,
+            life: 0,
+            maxLife: 0.8 + Math.random() * 0.85,
+            color: sparkColors[Math.floor(Math.random() * sparkColors.length)],
+            size: 1.6 + Math.random() * 1.4
+          });
+        }
       } else if (arcaneProps.length > 0 && Math.random() < 0.45) {
         // Floating ethereal motes around arcane crystals & ancient shrines
         const p = arcaneProps[Math.floor(Math.random() * arcaneProps.length)];
@@ -1602,13 +1666,17 @@ export class IsoSceneView {
     fromY: number,
     toX: number,
     toY: number,
-    color = 0xedf2f7
+    color = 0xedf2f7,
+    startZ = 0,
+    targetZ = 0
   ): void {
     this.slashArcs.push({
       startX: fromX,
       startY: fromY,
+      startZ,
       targetX: toX,
       targetY: toY,
+      targetZ,
       life: 0,
       maxLife: 0.18,
       color
@@ -1719,7 +1787,11 @@ export class IsoSceneView {
 
   private renderFrame(): void {
     this.displayPool.beginFrame();
-    this.updateCanvasCursor();
+    const cursorKey = `${this.hoveredWorldTile?.x ?? -1},${this.hoveredWorldTile?.y ?? -1}|${this.activeTool}|${this.activeEdgeDirection ?? ''}|${this.isDraggingCamera ? 1 : 0}`;
+    if (cursorKey !== this.lastCursorKey) {
+      this.lastCursorKey = cursorKey;
+      this.updateCanvasCursor();
+    }
 
     let shakeX = 0;
     let shakeY = 0;
@@ -1891,7 +1963,7 @@ export class IsoSceneView {
         if (this.game.player.path.length > 0) {
           previewPath = this.game.player.path;
         } else {
-          const hoverKey = `${this.game.map.id}:${this.game.player.tileX},${this.game.player.tileY}->${hx},${hy}`;
+          const hoverKey = `${this.game.map.id}:${this.game.map.props.length}:${this.game.player.tileX},${this.game.player.tileY}->${hx},${hy}`;
           if (hoverKey !== this.cachedHoverPathKey) {
             this.cachedHoverPathKey = hoverKey;
             this.cachedHoverPath = findPathAStar3D(
@@ -2623,8 +2695,8 @@ export class IsoSceneView {
     for (const arc of this.slashArcs) {
       const rotStart = toRotatedContinuous(arc.startX, arc.startY, mapW, mapH, this.rotation);
       const rotEnd = toRotatedContinuous(arc.targetX, arc.targetY, mapW, mapH, this.rotation);
-      const scrStart = gridToScreen(rotStart.rx, rotStart.ry, 0);
-      const scrEnd = gridToScreen(rotEnd.rx, rotEnd.ry, 0);
+      const scrStart = gridToScreen(rotStart.rx, rotStart.ry, arc.startZ);
+      const scrEnd = gridToScreen(rotEnd.rx, rotEnd.ry, arc.targetZ);
       const progress = Math.max(0, Math.min(1, arc.life / arc.maxLife));
       const alpha = Math.sin(progress * Math.PI) * 0.95;
       const midX = (scrStart.x + scrEnd.x) * 0.5;

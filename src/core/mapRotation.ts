@@ -112,24 +112,16 @@ export function rotateFootprint(
   worldHeight: number,
   rotation: CameraRotation
 ): RotatedFootprint {
-  const corners = [
-    toRotatedGrid(x, y, worldWidth, worldHeight, rotation),
-    toRotatedGrid(x + sizeX - 1, y, worldWidth, worldHeight, rotation),
-    toRotatedGrid(x, y + sizeY - 1, worldWidth, worldHeight, rotation),
-    toRotatedGrid(x + sizeX - 1, y + sizeY - 1, worldWidth, worldHeight, rotation)
-  ];
-
-  const minRx = Math.min(...corners.map((c) => c.rx));
-  const maxRx = Math.max(...corners.map((c) => c.rx));
-  const minRy = Math.min(...corners.map((c) => c.ry));
-  const maxRy = Math.max(...corners.map((c) => c.ry));
-
-  return {
-    rx: minRx,
-    ry: minRy,
-    width: maxRx - minRx + 1,
-    height: maxRy - minRy + 1
-  };
+  switch (rotation) {
+    case 0:
+      return { rx: x, ry: y, width: sizeX, height: sizeY };
+    case 1:
+      return { rx: worldHeight - (y + sizeY), ry: x, width: sizeY, height: sizeX };
+    case 2:
+      return { rx: worldWidth - (x + sizeX), ry: worldHeight - (y + sizeY), width: sizeX, height: sizeY };
+    case 3:
+      return { rx: y, ry: worldWidth - (x + sizeX), width: sizeY, height: sizeX };
+  }
 }
 
 /**
@@ -148,11 +140,14 @@ export function rotateNormalXY(
   ny: number,
   rotation: CameraRotation
 ): { nx: number; ny: number } {
-  const angle = (rotation * Math.PI) / 2;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return {
-    nx: nx * cos - ny * sin,
-    ny: nx * sin + ny * cos
-  };
+  switch (rotation) {
+    case 0:
+      return { nx, ny };
+    case 1:
+      return { nx: -ny, ny: nx };
+    case 2:
+      return { nx: -nx, ny: -ny };
+    case 3:
+      return { nx: ny, ny: -nx };
+  }
 }

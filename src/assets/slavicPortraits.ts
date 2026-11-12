@@ -41,13 +41,6 @@ function buildPortraitSvg(
       <filter id="portraitShadow" x="-10%" y="-10%" width="120%" height="120%">
         <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000" flood-opacity="0.8" />
       </filter>
-      <filter id="innerGlow">
-        <feGaussianBlur stdDeviation="3" result="blur" />
-        <feComposite in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="shadowDiff" />
-        <feFlood flood-color="#000" flood-opacity="0.6" />
-        <feComposite in2="shadowDiff" operator="in" />
-        <feComposite in2="SourceGraphic" operator="over" />
-      </filter>
     </defs>
 
     <!-- Outer Iron & Brass Beveled Border -->
@@ -518,7 +511,9 @@ export function getSlavicPortrait(actorId: string): string {
       );
       break;
 
-    default:
+    default: {
+      const cachedDefault = portraitCache.get('__default__');
+      if (cachedDefault) return cachedDefault;
       // Hero / Woj Protagonist: heroic Slavic warrior with torque, leather brigandine, and steel studs
       dataUrl = buildPortraitSvg(
         '#2a221a',
@@ -537,7 +532,9 @@ export function getSlavicPortrait(actorId: string): string {
         `,
         '#e5bd68'
       );
-      break;
+      portraitCache.set('__default__', dataUrl);
+      return dataUrl;
+    }
   }
 
   portraitCache.set(actorId, dataUrl);

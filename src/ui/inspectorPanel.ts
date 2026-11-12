@@ -357,7 +357,8 @@ export class InspectorPanel {
       targetZSlider.addEventListener('input', () => {
         this.scene.editorTargetElevation = Number(targetZSlider.value);
         this.scene.activeTool = 'flatten_elevation';
-        this.render();
+        const label = targetZSlider.closest('label')?.querySelector('strong');
+        if (label) label.textContent = String(this.scene.editorTargetElevation);
       });
     }
 
@@ -387,7 +388,8 @@ export class InspectorPanel {
       propVariantSlider.addEventListener('input', () => {
         this.scene.editorPropVariant = Number(propVariantSlider.value);
         this.scene.activeTool = 'place_prop';
-        this.render();
+        const label = propVariantSlider.closest('label')?.querySelector('strong');
+        if (label) label.textContent = String(this.scene.editorPropVariant);
       });
     }
 
@@ -492,7 +494,8 @@ export class InspectorPanel {
     if (ambientSlider) {
       ambientSlider.addEventListener('input', () => {
         this.game.ambientLightIntensity = Number(ambientSlider.value) / 100;
-        this.render();
+        const label = ambientSlider.closest('label')?.querySelector('strong');
+        if (label) label.textContent = `${ambientSlider.value}%`;
       });
     }
 
@@ -525,7 +528,8 @@ export class InspectorPanel {
     if (edgeSpeedSlider) {
       edgeSpeedSlider.addEventListener('input', () => {
         this.scene.edgePanSpeed = Number(edgeSpeedSlider.value);
-        this.render();
+        const label = edgeSpeedSlider.closest('label')?.querySelector('strong');
+        if (label) label.textContent = `${this.scene.edgePanSpeed} px/s`;
       });
     }
   }

@@ -78,6 +78,7 @@ export interface ActorEntity {
   pendingInteractionPropId?: string | null;
   pendingDialogueActorId?: string | null;
   pendingAttackTargetId?: string | null;
+  pendingLootCorpseId?: string | null;
   combat?: ActorCombatComponent;
   attackAnimTimer?: number;
   attackAnimMaxTimer?: number;
@@ -429,6 +430,10 @@ export class CrpgGameState {
     this.logs.length = 0;
     this.chronicleEntries.length = 0;
     this.combatLogs.length = 0;
+    for (const key of Object.keys(this.combatReports)) {
+      delete this.combatReports[key];
+    }
+    this.activeCombatReportId = null;
 
     this.combatState.active = false;
     this.isSequentialEnemyTurnActive = false;
@@ -1600,10 +1605,36 @@ export class CrpgGameState {
     }
   }
 
+  private propGrid: Array<WorldPropEntity | undefined> = [];
+  private propGridMapRef: IsometricWorldMap | null = null;
+  private propGridPropsLen = -1;
+
+  public rebuildPropGrid(): void {
+    const w = this.map.width;
+    const h = this.map.height;
+    this.propGrid = new Array(w * h);
+    for (const p of this.map.props) {
+      for (let py = p.y; py < p.y + p.sizeY; py++) {
+        if (py < 0 || py >= h) continue;
+        const rowOffset = py * w;
+        for (let px = p.x; px < p.x + p.sizeX; px++) {
+          if (px < 0 || px >= w) continue;
+          if (!this.propGrid[rowOffset + px]) {
+            this.propGrid[rowOffset + px] = p;
+          }
+        }
+      }
+    }
+    this.propGridMapRef = this.map;
+    this.propGridPropsLen = this.map.props.length;
+  }
+
   public getPropAtTile(x: number, y: number): WorldPropEntity | undefined {
-    return this.map.props.find(
-      (p) => x >= p.x && x < p.x + p.sizeX && y >= p.y && y < p.y + p.sizeY
-    );
+    if (this.propGridMapRef !== this.map || this.propGridPropsLen !== this.map.props.length) {
+      this.rebuildPropGrid();
+    }
+    if (x < 0 || x >= this.map.width || y < 0 || y >= this.map.height) return undefined;
+    return this.propGrid[y * this.map.width + x];
   }
 
   public isTileWalkable(x: number, y: number, ignoreActorId?: string): boolean {
@@ -1717,9 +1748,11 @@ export class CrpgGameState {
     const npcSheet = new CharacterStatSheet(actor.recipe.attributes);
     for (const eqId of Object.values(actor.recipe.equipment)) {
       if (eqId) {
-        const inst = createItemInstance(eqId, 1);
-        for (const mod of getAllItemModifiers(inst)) {
-          npcSheet.addModifier(mod);
+        const def = getItemDefinition(eqId);
+        if (def) {
+          for (const mod of def.baseModifiers) {
+            npcSheet.addModifier(mod);
+          }
         }
       }
     }
@@ -1802,6 +1835,13 @@ export class CrpgGameState {
       timestamp: Date.now(),
       entries: []
     };
+    const reportKeys = Object.keys(this.combatReports);
+    if (reportKeys.length > 20) {
+      reportKeys.sort((a, b) => this.combatReports[a].timestamp - this.combatReports[b].timestamp);
+      for (let i = 0; i < reportKeys.length - 20; i++) {
+        delete this.combatReports[reportKeys[i]];
+      }
+    }
 
     const diffTag = enemy.combat.difficultyLabel ?? 'WRÓG';
     this.addLog(`⚔️ Walka z: ${instrumental(enemy.recipe.name)} (${diffTag})`, 'combat', reportId);
@@ -2653,6 +2693,7 @@ export class CrpgGameState {
       if (adj && this.commandPlayerMoveTo(adj.x, adj.y)) {
         this.player.pendingDialogueActorId = null;
         this.player.pendingInteractionPropId = null;
+        this.player.pendingLootCorpseId = enemy.id;
       }
       return false;
     }
@@ -2755,14 +2796,27 @@ export class CrpgGameState {
 
     if (prop.kind === 'market_stall') {
       if (!prop.isOpen && prop.lootItems && prop.lootItems.length > 0) {
-        prop.isOpen = true;
-        const loot = prop.lootItems;
-        for (const itemId of loot) {
-          this.backpack.tryAddItem(createItemInstance(itemId, 1), true);
+        const taken: string[] = [];
+        const remaining: string[] = [];
+        for (const itemId of prop.lootItems) {
+          if (this.backpack.tryAddItem(createItemInstance(itemId, 1), true)) {
+            taken.push(itemId);
+          } else {
+            remaining.push(itemId);
+          }
         }
-        const names = loot.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
-        this.sayPlayerBark(`Nabyto z kramu: ${names}`, 4.0);
-        this.addLog(`🛒 Odebrano towary z „${prop.name}”: ${names}.`);
+        prop.lootItems = remaining;
+        if (remaining.length === 0) {
+          prop.isOpen = true;
+        }
+        if (taken.length > 0) {
+          const names = taken.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
+          this.sayPlayerBark(`Nabyto z kramu: ${names}`, 4.0);
+          this.addLog(`🛒 Odebrano towary z „${prop.name}”: ${names}.`);
+        }
+        if (remaining.length > 0) {
+          this.addLog('⚠️ Plecak jest pełny — część towarów pozostała na kramie.');
+        }
       } else {
         this.addLog(`🛒 Obejrzano towary wyłożone na: ${prop.name}.`);
       }
@@ -2809,14 +2863,28 @@ export class CrpgGameState {
 
     if (prop.kind === 'chest' || prop.kind === 'ground_loot') {
       if (!prop.isOpen) {
-        prop.isOpen = true;
         const loot = prop.lootItems ?? [];
+        const taken: string[] = [];
+        const remaining: string[] = [];
         for (const itemId of loot) {
-          this.backpack.tryAddItem(createItemInstance(itemId, 1), true);
+          if (this.backpack.tryAddItem(createItemInstance(itemId, 1), true)) {
+            taken.push(itemId);
+          } else {
+            remaining.push(itemId);
+          }
         }
-        const names = loot.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
-        this.sayPlayerBark(`Znaleziono: ${names}`, 3.5);
-        this.addLog(`Podniesiono z „${prop.name}”: ${names}.`);
+        prop.lootItems = remaining;
+        if (remaining.length === 0) {
+          prop.isOpen = true;
+        }
+        if (taken.length > 0) {
+          const names = taken.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
+          this.sayPlayerBark(`Znaleziono: ${names}`, 3.5);
+          this.addLog(`Podniesiono z „${prop.name}”: ${names}.`);
+        }
+        if (remaining.length > 0) {
+          this.addLog(`⚠️ Plecak jest pełny — część łupów pozostała w „${prop.name}”.`);
+        }
       } else {
         this.addLog(`${prop.name} — wszystko zostało już zabrane.`);
       }
@@ -2849,15 +2917,30 @@ export class CrpgGameState {
 
     if (prop.kind === 'dungeon_barrel' || prop.kind === 'dungeon_crate') {
       const wasOpen = Boolean(prop.isOpen);
-      prop.isOpen = true;
       if (!wasOpen && prop.lootItems && prop.lootItems.length > 0) {
+        const taken: string[] = [];
+        const remaining: string[] = [];
         for (const itemId of prop.lootItems) {
-          this.backpack.tryAddItem(createItemInstance(itemId, 1), true);
+          if (this.backpack.tryAddItem(createItemInstance(itemId, 1), true)) {
+            taken.push(itemId);
+          } else {
+            remaining.push(itemId);
+          }
         }
-        const names = prop.lootItems.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
-        this.sayPlayerBark(`Znaleziono: ${names}`, 3.5);
-        this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}. Znaleziono: ${names}.`);
+        prop.lootItems = remaining;
+        if (remaining.length === 0) {
+          prop.isOpen = true;
+        }
+        if (taken.length > 0) {
+          const names = taken.map((id) => EQUIPMENT_CATALOG[id]?.name ?? id).join(', ');
+          this.sayPlayerBark(`Znaleziono: ${names}`, 3.5);
+          this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}. Znaleziono: ${names}.`);
+        }
+        if (remaining.length > 0) {
+          this.addLog('⚠️ Plecak jest pełny — część przedmiotów pozostała w środku.');
+        }
       } else {
+        prop.isOpen = true;
         this.addLog(`📦 Przeszukano obiekt magazynowy: ${prop.name}.`);
       }
       return;
@@ -3010,7 +3093,13 @@ export class CrpgGameState {
     itemsSold: Array<{ name: string; count: number; earned: number }>;
   } {
     // Sprzedaż duplikatów jest dostępna TYLKO w rozmowie z handlarzem!
-    if (!this.activeDialogue || !MERCHANT_ACTOR_IDS.includes(this.activeDialogue.actorId)) {
+    const dialogueNpc = this.activeDialogue
+      ? this.npcs.find((n) => n.id === this.activeDialogue?.actorId)
+      : undefined;
+    const isMerchantDialogue =
+      Boolean(this.activeDialogue) &&
+      (Boolean(dialogueNpc?.isMerchant) || MERCHANT_ACTOR_IDS.includes(this.activeDialogue!.actorId));
+    if (!isMerchantDialogue) {
       this.addLog('⚠️ Odkup duplikatów jest dostępny wyłącznie podczas rozmowy z kupcem!');
       this.sayPlayerBark('Mogę sprzedać duplikaty tylko podczas rozmowy z kupcem.', 2.5);
       return { soldCount: 0, earnedTotal: 0, itemsSold: [] };
@@ -3099,10 +3188,15 @@ export class CrpgGameState {
     }
 
     if (choice.grantsItemId) {
-      if (!this.backpack.hasDefinitionId(choice.grantsItemId)) {
-        this.backpack.tryAddItem(createItemInstance(choice.grantsItemId, 1), true);
+      const def = getItemDefinition(choice.grantsItemId);
+      const alreadyEquipped =
+        def?.equipSlot != null && this.equipmentManager.getEquipped(def.equipSlot)?.definitionId === choice.grantsItemId;
+      if (!alreadyEquipped) {
+        if (!this.backpack.hasDefinitionId(choice.grantsItemId)) {
+          this.backpack.tryAddItem(createItemInstance(choice.grantsItemId, 1), true);
+        }
+        this.equipInventoryItem(choice.grantsItemId);
       }
-      this.equipInventoryItem(choice.grantsItemId);
     }
 
     if (choice.logMessage) {
@@ -3335,21 +3429,25 @@ export class CrpgGameState {
     return null;
   }
 
+  private tickActorAnimTimers(a: ActorEntity, dtSeconds: number): void {
+    if (a.attackAnimTimer && a.attackAnimTimer > 0) {
+      a.attackAnimTimer = Math.max(0, a.attackAnimTimer - dtSeconds);
+    }
+    if (a.hitRecoilTimer && a.hitRecoilTimer > 0) {
+      a.hitRecoilTimer = Math.max(0, a.hitRecoilTimer - dtSeconds);
+    }
+    if (a.damageFlashTimer && a.damageFlashTimer > 0) {
+      a.damageFlashTimer = Math.max(0, a.damageFlashTimer - dtSeconds);
+    }
+    if (a.deathAnimTimer && a.deathAnimTimer > 0) {
+      a.deathAnimTimer = Math.max(0, a.deathAnimTimer - dtSeconds);
+    }
+  }
+
   public update(dtSeconds: number): void {
-    const allActors = [this.player, ...this.npcs];
-    for (const a of allActors) {
-      if (a.attackAnimTimer && a.attackAnimTimer > 0) {
-        a.attackAnimTimer = Math.max(0, a.attackAnimTimer - dtSeconds);
-      }
-      if (a.hitRecoilTimer && a.hitRecoilTimer > 0) {
-        a.hitRecoilTimer = Math.max(0, a.hitRecoilTimer - dtSeconds);
-      }
-      if (a.damageFlashTimer && a.damageFlashTimer > 0) {
-        a.damageFlashTimer = Math.max(0, a.damageFlashTimer - dtSeconds);
-      }
-      if (a.deathAnimTimer && a.deathAnimTimer > 0) {
-        a.deathAnimTimer = Math.max(0, a.deathAnimTimer - dtSeconds);
-      }
+    this.tickActorAnimTimers(this.player, dtSeconds);
+    for (let i = 0; i < this.npcs.length; i++) {
+      this.tickActorAnimTimers(this.npcs[i], dtSeconds);
     }
 
     if (this.player.speechBubbleTimer && this.player.speechBubbleTimer > 0) {
@@ -3405,7 +3503,7 @@ export class CrpgGameState {
         if (dist <= aggroDist) {
           this.sayNpcBark(npc.id, 'Stój! Kto idzie?! Zbrojni, do mnie!', 3.0);
           this.startCombatWithEnemy(npc.id);
-          return;
+          break;
         }
       }
 
@@ -3507,6 +3605,11 @@ export class CrpgGameState {
             actor.pendingAttackTargetId = null;
             this.startCombatWithEnemy(enemyId);
             this.performPlayerCombatAttack(enemyId, this.combatState.selectedAttackMode);
+          }
+          if (actor.pendingLootCorpseId) {
+            const corpseId = actor.pendingLootCorpseId;
+            actor.pendingLootCorpseId = null;
+            this.commandLootCorpse(corpseId);
           }
         }
       }

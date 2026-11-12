@@ -147,10 +147,6 @@ export class HudOverlay {
 
     if (typeof window !== 'undefined' && !HudOverlay.windowListenersBound) {
       HudOverlay.windowListenersBound = true;
-      window.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-      });
-
       window.addEventListener('keydown', (e) => {
         HudOverlay.activeInstance?.handleGlobalKey(e);
       });
@@ -163,24 +159,38 @@ export class HudOverlay {
     }
   }
 
+  public destroy(): void {
+    if (this.saveToastTimer !== null && typeof window !== 'undefined') {
+      window.clearTimeout(this.saveToastTimer);
+      this.saveToastTimer = null;
+    }
+    if (HudOverlay.activeInstance === this) {
+      HudOverlay.activeInstance = null;
+    }
+  }
+
   public handleGlobalKey(e: {
     key?: string;
     code?: string;
     ctrlKey?: boolean;
     altKey?: boolean;
-    target?: any;
+    metaKey?: boolean;
+    target?: EventTarget | null;
     preventDefault?: () => void;
   }): void {
-    if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
-    if (e.key?.toLowerCase() === 'i') {
+    const targetEl = e.target as HTMLElement | null;
+    if (
+      targetEl &&
+      (['INPUT', 'TEXTAREA', 'SELECT'].includes(targetEl.tagName) || targetEl.isContentEditable)
+    ) {
+      return;
+    }
+    if (e.key?.toLowerCase() === 'i' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       this.isInventoryOpen = !this.isInventoryOpen;
       this.render();
     } else if (e.ctrlKey && e.key?.toLowerCase() === 's') {
       e.preventDefault?.();
       this.saveGameDiscreetly();
-    } else if (e.key === 'F5') {
-      // Immediately persist state before browser executes refresh
-      saveGame(this.game, this.scene, 'autosave');
     } else if (
       this.game.combatState.active &&
       this.game.combatState.activeTurnActorId === this.game.player.id &&
@@ -350,8 +360,9 @@ export class HudOverlay {
     const isBlockedByTwoHanded = slot === 'offHand' && Boolean(mainHandDef?.isTwoHanded);
 
     if (isBlockedByTwoHanded && mainHandDef) {
+      const safeMainHandName = escapeHtml(mainHandDef.name);
       return `
-        <div class="paperdoll-slot blocked-2h" data-equip-slot="${slot}" title="Zablokowane przez broń dwuręczną: ${mainHandDef.name}">
+        <div class="paperdoll-slot blocked-2h" data-equip-slot="${slot}" title="Zablokowane przez broń dwuręczną: ${safeMainHandName}">
           <div class="pd-slot-icon">🔒</div>
           <div class="pd-slot-info">
             <div class="pd-slot-label">${slotMeta.icon} ${slotMeta.label}</div>
@@ -382,12 +393,13 @@ export class HudOverlay {
     const swatch = `rgb(${def.visualDef.primaryColor.r}, ${def.visualDef.primaryColor.g}, ${def.visualDef.primaryColor.b})`;
     const trim = `rgb(${def.visualDef.trimColor.r}, ${def.visualDef.trimColor.g}, ${def.visualDef.trimColor.b})`;
 
+    const safeDefName = escapeHtml(def.name);
     return `
       <button
         type="button"
         class="paperdoll-slot occupied rarity-${def.rarity.toLowerCase()}"
         data-equip-slot="${slot}"
-        title="Kliknij LPM, aby zdjąć do plecaka: ${def.name}"
+        title="Kliknij LPM, aby zdjąć do plecaka: ${safeDefName}"
       >
         <div class="pd-slot-swatch" style="background: linear-gradient(135deg, ${swatch} 60%, ${trim} 100%);">
           <span>${slotMeta.icon}</span>
@@ -395,7 +407,7 @@ export class HudOverlay {
         </div>
         <div class="pd-slot-info">
           <div class="pd-slot-label">${slotMeta.icon} ${slotMeta.label}</div>
-          <div class="pd-slot-name">${def.name}</div>
+          <div class="pd-slot-name">${safeDefName}</div>
           <span class="pd-slot-status-badge"></span>
         </div>
         <span class="pd-unequip-hint">✕</span>
@@ -521,8 +533,8 @@ export class HudOverlay {
           <div class="combat-target-card">
             <div class="target-card-top">
               <div class="target-identity">
-                <span class="target-diff-badge diff-${selectedEnemy.combat.difficulty ?? 'normal'}">${selectedEnemy.combat.difficultyLabel ?? 'WRÓG'}</span>
-                <strong>${selectedEnemy.recipe.name}</strong>
+                <span class="target-diff-badge diff-${selectedEnemy.combat.difficulty ?? 'normal'}">${escapeHtml(selectedEnemy.combat.difficultyLabel ?? 'WRÓG')}</span>
+                <strong>${escapeHtml(selectedEnemy.recipe.name)}</strong>
               </div>
               ${
                 livingEnemies.length > 1
@@ -530,8 +542,8 @@ export class HudOverlay {
                       ${livingEnemies
                         .map(
                           (e) => `
-                        <button type="button" class="target-switch-btn ${e.id === selectedEnemy.id ? 'active' : ''}" data-combat-target="${e.id}" title="Przełącz cel na: ${e.recipe.name}">
-                          ${e.combat?.difficulty === 'easy' ? '🟢' : e.combat?.difficulty === 'normal' ? '🟡' : '🔴'} ${e.recipe.name.split(' ')[0]} (${e.combat?.hp} HP)
+                        <button type="button" class="target-switch-btn ${e.id === selectedEnemy.id ? 'active' : ''}" data-combat-target="${escapeHtml(e.id)}" title="Przełącz cel na: ${escapeHtml(e.recipe.name)}">
+                          ${e.combat?.difficulty === 'easy' ? '🟢' : e.combat?.difficulty === 'normal' ? '🟡' : '🔴'} ${escapeHtml(e.recipe.name.split(' ')[0])} (${e.combat?.hp} HP)
                         </button>
                       `
                         )
@@ -1094,18 +1106,18 @@ export class HudOverlay {
                 (kol) => `
               <details class="dialogue-collapse">
                 <summary class="dialogue-collapse-summary">
-                  📜 Przaśny Kolaps Słowny: <strong>${kol.title}</strong>
+                  📜 Przaśny Kolaps Słowny: <strong>${escapeHtml(kol.title)}</strong>
                   <span class="dialogue-collapse-hint">(Rozwiń pełny zapis z assetu)</span>
                 </summary>
                 <div class="dialogue-collapse-content">
-                  <div class="dialogue-collapse-context">${kol.context}</div>
+                  <div class="dialogue-collapse-context">${escapeHtml(kol.context)}</div>
                   <div class="dialogue-collapse-steps">
                     ${kol.steps
                       .map(
                         (s) => `
                       <div class="dialogue-collapse-step">
-                        <span class="collapse-speaker">${s.speaker} <small>(${s.role})</small>:</span>
-                        <span class="collapse-line">„${s.line}”</span>
+                        <span class="collapse-speaker">${escapeHtml(s.speaker)} <small>(${escapeHtml(s.role)})</small>:</span>
+                        <span class="collapse-line">„${escapeHtml(s.line)}”</span>
                       </div>
                     `
                       )
@@ -1155,18 +1167,18 @@ export class HudOverlay {
                     <span class="slot-badge">${def?.equipSlot?.toUpperCase().slice(0, 3) ?? 'PRZ'}</span>
                   </div>
                   <div class="ware-info">
-                    <div class="ware-name" style="color: ${rarity.colorHex}">${ware.title}</div>
-                    <div class="ware-desc">${ware.description}</div>
+                    <div class="ware-name" style="color: ${rarity.colorHex}">${escapeHtml(ware.title)}</div>
+                    <div class="ware-desc">${escapeHtml(ware.description)}</div>
                   </div>
                   <div class="ware-buy-action">
                     <span class="ware-price ${canAfford ? 'afford' : 'costly'}">💰 ${ware.priceSiekance} siek.</span>
                     <button
                       type="button"
                       class="btn-buy-ware ${canAfford ? '' : 'disabled'}"
-                      data-buy-item-id="${ware.id}"
-                      data-merchant-id="${activeActorId}"
+                      data-buy-item-id="${escapeHtml(ware.id)}"
+                      data-merchant-id="${escapeHtml(activeActorId)}"
                       ${canAfford ? '' : 'disabled'}
-                      title="${canAfford ? `Kup ${ware.title} za ${ware.priceSiekance} siekańców` : `Brakuje Ci ${ware.priceSiekance - this.game.siekance} siekańców (wymaga grindu!)`}"
+                      title="${escapeHtml(canAfford ? `Kup ${ware.title} za ${ware.priceSiekance} siekańców` : `Brakuje Ci ${ware.priceSiekance - this.game.siekance} siekańców (wymaga grindu!)`)}"
                     >
                       ${canAfford ? 'Kup' : 'Za drogo'}
                     </button>
@@ -1228,26 +1240,28 @@ export class HudOverlay {
     const isNearMerchant = this.game.isNearMerchant();
 
     const countAll = occupiedCount;
-    const countWeapons = allSlots.filter((s) => {
-      if (!s) return false;
+    let countWeapons = 0;
+    let countArmor = 0;
+    let countTrinkets = 0;
+    let countConsumables = 0;
+    for (let i = 0; i < allSlots.length; i++) {
+      const s = allSlots[i];
+      if (!s) continue;
       const d = getItemDefinition(s.definitionId);
-      return d && (d.itemType === 'Weapon' || d.equipSlot === 'mainHand' || d.equipSlot === 'offHand');
-    }).length;
-    const countArmor = allSlots.filter((s) => {
-      if (!s) return false;
-      const d = getItemDefinition(s.definitionId);
-      return d && d.itemType === 'Armor' && d.equipSlot !== 'ring1' && d.equipSlot !== 'ring2';
-    }).length;
-    const countTrinkets = allSlots.filter((s) => {
-      if (!s) return false;
-      const d = getItemDefinition(s.definitionId);
-      return d && (d.itemType === 'Trinket' || d.equipSlot === 'ring1' || d.equipSlot === 'ring2');
-    }).length;
-    const countConsumables = allSlots.filter((s) => {
-      if (!s) return false;
-      const d = getItemDefinition(s.definitionId);
-      return d && d.itemType === 'Consumable';
-    }).length;
+      if (!d) continue;
+      if (d.itemType === 'Weapon' || d.equipSlot === 'mainHand' || d.equipSlot === 'offHand') {
+        countWeapons++;
+      }
+      if (d.itemType === 'Armor' && d.equipSlot !== 'ring1' && d.equipSlot !== 'ring2') {
+        countArmor++;
+      }
+      if (d.itemType === 'Trinket' || d.equipSlot === 'ring1' || d.equipSlot === 'ring2') {
+        countTrinkets++;
+      }
+      if (d.itemType === 'Consumable') {
+        countConsumables++;
+      }
+    }
 
     const filterTabs = [
       { id: 'all' as const, label: `Wszystko (${countAll})`, icon: '🎒' },
@@ -1398,6 +1412,7 @@ export class HudOverlay {
 
                   const itemPrice = getItemPriceInSiekance(slotItem);
 
+                  const safeItemName = escapeHtml(def.name);
                   return `
                     <div
                       class="backpack-slot occupied rarity-${def.rarity.toLowerCase()} ${isNetUpgrade ? 'is-upgrade' : ''}"
@@ -1405,14 +1420,14 @@ export class HudOverlay {
                       data-slot-index="${slotIdx}"
                       data-bag-instance-id="${slotItem.instanceId}"
                       data-equip-id="${def.id}"
-                      title="Kliknij LPM, aby: ${actionLabel} (${def.name}) • Kliknij 'Sprzedaj', aby zbyć za ${itemPrice} siekańców"
+                      title="Kliknij LPM, aby: ${actionLabel} (${safeItemName}) • Kliknij 'Sprzedaj', aby zbyć za ${itemPrice} siekańców"
                     >
                       <div class="item-swatch" style="background: linear-gradient(135deg, ${swatch} 60%, ${trim} 100%);">
                         <span class="slot-badge">${def.isTwoHanded ? '2H' : (def.equipSlot ?? 'BAG').toUpperCase().slice(0, 3)}</span>
                         ${slotItem.stackCount > 1 ? `<span class="stack-count-badge">×${slotItem.stackCount}</span>` : ''}
                       </div>
                       <div class="bag-item-title-wrap">
-                        <div class="item-name" style="color:${rarity.colorHex}">${def.name}</div>
+                        <div class="item-name" style="color:${rarity.colorHex}">${safeItemName}</div>
                         <div class="bag-item-sub">
                           <span>${primaryDeltaText || rarity.label}</span>
                           <span>• ${(def.weight * slotItem.stackCount).toFixed(1)} kg</span>
@@ -1579,7 +1594,7 @@ export class HudOverlay {
 
     const hTile = this.scene.hoveredWorldTile;
     const hoverCoordText = hTile
-      ? `📍 Kafel: (${hTile.x}, ${hTile.y}) • Wysokość Z=${hTile.z} • Teren: ${this.game.map.tiles[hTile.y]?.[hTile.x]?.terrain ?? '—'}`
+      ? `📍 Kafel: (${hTile.x}, ${hTile.y}) • Wysokość Z=${hTile.z} • Teren: ${escapeHtml(String(this.game.map.tiles[hTile.y]?.[hTile.x]?.terrain ?? '—'))}`
       : '📍 Najedź kursorem na siatkę mapy, aby edytować kafel';
 
     const bottomAreaHtml =
@@ -1777,7 +1792,7 @@ export class HudOverlay {
         <div class="brand-block">
           <span class="brand-crest">${this.devMode ? '🛠️' : '❖'}</span>
           <div>
-            <div class="world-title">${this.devMode ? `EDYTOR POZIOMÓW <span style="opacity:0.75;font-weight:500;">— ${this.game.map.name} (${this.game.map.width}×${this.game.map.height})</span>` : this.game.map.name}</div>
+            <div class="world-title">${this.devMode ? `EDYTOR POZIOMÓW <span style="opacity:0.75;font-weight:500;">— ${escapeHtml(this.game.map.name)} (${this.game.map.width}×${this.game.map.height})</span>` : escapeHtml(this.game.map.name)}</div>
             <div class="world-subtitle">${this.devMode ? 'Tryb projektowania mapy: maluj teren LPM, stawiaj obiekty Glionox/Slavic, zmieniaj wysokość Z i eksportuj JSON' : escapeHtml(this.game.map.subtitle)}</div>
           </div>
         </div>
@@ -2120,6 +2135,9 @@ export class HudOverlay {
 
         slotEl.addEventListener('dragstart', () => {
           this.draggedSlotIndex = slotIdx;
+        });
+        slotEl.addEventListener('dragend', () => {
+          this.draggedSlotIndex = null;
         });
       }
 

@@ -65,71 +65,130 @@ function getCentroidDepthKey(box: DepthBox3D): number {
  * Topological Painter's Algorithm DAG sorter solving multi-tile and multi-elevation
  * overlap artifacts described in "Woes of Isometry".
  */
+let topoScratchCap = 0;
+let topoInDegree = new Int32Array(0);
+let topoVisited = new Uint8Array(0);
+let topoKeys = new Float64Array(0);
+const topoAdj: number[][] = [];
+const topoHeap: number[] = [];
+
+function compareTopoNodes<T extends DepthBox3D>(i: number, j: number, entities: T[]): number {
+  const diff = topoKeys[i] - topoKeys[j];
+  if (diff !== 0) return diff;
+  return entities[i].id < entities[j].id ? -1 : entities[i].id > entities[j].id ? 1 : 0;
+}
+
+function topoHeapPush<T extends DepthBox3D>(node: number, entities: T[]): void {
+  let idx = topoHeap.length;
+  topoHeap.push(node);
+  while (idx > 0) {
+    const parentIdx = (idx - 1) >> 1;
+    const parent = topoHeap[parentIdx];
+    if (compareTopoNodes(node, parent, entities) >= 0) break;
+    topoHeap[idx] = parent;
+    idx = parentIdx;
+  }
+  topoHeap[idx] = node;
+}
+
+function topoHeapPop<T extends DepthBox3D>(entities: T[]): number {
+  const top = topoHeap[0];
+  const last = topoHeap.pop()!;
+  const len = topoHeap.length;
+  if (len > 0) {
+    let idx = 0;
+    while (true) {
+      const left = (idx << 1) + 1;
+      if (left >= len) break;
+      const right = left + 1;
+      let smallest = left;
+      if (right < len && compareTopoNodes(topoHeap[right], topoHeap[left], entities) < 0) {
+        smallest = right;
+      }
+      if (compareTopoNodes(last, topoHeap[smallest], entities) <= 0) break;
+      topoHeap[idx] = topoHeap[smallest];
+      idx = smallest;
+    }
+    topoHeap[idx] = last;
+  }
+  return top;
+}
+
 export function sortEntitiesTopological<T extends DepthBox3D>(entities: T[]): T[] {
   const n = entities.length;
   if (n <= 1) return [...entities];
 
-  const adj: number[][] = Array.from({ length: n }, () => []);
-  const inDegree = new Int32Array(n);
+  if (n > topoScratchCap) {
+    topoScratchCap = n;
+    topoInDegree = new Int32Array(n);
+    topoVisited = new Uint8Array(n);
+    topoKeys = new Float64Array(n);
+    while (topoAdj.length < n) topoAdj.push([]);
+  }
 
   for (let i = 0; i < n; i++) {
+    topoInDegree[i] = 0;
+    topoVisited[i] = 0;
+    topoKeys[i] = getCentroidDepthKey(entities[i]);
+    topoAdj[i].length = 0;
+  }
+  topoHeap.length = 0;
+
+  for (let i = 0; i < n; i++) {
+    const a = entities[i];
     for (let j = i + 1; j < n; j++) {
-      const a = entities[i];
       const b = entities[j];
       if (isBehindInIsoSpace(a, b)) {
-        adj[i].push(j);
-        inDegree[j]++;
+        topoAdj[i].push(j);
+        topoInDegree[j]++;
       } else if (isBehindInIsoSpace(b, a)) {
-        adj[j].push(i);
-        inDegree[i]++;
+        topoAdj[j].push(i);
+        topoInDegree[i]++;
       }
     }
   }
 
-  const visited = new Uint8Array(n);
-  const result: T[] = [];
+  for (let i = 0; i < n; i++) {
+    if (topoInDegree[i] === 0) {
+      topoHeapPush(i, entities);
+    }
+  }
 
-  // Deterministic tie-breaker key
-  const keys = entities.map(getCentroidDepthKey);
+  const result: T[] = new Array(n);
+  let outIdx = 0;
 
-  while (result.length < n) {
+  while (outIdx < n) {
     let bestIdx = -1;
-    let bestKey = Infinity;
-
-    // Pick available zero-in-degree node with smallest depth key
-    for (let i = 0; i < n; i++) {
-      if (!visited[i] && inDegree[i] === 0) {
-        if (
-          keys[i] < bestKey ||
-          (keys[i] === bestKey && (bestIdx === -1 || entities[i].id < entities[bestIdx].id))
-        ) {
-          bestKey = keys[i];
-          bestIdx = i;
-        }
+    while (topoHeap.length > 0) {
+      const candidate = topoHeapPop(entities);
+      if (!topoVisited[candidate]) {
+        bestIdx = candidate;
+        break;
       }
     }
 
     // Cycle fallback: if mutually overlapping boxes form a cycle, break cycle deterministically
     if (bestIdx === -1) {
       for (let i = 0; i < n; i++) {
-        if (!visited[i]) {
-          if (
-            keys[i] < bestKey ||
-            (keys[i] === bestKey && (bestIdx === -1 || entities[i].id < entities[bestIdx].id))
-          ) {
-            bestKey = keys[i];
+        if (!topoVisited[i]) {
+          if (bestIdx === -1 || compareTopoNodes(i, bestIdx, entities) < 0) {
             bestIdx = i;
           }
         }
       }
     }
 
-    visited[bestIdx] = 1;
-    result.push(entities[bestIdx]);
+    topoVisited[bestIdx] = 1;
+    result[outIdx++] = entities[bestIdx];
 
-    for (const next of adj[bestIdx]) {
-      if (!visited[next]) {
-        inDegree[next]--;
+    const neighbors = topoAdj[bestIdx];
+    for (let k = 0; k < neighbors.length; k++) {
+      const next = neighbors[k];
+      if (!topoVisited[next]) {
+        const deg = --topoInDegree[next];
+        if (deg === 0) {
+          topoHeapPush(next, entities);
+        }
       }
     }
   }

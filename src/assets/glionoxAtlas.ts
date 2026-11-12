@@ -33,7 +33,7 @@ export function getKenneyDungeonPropPbr(
 ): SynthesizedPbrBufferPair | null {
   const buf = dungeonPngMap.get(filename);
   if (!buf) return null;
-  const key = `kenney_${filename}_s${scale}`;
+  const key = `kenney_${filename}_s${scale}_ay${anchorRatioY}_ao${aoRadiusX}_${aoRadiusY}_r${roughness}_m${metallic}`;
   const cached = glionoxPropCache.get(key);
   if (cached) return cached;
 
@@ -77,13 +77,22 @@ function loadSinglePngBuffer(url: string): Promise<LoadedImageBuffer> {
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0);
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      resolve({
+      const result = {
         width: canvas.width,
         height: canvas.height,
         rgba: imgData.data
-      });
+      };
+      canvas.width = 0;
+      canvas.height = 0;
+      img.onload = null;
+      img.onerror = null;
+      resolve(result);
     };
-    img.onerror = (err) => reject(err);
+    img.onerror = (err) => {
+      img.onload = null;
+      img.onerror = null;
+      reject(err);
+    };
     img.src = url;
   });
 }
@@ -170,7 +179,8 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
       };
       return loadedSheets;
     } catch {
-      // Graceful fallback in Node/Vitest environment
+      // Graceful fallback in Node/Vitest environment; clear loadPromise so future retries work
+      loadPromise = null;
       return null;
     }
   })();
@@ -217,24 +227,28 @@ function buildPixelArtNormalMaterialBuffer(
   const rx = Math.max(8, (maxX - minX) * 0.5);
   const ry = Math.max(8, (maxY - minY) * 0.5);
 
-  const lumAt = (x: number, y: number): number => {
-    const px = Math.min(width - 1, Math.max(0, x));
-    const py = Math.min(height - 1, Math.max(0, y));
-    const idx = (py * width + px) * 4;
-    if (albedo[idx + 3] < 16) return 0;
-    return (albedo[idx] * 0.299 + albedo[idx + 1] * 0.587 + albedo[idx + 2] * 0.114) / 255;
-  };
+  const lumGrid = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < width * height; i++, p += 4) {
+    if (albedo[p + 3] >= 16) {
+      lumGrid[i] = (albedo[p] * 0.299 + albedo[p + 1] * 0.587 + albedo[p + 2] * 0.114) / 255;
+    }
+  }
 
   for (let y = 0; y < height; y++) {
+    const yPrev = y > 0 ? y - 1 : 0;
+    const yNext = y < height - 1 ? y + 1 : height - 1;
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4;
       if (albedo[idx + 3] < 16) continue;
 
+      const xPrev = x > 0 ? x - 1 : 0;
+      const xNext = x < width - 1 ? x + 1 : width - 1;
+
       const volNx = ((x - cx) / rx) * 0.55;
       const volNy = ((y - cy) / ry) * 0.55 - 0.15;
 
-      const dX = (lumAt(x - 1, y) - lumAt(x + 1, y)) * reliefStrength;
-      const dY = (lumAt(x, y - 1) - lumAt(x, y + 1)) * reliefStrength;
+      const dX = (lumGrid[y * width + xPrev] - lumGrid[y * width + xNext]) * reliefStrength;
+      const dY = (lumGrid[yPrev * width + x] - lumGrid[yNext * width + x]) * reliefStrength;
 
       const nx = Math.max(-1, Math.min(1, volNx + dX * 0.65));
       const ny = Math.max(-1, Math.min(1, volNy + dY * 0.65));
@@ -306,22 +320,30 @@ function extractAndScaleSpritePbr(
       const a = sheet.rgba[sIdx + 3];
       if (a > 8) {
         const dIdx = (y * width + x) * 4;
-        const srcAlpha = a / 255;
-        const dstAlpha = albedoRGBA[dIdx + 3] / 255;
-        const outAlpha = srcAlpha + dstAlpha * (1 - srcAlpha);
-        if (outAlpha > 0) {
-          albedoRGBA[dIdx] = Math.round(
-            (sheet.rgba[sIdx] * srcAlpha + albedoRGBA[dIdx] * dstAlpha * (1 - srcAlpha)) / outAlpha
-          );
-          albedoRGBA[dIdx + 1] = Math.round(
-            (sheet.rgba[sIdx + 1] * srcAlpha + albedoRGBA[dIdx + 1] * dstAlpha * (1 - srcAlpha)) /
-              outAlpha
-          );
-          albedoRGBA[dIdx + 2] = Math.round(
-            (sheet.rgba[sIdx + 2] * srcAlpha + albedoRGBA[dIdx + 2] * dstAlpha * (1 - srcAlpha)) /
-              outAlpha
-          );
-          albedoRGBA[dIdx + 3] = Math.min(255, Math.round(outAlpha * 255));
+        const dstA = albedoRGBA[dIdx + 3];
+        if (dstA === 0 || a === 255) {
+          albedoRGBA[dIdx] = sheet.rgba[sIdx];
+          albedoRGBA[dIdx + 1] = sheet.rgba[sIdx + 1];
+          albedoRGBA[dIdx + 2] = sheet.rgba[sIdx + 2];
+          albedoRGBA[dIdx + 3] = a;
+        } else {
+          const srcAlpha = a / 255;
+          const dstAlpha = dstA / 255;
+          const outAlpha = srcAlpha + dstAlpha * (1 - srcAlpha);
+          if (outAlpha > 0) {
+            albedoRGBA[dIdx] = Math.round(
+              (sheet.rgba[sIdx] * srcAlpha + albedoRGBA[dIdx] * dstAlpha * (1 - srcAlpha)) / outAlpha
+            );
+            albedoRGBA[dIdx + 1] = Math.round(
+              (sheet.rgba[sIdx + 1] * srcAlpha + albedoRGBA[dIdx + 1] * dstAlpha * (1 - srcAlpha)) /
+                outAlpha
+            );
+            albedoRGBA[dIdx + 2] = Math.round(
+              (sheet.rgba[sIdx + 2] * srcAlpha + albedoRGBA[dIdx + 2] * dstAlpha * (1 - srcAlpha)) /
+                outAlpha
+            );
+            albedoRGBA[dIdx + 3] = Math.min(255, Math.round(outAlpha * 255));
+          }
         }
       }
     }
@@ -427,11 +449,11 @@ export function getOgaDeadTreePbr(variantIndex: number): SynthesizedPbrBufferPai
  */
 export function getOgaCabinPbr(
   variantIndex: number,
-  isOpen = true
+  _isOpen = true
 ): SynthesizedPbrBufferPair | null {
   if (!loadedSheets?.ogaCabins) return null;
   const idx = ((variantIndex % 16) + 16) % 16;
-  const key = `oga_cabin_${idx}_${isOpen ? 'lit' : 'dim'}`;
+  const key = `oga_cabin_${idx}`;
   const cached = glionoxPropCache.get(key);
   if (cached) return cached;
 
@@ -812,7 +834,7 @@ export function getGlionoxWildflowerOrGrassPbr(
     return pair;
   }
 
-  const gIdx = (idx - 8) % 32;
+  const gIdx = (((idx - 8) % 32) + 32) % 32;
   const row = Math.floor(gIdx / 8); // 0..1 = wildflowers, 2..3 = grass clumps
   const col = gIdx % 8;
 
@@ -878,7 +900,7 @@ export function generateGlionoxForestTilePbr(
   };
 
   // Select OGA 128x64 isometric diamond tile row & column
-  const ogaCol = (elevationSteps * 3 + 1) % 8;
+  const ogaCol = (((elevationSteps * 3 + 1) % 8) + 8) % 8;
   const ogaRow =
     terrain === 'forest_grass'
       ? elevationSteps % 2 === 0

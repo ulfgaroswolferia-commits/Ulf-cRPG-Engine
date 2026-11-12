@@ -468,6 +468,54 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
       { targetStat: StatType.ManaMax, value: 24, type: ModifierType.Flat },
       { targetStat: StatType.CriticalStrikeChance, value: 4, type: ModifierType.Flat }
     ]
+  },
+  weapon_hunting_bow: {
+    rarity: 'Rare',
+    weight: 2.2,
+    priceSiekance: 290,
+    isTwoHanded: true,
+    extraModifiers: [
+      { targetStat: StatType.Agility, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.CriticalStrikeChance, value: 6, type: ModifierType.Flat }
+    ],
+    requirements: [{ stat: StatType.Agility, minValue: 11 }]
+  },
+  cloak_ranger_quiver: {
+    rarity: 'Uncommon',
+    weight: 1.4,
+    priceSiekance: 160,
+    extraModifiers: [
+      { targetStat: StatType.Agility, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.Perception, value: 1, type: ModifierType.Flat }
+    ]
+  },
+  torso_slavic_lamellar: {
+    rarity: 'Epic',
+    weight: 8.5,
+    priceSiekance: 480,
+    extraModifiers: [
+      { targetStat: StatType.HealthMax, value: 24, type: ModifierType.Flat },
+      { targetStat: StatType.MovementSpeed, value: -3, type: ModifierType.Flat }
+    ],
+    requirements: [{ stat: StatType.Strength, minValue: 12 }]
+  },
+  helm_druid_antlers: {
+    rarity: 'Epic',
+    weight: 1.6,
+    priceSiekance: 390,
+    extraModifiers: [
+      { targetStat: StatType.ManaMax, value: 28, type: ModifierType.Flat },
+      { targetStat: StatType.Resolve, value: 2, type: ModifierType.Flat }
+    ]
+  },
+  helm_ranger_cowl: {
+    rarity: 'Rare',
+    weight: 0.9,
+    priceSiekance: 240,
+    extraModifiers: [
+      { targetStat: StatType.Perception, value: 2, type: ModifierType.Flat },
+      { targetStat: StatType.CriticalStrikeChance, value: 4, type: ModifierType.Flat }
+    ]
   }
 };
 
@@ -603,6 +651,26 @@ export function getItemPriceInSiekance(
 
 let nextInstanceCounter = 1;
 
+/**
+ * Advances `nextInstanceCounter` above any numeric suffix found in restored instanceIds
+ * so newly created items after loading a save never collide with existing IDs.
+ */
+export function syncInstanceCounter(instanceIds: Iterable<string>): void {
+  let maxSeen = nextInstanceCounter - 1;
+  for (const id of instanceIds) {
+    const lastUnderscore = id.lastIndexOf('_');
+    if (lastUnderscore >= 0) {
+      const parsed = Number.parseInt(id.slice(lastUnderscore + 1), 10);
+      if (Number.isFinite(parsed) && parsed > maxSeen) {
+        maxSeen = parsed;
+      }
+    }
+  }
+  if (maxSeen >= nextInstanceCounter) {
+    nextInstanceCounter = maxSeen + 1;
+  }
+}
+
 export function createItemInstance(
   definitionId: string,
   stackCount = 1,
@@ -661,8 +729,12 @@ export class CharacterStatSheet {
     return { ...this.baseAttributes };
   }
 
-  public onStatsChanged(cb: (sheet: CharacterStatSheet) => void): void {
+  public onStatsChanged(cb: (sheet: CharacterStatSheet) => void): () => void {
     this.onStatsChangedCallbacks.push(cb);
+    return () => {
+      const idx = this.onStatsChangedCallbacks.indexOf(cb);
+      if (idx >= 0) this.onStatsChangedCallbacks.splice(idx, 1);
+    };
   }
 
   public addModifier(mod: StatModifier): void {
@@ -871,6 +943,21 @@ export class InventoryContainer {
     const maxStack = def?.maxStack ?? 1;
     let remaining = item.stackCount;
 
+    // Pre-check total capacity before mutating slots so failed calls never partially mutate
+    let existingPartialSpace = 0;
+    let emptySlotCount = 0;
+    for (let i = 0; i < this.slots.length; i++) {
+      const existing = this.slots[i];
+      if (existing === null) {
+        emptySlotCount++;
+      } else if (maxStack > 1 && existing.definitionId === item.definitionId && existing.stackCount < maxStack) {
+        existingPartialSpace += maxStack - existing.stackCount;
+      }
+    }
+    if (existingPartialSpace + emptySlotCount * maxStack < remaining) {
+      return false;
+    }
+
     // 1. Try merging onto existing partial stacks of the same definitionId
     if (maxStack > 1) {
       for (let i = 0; i < this.slots.length && remaining > 0; i++) {
@@ -1028,8 +1115,12 @@ export class EquipmentManager {
 
   public onEquipmentChanged(
     cb: (slot: EquipSlot, oldItem: ItemInstance | null, newItem: ItemInstance | null) => void
-  ): void {
+  ): () => void {
     this.changeListeners.push(cb);
+    return () => {
+      const idx = this.changeListeners.indexOf(cb);
+      if (idx >= 0) this.changeListeners.splice(idx, 1);
+    };
   }
 
   public getEquipped(slot: EquipSlot): ItemInstance | null {
@@ -1137,13 +1228,39 @@ export class EquipmentManager {
       return { success: false, reason: 'Brak pasującego slotu wyposażenia.' };
     }
 
+    // Determine how many items will be unequipped back to the backpack
+    let unequipCount = this.equipped[targetSlot] ? 1 : 0;
+    const needsUnequipOffhand = targetSlot === 'mainHand' && def.isTwoHanded && Boolean(this.equipped.offHand);
+    const needsUnequipTwoHandMain =
+      targetSlot === 'offHand' &&
+      Boolean(this.equipped.mainHand) &&
+      Boolean(getItemDefinition(this.equipped.mainHand!.definitionId)?.isTwoHanded);
+    if (needsUnequipOffhand || needsUnequipTwoHandMain) {
+      unequipCount++;
+    }
+
+    // If candidate is a single-item stack, removing it frees 1 slot; otherwise it stays in backpack
+    const freedCandidateSlot = candidate.stackCount <= 1 ? 1 : 0;
+    const netSlotsNeeded = unequipCount - freedCandidateSlot;
+    if (netSlotsNeeded > 0) {
+      let emptySlots = 0;
+      const slots = this.inventory.getSlots();
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i] === null) emptySlots++;
+      }
+      if (emptySlots < netSlotsNeeded) {
+        return { success: false, reason: 'Brak miejsca w plecaku na zdjęty ekwipunek.' };
+      }
+    }
+
     const unequippedItems: ItemInstance[] = [];
+    const wasMultiStack = candidate.stackCount > 1;
 
     // Remove candidate from inventory first
     this.inventory.removeItem(candidate.instanceId, 1);
 
     // 1. If equipping a Two-Handed weapon in mainHand -> also unequip offHand!
-    if (targetSlot === 'mainHand' && def.isTwoHanded && this.equipped.offHand) {
+    if (needsUnequipOffhand && this.equipped.offHand) {
       const offItem = this.equipped.offHand;
       this.equipped.offHand = null;
       this.statSheet.removeModifiersBySource(offItem.instanceId);
@@ -1153,16 +1270,13 @@ export class EquipmentManager {
     }
 
     // 2. If equipping an offHand item while a Two-Handed weapon is in mainHand -> unequip mainHand!
-    if (targetSlot === 'offHand' && this.equipped.mainHand) {
-      const mainDef = getItemDefinition(this.equipped.mainHand.definitionId);
-      if (mainDef?.isTwoHanded) {
-        const twoHandItem = this.equipped.mainHand;
-        this.equipped.mainHand = null;
-        this.statSheet.removeModifiersBySource(twoHandItem.instanceId);
-        this.inventory.tryAddItem(twoHandItem, true);
-        unequippedItems.push(twoHandItem);
-        this.notifyChange('mainHand', twoHandItem, null);
-      }
+    if (needsUnequipTwoHandMain && this.equipped.mainHand) {
+      const twoHandItem = this.equipped.mainHand;
+      this.equipped.mainHand = null;
+      this.statSheet.removeModifiersBySource(twoHandItem.instanceId);
+      this.inventory.tryAddItem(twoHandItem, true);
+      unequippedItems.push(twoHandItem);
+      this.notifyChange('mainHand', twoHandItem, null);
     }
 
     // 3. Unequip existing item in targetSlot back to backpack
@@ -1174,8 +1288,10 @@ export class EquipmentManager {
       unequippedItems.push(previousInSlot);
     }
 
-    // 4. Equip candidate and register its modifiers
-    const singleEquipped: ItemInstance = { ...candidate, stackCount: 1 };
+    // 4. Equip candidate and register its modifiers (allocate a fresh instanceId if split from a stack)
+    const singleEquipped: ItemInstance = wasMultiStack
+      ? createItemInstance(candidate.definitionId, 1, candidate.dynamicModifiers)
+      : { ...candidate, stackCount: 1 };
     this.equipped[targetSlot] = singleEquipped;
     for (const mod of getAllItemModifiers(singleEquipped)) {
       this.statSheet.addModifier(mod);

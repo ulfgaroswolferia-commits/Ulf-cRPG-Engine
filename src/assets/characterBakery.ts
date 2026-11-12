@@ -241,16 +241,22 @@ function drawShadedEllipse(
   metallic: number,
   outlineDarken = true
 ): void {
-  const minX = Math.floor(cx - rx);
-  const maxX = Math.ceil(cx + rx);
-  const minY = Math.floor(cy - ry);
-  const maxY = Math.ceil(cy + ry);
+  const minX = Math.max(0, Math.floor(cx - rx));
+  const maxX = Math.min(sheetW - 1, Math.ceil(cx + rx));
+  const minY = Math.max(0, Math.floor(cy - ry));
+  const maxY = Math.min(sheetH - 1, Math.ceil(cy + ry));
+  const invRx = 1 / Math.max(1, rx);
+  const invRy = 1 / Math.max(1, ry);
+  const roughByte = Math.min(255, Math.max(0, Math.round(roughness * 255)));
+  const metalByte = Math.min(255, Math.max(0, Math.round(metallic * 255)));
 
   for (let y = minY; y <= maxY; y++) {
+    const dy = (y - cy) * invRy;
+    const dySq = dy * dy;
+    const rowOffset = y * sheetW;
     for (let x = minX; x <= maxX; x++) {
-      const dx = (x - cx) / Math.max(1, rx);
-      const dy = (y - cy) / Math.max(1, ry);
-      const distSq = dx * dx + dy * dy;
+      const dx = (x - cx) * invRx;
+      const distSq = dx * dx + dySq;
       if (distSq <= 1.0) {
         const isOuterEdge = outlineDarken && distSq > 0.84;
         const isBorder = trimColor !== null && distSq > 0.68 && distSq <= 0.84;
@@ -262,20 +268,21 @@ function drawShadedEllipse(
         const baseShade = 0.68 + 0.38 * nz - 0.16 * dy - 0.1 * dx + specHighlight;
         const shade = isOuterEdge ? baseShade * 0.42 : baseShade;
 
-        setPixelWithNormal(
-          albedo,
-          normalMat,
-          sheetW,
-          sheetH,
-          x,
-          y,
-          activeColor,
-          shade,
-          dx * 0.85,
-          dy * 0.85,
-          roughness,
-          metallic
-        );
+        const idx = (rowOffset + x) * 4;
+        const r = Math.round(activeColor.r * shade);
+        const g = Math.round(activeColor.g * shade);
+        const b = Math.round(activeColor.b * shade);
+        albedo[idx] = r < 0 ? 0 : r > 255 ? 255 : r;
+        albedo[idx + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+        albedo[idx + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+        albedo[idx + 3] = 255;
+
+        const nxByte = Math.round((dx * 0.85 * 0.5 + 0.5) * 255);
+        const nyByte = Math.round((dy * 0.85 * 0.5 + 0.5) * 255);
+        normalMat[idx] = nxByte < 0 ? 0 : nxByte > 255 ? 255 : nxByte;
+        normalMat[idx + 1] = nyByte < 0 ? 0 : nyByte > 255 ? 255 : nyByte;
+        normalMat[idx + 2] = roughByte;
+        normalMat[idx + 3] = metalByte;
       }
     }
   }

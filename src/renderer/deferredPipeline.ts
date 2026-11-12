@@ -339,8 +339,24 @@ export function updateAtmosphericFilterUniforms(
   }
   group.uZoom = zoom;
 
+  const selectedLights: ScreenSpacePointLight[] =
+    lights.length <= 6
+      ? (lights as ScreenSpacePointLight[])
+      : [...lights]
+          .sort((a, b) => {
+            const ax = cameraOffsetX + a.screenX * zoom;
+            const ay = cameraOffsetY + a.screenY * zoom;
+            const bx = cameraOffsetX + b.screenX * zoom;
+            const by = cameraOffsetY + b.screenY * zoom;
+            // Approximate viewport center around (640, 360) in CSS px; prioritize bright & nearby lights
+            const da = ((ax - 640) * (ax - 640) + (ay - 360) * (ay - 360)) / Math.max(0.25, a.intensity);
+            const db = ((bx - 640) * (bx - 640) + (by - 360) * (by - 360)) / Math.max(0.25, b.intensity);
+            return da - db;
+          })
+          .slice(0, 6);
+
   for (let i = 0; i < 6; i++) {
-    const l = lights[i];
+    const l = selectedLights[i];
     const posKey = `uLight${i}PosRad`;
     const colKey = `uLight${i}ColInt`;
     if (l) {

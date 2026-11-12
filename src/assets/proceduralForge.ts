@@ -30,8 +30,9 @@ export interface SynthesizedPbrBufferPair {
 }
 
 function hash2D(x: number, y: number): number {
-  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
-  return n - Math.floor(n);
+  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 function valueNoise(x: number, y: number): number {
@@ -71,24 +72,26 @@ function voronoiStone(x: number, y: number): { f1: number; f2: number; edge: num
   const fx = x - ix;
   const fy = y - iy;
 
-  let f1 = 8.0;
-  let f2 = 8.0;
+  let f1Sq = 64.0;
+  let f2Sq = 64.0;
   let cellId = 0;
 
   for (let j = -1; j <= 1; j++) {
     for (let i = -1; i <= 1; i++) {
       const rx = i - fx + hash2D(ix + i, iy + j) * 0.78;
       const ry = j - fy + hash2D(ix + i + 37, iy + j + 91) * 0.78;
-      const d = Math.hypot(rx, ry);
-      if (d < f1) {
-        f2 = f1;
-        f1 = d;
+      const dSq = rx * rx + ry * ry;
+      if (dSq < f1Sq) {
+        f2Sq = f1Sq;
+        f1Sq = dSq;
         cellId = hash2D(ix + i + 11, iy + j + 23);
-      } else if (d < f2) {
-        f2 = d;
+      } else if (dSq < f2Sq) {
+        f2Sq = dSq;
       }
     }
   }
+  const f1 = Math.sqrt(f1Sq);
+  const f2 = Math.sqrt(f2Sq);
   return { f1, f2, edge: f2 - f1, cellId };
 }
 
@@ -125,10 +128,12 @@ function blendPixel(
   albedo[idx + 2] = Math.round((b * alpha + albedo[idx + 2] * prevA * (1 - alpha)) / outA);
   albedo[idx + 3] = Math.min(255, Math.round(outA * 255));
 
-  normalMat[idx] = Math.min(255, Math.max(0, Math.round((nx * 0.5 + 0.5) * 255)));
-  normalMat[idx + 1] = Math.min(255, Math.max(0, Math.round((ny * 0.5 + 0.5) * 255)));
-  normalMat[idx + 2] = Math.min(255, Math.max(0, Math.round(roughness * 255)));
-  normalMat[idx + 3] = Math.min(255, Math.max(0, Math.round(metallic * 255)));
+  if (alpha >= 0.5 || prevA < 0.05) {
+    normalMat[idx] = Math.min(255, Math.max(0, Math.round((nx * 0.5 + 0.5) * 255)));
+    normalMat[idx + 1] = Math.min(255, Math.max(0, Math.round((ny * 0.5 + 0.5) * 255)));
+    normalMat[idx + 2] = Math.min(255, Math.max(0, Math.round(roughness * 255)));
+    normalMat[idx + 3] = Math.min(255, Math.max(0, Math.round(metallic * 255)));
+  }
 }
 
 function writePbrPixel(
@@ -159,21 +164,21 @@ function enhanceNormalsFromAlbedoRelief(
   h: number,
   strength = 2.2
 ): void {
-  const lum = (x: number, y: number): number => {
-    const cx = Math.min(w - 1, Math.max(0, x));
-    const cy = Math.min(h - 1, Math.max(0, y));
-    const i = (cy * w + cx) * 4;
-    if (albedo[i + 3] < 16) return 0;
-    return (albedo[i] * 0.299 + albedo[i + 1] * 0.587 + albedo[i + 2] * 0.114) / 255;
-  };
+  const lumGrid = new Float32Array(w * h);
+  for (let idx = 0, p = 0; idx < w * h; idx++, p += 4) {
+    if (albedo[p + 3] >= 16) {
+      lumGrid[idx] = (albedo[p] * 0.299 + albedo[p + 1] * 0.587 + albedo[p + 2] * 0.114) / 255;
+    }
+  }
 
   for (let y = 1; y < h - 1; y++) {
+    const rowOffset = y * w;
     for (let x = 1; x < w - 1; x++) {
-      const i = (y * w + x) * 4;
+      const i = (rowOffset + x) * 4;
       if (albedo[i + 3] < 16) continue;
 
-      const dX = (lum(x - 1, y) - lum(x + 1, y)) * strength;
-      const dY = (lum(x, y - 1) - lum(x, y + 1)) * strength;
+      const dX = (lumGrid[rowOffset + x - 1] - lumGrid[rowOffset + x + 1]) * strength;
+      const dY = (lumGrid[rowOffset - w + x] - lumGrid[rowOffset + w + x]) * strength;
 
       const baseNx = (normalMat[i] / 255 - 0.5) * 2;
       const baseNy = (normalMat[i + 1] / 255 - 0.5) * 2;

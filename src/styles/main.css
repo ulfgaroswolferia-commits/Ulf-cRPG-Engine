@@ -6,12 +6,22 @@
   --gold-accent: #e5bd68;
   --cyan-accent: #56e2ff;
   --text-primary: #ece6d8;
+  --text-main: #ece6d8;
   --text-muted: #9da4b4;
   --font-display: 'Cinzel', 'MedievalSharp', Georgia, serif;
   --font-rpg: 'MedievalSharp', 'Cinzel', Georgia, serif;
   --font-dungeon: 'MedievalSharp', cursive, sans-serif;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 * {

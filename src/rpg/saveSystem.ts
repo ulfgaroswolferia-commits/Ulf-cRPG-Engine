@@ -1,10 +1,16 @@
-import { CameraRotation } from '../core/mapRotation';
+import { CameraRotation, Direction8 } from '../core/mapRotation';
 import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
 import { CharacterAttributes, CharacterVisualRecipe } from './characterData';
 import { ActorCombatComponent, CombatAttackMode } from './combatSystem';
 import { ActorEntity, ChronicleEntry, CombatReport, CrpgGameState, detectLogSeverity } from './gameLoop';
-import { EquipSlot, ItemInstance } from './inventorySystem';
+import { EquipSlot, ItemInstance, syncInstanceCounter } from './inventorySystem';
+
+function clampDirection8(dir: number): Direction8 {
+  const n = Math.round(dir);
+  if (n >= 0 && n <= 7) return n as Direction8;
+  return (((n % 8) + 8) % 8) as Direction8;
+}
 
 export const STORAGE_KEY_AUTOSAVE = 'ulf_crpg_save_autosave';
 export const STORAGE_KEY_MANUAL = 'ulf_crpg_save_manual';
@@ -263,7 +269,8 @@ export function deserializeGameState(
           npc.tileY = sn.tileY;
           npc.x = sn.x;
           npc.y = sn.y;
-          npc.direction = sn.direction as any;
+          npc.z = game.map.tiles[npc.tileY]?.[npc.tileX]?.z ?? 0;
+          npc.direction = clampDirection8(sn.direction);
           if (typeof sn.isLooted === 'boolean') {
             npc.isLooted = sn.isLooted;
           }
@@ -300,7 +307,7 @@ export function deserializeGameState(
     game.player.x = data.player.x;
     game.player.y = data.player.y;
     game.player.z = data.player.z;
-    game.player.direction = data.player.direction as any;
+    game.player.direction = clampDirection8(data.player.direction);
     game.player.path = [];
     game.player.isMoving = false;
 
@@ -324,12 +331,15 @@ export function deserializeGameState(
     game.equipmentManager.clearAllEquipped();
     game.backpack.clearAllSlots();
 
+    const restoredInstanceIds: string[] = [];
+
     if (data.equipment) {
       const slots = Object.keys(data.equipment) as EquipSlot[];
       for (const slot of slots) {
         const item = data.equipment[slot];
         if (item) {
           game.equipmentManager.equipDirectInstance(item, slot);
+          restoredInstanceIds.push(item.instanceId);
         }
       }
     }
@@ -338,9 +348,12 @@ export function deserializeGameState(
       for (const entry of data.backpack) {
         if (entry.item) {
           game.backpack.setSlot(entry.slotIndex, entry.item);
+          restoredInstanceIds.push(entry.item.instanceId);
         }
       }
     }
+
+    syncInstanceCounter(restoredInstanceIds);
 
     // 6. Restore Combat session state
     if (data.combatState) {
@@ -355,14 +368,16 @@ export function deserializeGameState(
     }
 
     // 7. Restore Logs, Chronicle & Combat Reports
+    for (const key of Object.keys(game.combatReports)) {
+      delete game.combatReports[key];
+    }
     if (data.combatReports && typeof data.combatReports === 'object') {
       Object.assign(game.combatReports, JSON.parse(JSON.stringify(data.combatReports)));
     }
+    game.chronicleEntries.length = 0;
     if (Array.isArray(data.chronicleEntries) && data.chronicleEntries.length > 0) {
-      game.chronicleEntries.length = 0;
       game.chronicleEntries.push(...JSON.parse(JSON.stringify(data.chronicleEntries)));
     } else if (Array.isArray(data.logs) && data.logs.length > 0) {
-      game.chronicleEntries.length = 0;
       data.logs.forEach((logText, idx) => {
         game.chronicleEntries.push({
           id: 'restored_' + idx,
@@ -372,8 +387,8 @@ export function deserializeGameState(
         });
       });
     }
+    game.logs.length = 0;
     if (Array.isArray(data.logs) && data.logs.length > 0) {
-      game.logs.length = 0;
       game.logs.push(...data.logs);
     }
 

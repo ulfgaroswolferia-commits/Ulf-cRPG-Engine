@@ -306,6 +306,21 @@ export function getWeaponCombatProfile(
     };
   }
 
+  if (mainDef.visualStyle === 'bow') {
+    return {
+      category: 'blades',
+      label: mainDef.name,
+      shortLabel: 'Łuk',
+      icon: '🏹',
+      minRange: 1,
+      maxRange: 6,
+      baseApCost: 4,
+      armorPenetrationRatio: 0.28,
+      accuracyBonus: 14,
+      critBonus: 9
+    };
+  }
+
   return {
     category: 'blades',
     label: mainDef.name,
@@ -466,7 +481,7 @@ export function resolveCombatAttack(
   attacker.combat.ap = Math.max(0, attacker.combat.ap - preview.apCost);
   attacker.combat.defending = false;
 
-  const rollPct = Math.round(rng() * 100);
+  const rollPct = Math.floor(rng() * 100) + 1;
   const hit = rollPct <= preview.hitChancePct;
 
   if (!hit) {
@@ -487,7 +502,7 @@ export function resolveCombatAttack(
     };
   }
 
-  const critRoll = Math.round(rng() * 100);
+  const critRoll = Math.floor(rng() * 100) + 1;
   const critical = critRoll <= preview.critChancePct;
 
   const dmgSpan = Math.max(0, attacker.derived.maxDamage - attacker.derived.minDamage);

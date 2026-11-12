@@ -213,7 +213,7 @@ export function computeEdgePanState(input: EdgePanInput): EdgePanResult {
 
   // Smooth progressive ramp (gentle at inner ring boundary, full speed at outer edge)
   const smoothRamp = 0.22 + 0.78 * Math.pow(combinedProgress, 1.25);
-  const strength = Math.min(1, Number(smoothRamp.toFixed(4)));
+  const strength = Math.min(1, Math.round(smoothRamp * 10000) / 10000);
 
   // Continuous 360-degree radial camera movement vector toward cursor
   const unitX = -nx / radialDist;

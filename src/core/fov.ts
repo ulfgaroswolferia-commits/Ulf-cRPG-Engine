@@ -55,17 +55,22 @@ export function hasLineOfSight(
   y1: number,
   isOpaque: (x: number, y: number) => boolean
 ): boolean {
-  const dx = Math.abs(x1 - x0);
-  const dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
+  const ix0 = Math.round(x0);
+  const iy0 = Math.round(y0);
+  const ix1 = Math.round(x1);
+  const iy1 = Math.round(y1);
+
+  const dx = Math.abs(ix1 - ix0);
+  const dy = Math.abs(iy1 - iy0);
+  const sx = ix0 < ix1 ? 1 : -1;
+  const sy = iy0 < iy1 ? 1 : -1;
   let err = dx - dy;
 
-  let cx = x0;
-  let cy = y0;
+  let cx = ix0;
+  let cy = iy0;
 
-  while (cx !== x1 || cy !== y1) {
-    if ((cx !== x0 || cy !== y0) && isOpaque(cx, cy)) {
+  while (cx !== ix1 || cy !== iy1) {
+    if ((cx !== ix0 || cy !== iy0) && isOpaque(cx, cy)) {
       return false;
     }
     const e2 = 2 * err;
@@ -89,21 +94,23 @@ export function computeFieldOfView(
   radius: number,
   isOpaque: (x: number, y: number) => boolean
 ): void {
+  const ox = Math.round(originX);
+  const oy = Math.round(originY);
   fov.beginFrame();
-  fov.markVisible(originX, originY);
+  fov.markVisible(ox, oy);
 
   const rSq = radius * radius;
-  const minX = Math.max(0, Math.floor(originX - radius));
-  const maxX = Math.min(fov.width - 1, Math.ceil(originX + radius));
-  const minY = Math.max(0, Math.floor(originY - radius));
-  const maxY = Math.min(fov.height - 1, Math.ceil(originY + radius));
+  const minX = Math.max(0, Math.floor(ox - radius));
+  const maxX = Math.min(fov.width - 1, Math.ceil(ox + radius));
+  const minY = Math.max(0, Math.floor(oy - radius));
+  const maxY = Math.min(fov.height - 1, Math.ceil(oy + radius));
 
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
-      const dx = x - originX;
-      const dy = y - originY;
+      const dx = x - ox;
+      const dy = y - oy;
       if (dx * dx + dy * dy <= rSq) {
-        if (hasLineOfSight(originX, originY, x, y, isOpaque)) {
+        if (hasLineOfSight(ox, oy, x, y, isOpaque)) {
           fov.markVisible(x, y);
         }
       }

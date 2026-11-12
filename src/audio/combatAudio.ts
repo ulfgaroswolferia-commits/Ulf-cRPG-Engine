@@ -66,6 +66,14 @@ export class CombatAudioEngine {
     }
   }
 
+  public dispose(): void {
+    if (this.ctx) {
+      this.ctx.close().catch(() => {});
+      this.ctx = null;
+      this.masterGain = null;
+    }
+  }
+
   public setMuted(muted: boolean): void {
     this.isMuted = muted;
     try {
