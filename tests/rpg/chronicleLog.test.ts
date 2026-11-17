@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { IsoSceneView } from '../../src/renderer/isoSceneView';
 import { CrpgGameState, detectLogSeverity } from '../../src/rpg/gameLoop';
+import { HudOverlay } from '../../src/ui/hudOverlay';
 
 describe('chronicleLog - Dedicated Chronicle & Combat Log Separation', () => {
   it('detects correct severity from log message content', () => {
@@ -65,10 +67,7 @@ describe('chronicleLog - Dedicated Chronicle & Combat Log Separation', () => {
     }
   });
 
-  it('renders prominent markers for important events and expanded footer with bottom-right Zwiń button', async () => {
-    const { IsoSceneView } = await import('../../src/renderer/isoSceneView');
-    const { HudOverlay } = await import('../../src/ui/hudOverlay');
-
+  it('renders prominent markers for important events and expanded footer with bottom-right Zwiń button', () => {
     const game = new CrpgGameState('forest_clearing');
     // Add multiple events to test expanded capacity before collapse
     for (let i = 1; i <= 12; i++) {

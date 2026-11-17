@@ -516,6 +516,12 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
       { targetStat: StatType.Perception, value: 2, type: ModifierType.Flat },
       { targetStat: StatType.CriticalStrikeChance, value: 4, type: ModifierType.Flat }
     ]
+  },
+  item_healing_salve: {
+    rarity: 'Uncommon',
+    weight: 0.4,
+    priceSiekance: 65,
+    maxStack: 5
   }
 };
 

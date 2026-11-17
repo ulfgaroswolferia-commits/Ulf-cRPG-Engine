@@ -1,4 +1,5 @@
 import { ELEVATION_STEP_PX, TILE_HEIGHT, TILE_WIDTH } from '../core/isoMath';
+import { registerCharacterSpriteSheets } from './characterBakery';
 import { SynthesizedPbrBufferPair } from './proceduralForge';
 
 export interface LoadedImageBuffer {
@@ -164,6 +165,46 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
           if (loaded) dungeonPngMap.set(fn, loaded);
         })
       );
+
+      const characterSheetNames = [
+        'body_male',
+        'armor_tunic',
+        'armor_brigandine',
+        'armor_chain',
+        'armor_plate',
+        'armor_robes',
+        'head_hair',
+        'head_bald',
+        'head_hood',
+        'head_mage_hood',
+        'head_coif',
+        'head_helm',
+        'weapon_longsword',
+        'weapon_axe',
+        'weapon_staff',
+        'weapon_bow',
+        'offhand_buckler',
+        'offhand_kite_shield',
+        'offhand_shield',
+        'enemy_skeleton',
+        'enemy_zombie',
+        'enemy_goblin',
+        'npc_peasant_woman',
+        'npc_peasant_man',
+        'npc_trader',
+        'npc_noble',
+        'npc_knight'
+      ];
+      const loadedCharSheets = new Map<string, LoadedImageBuffer>();
+      await Promise.all(
+        characterSheetNames.map(async (name) => {
+          const loaded = await tryLoadOptionalPng(`./assets/characters/${name}.png`);
+          if (loaded) loadedCharSheets.set(name, loaded);
+        })
+      );
+      if (loadedCharSheets.size > 0) {
+        registerCharacterSpriteSheets(loadedCharSheets);
+      }
 
       loadedSheets = {
         trees,

@@ -169,6 +169,8 @@ class FrameDisplayPool {
     this.spriteCursor++;
     sp.alpha = 1;
     sp.tint = 0xffffff;
+    sp.scale.set(1, 1);
+    sp.rotation = 0;
     return sp;
   }
 
@@ -515,15 +517,33 @@ export class IsoSceneView {
       return;
     }
 
+    const syncEntitiesElevationAtCoords = (): void => {
+      for (const c of affectedCoords) {
+        const tz = map.tiles[c.y][c.x].z;
+        if (tz > map.maxElevation) {
+          map.maxElevation = tz;
+        }
+        for (const prop of map.props) {
+          if (prop.x === c.x && prop.y === c.y) {
+            prop.z = tz;
+          }
+        }
+        for (const npc of this.game.npcs) {
+          if (npc.tileX === c.x && npc.tileY === c.y) {
+            npc.z = tz;
+          }
+        }
+        if (this.game.player.tileX === c.x && this.game.player.tileY === c.y) {
+          this.game.player.z = tz;
+        }
+      }
+    };
+
     if (this.activeTool === 'raise_elevation') {
       for (const c of affectedCoords) {
         map.tiles[c.y][c.x].z = Math.min(4, map.tiles[c.y][c.x].z + 1);
       }
-      for (const prop of map.props) {
-        if (prop.x === centerX && prop.y === centerY) {
-          prop.z = map.tiles[centerY][centerX].z;
-        }
-      }
+      syncEntitiesElevationAtCoords();
       this.game.addLog(
         `[Edytor] Podniesiono wysokość kafla (${centerX}, ${centerY}) do Z=${map.tiles[centerY][centerX].z}.`
       );
@@ -534,11 +554,7 @@ export class IsoSceneView {
       for (const c of affectedCoords) {
         map.tiles[c.y][c.x].z = Math.max(0, map.tiles[c.y][c.x].z - 1);
       }
-      for (const prop of map.props) {
-        if (prop.x === centerX && prop.y === centerY) {
-          prop.z = map.tiles[centerY][centerX].z;
-        }
-      }
+      syncEntitiesElevationAtCoords();
       this.game.addLog(
         `[Edytor] Obniżono wysokość kafla (${centerX}, ${centerY}) do Z=${map.tiles[centerY][centerX].z}.`
       );
@@ -550,6 +566,7 @@ export class IsoSceneView {
       for (const c of affectedCoords) {
         map.tiles[c.y][c.x].z = targetZ;
       }
+      syncEntitiesElevationAtCoords();
       this.game.addLog(
         `[Edytor] Wyrównano wysokość (${centerX}, ${centerY}) do Z=${targetZ}.`
       );
@@ -567,6 +584,7 @@ export class IsoSceneView {
           const lIdx = map.lights.findIndex((l) => l.id === existing.linkedLightId);
           if (lIdx >= 0) map.lights.splice(lIdx, 1);
         }
+        this.game.rebuildPropGrid();
         this.game.recomputeFov();
         this.game.addLog(`[Edytor] Usunięto obiekt „${existing.name}” z (${centerX}, ${centerY}).`);
         return;
@@ -632,6 +650,7 @@ export class IsoSceneView {
         'torch_sconce',
         'arcane_crystal',
         'chest',
+        'sarcophagus',
         'campfire',
         'ground_loot',
         'exit_path',
@@ -653,8 +672,8 @@ export class IsoSceneView {
         const isArcane = kind === 'arcane_crystal';
         map.lights.push({
           id: linkedLightId,
-          x: centerX + 0.5,
-          y: centerY + 0.5,
+          x: centerX,
+          y: centerY,
           z: z + 1.4,
           color: isArcane ? { r: 72, g: 224, b: 255 } : { r: 255, g: 164, b: 64 },
           intensity: 1.5,
@@ -681,6 +700,7 @@ export class IsoSceneView {
         isOpen: false,
         lootItems:
           kind === 'chest' ||
+          kind === 'sarcophagus' ||
           kind === 'market_stall' ||
           kind === 'ground_loot' ||
           kind === 'dungeon_barrel' ||
@@ -690,6 +710,7 @@ export class IsoSceneView {
         linkedLightId
       });
 
+      this.game.rebuildPropGrid();
       this.game.recomputeFov();
       this.game.addLog(
         `[Edytor] Postawiono obiekt „${kind}” (wariant #${this.editorPropVariant}, ${sizeX}×${sizeY}) na (${centerX}, ${centerY}).`
@@ -860,6 +881,7 @@ export class IsoSceneView {
       this.game.map.tiles = parsed.tiles;
       this.game.map.props = parsed.props;
       this.game.map.lights = Array.isArray(parsed.lights) ? parsed.lights : [];
+      this.game.rebuildPropGrid();
       this.game.recomputeFov();
       this.game.addLog(`[Edytor] Wczytano mapę „${this.game.map.name}” (${parsed.width}×${parsed.height}) z pliku JSON.`);
       this.onUiStateChange?.();
@@ -902,6 +924,7 @@ export class IsoSceneView {
       n.z = clampedZ;
     }
     this.game.player.z = clampedZ;
+    map.maxElevation = Math.max(map.maxElevation, clampedZ);
     this.game.addLog(`[Edytor] Wyrównano wysokość całej mapy do poziomu Z=${clampedZ}.`);
     this.onUiStateChange?.();
   }
@@ -910,6 +933,7 @@ export class IsoSceneView {
     this.game.map.props.length = 0;
     this.game.map.lights.length = 0;
     this.game.npcs.length = 0;
+    this.game.rebuildPropGrid();
     this.game.recomputeFov();
     this.game.addLog('[Edytor] Wyczyszczono wszystkie obiekty, światła i NPC z mapy (czysta makieta).');
     this.onUiStateChange?.();

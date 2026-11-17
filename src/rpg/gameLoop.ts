@@ -2643,7 +2643,9 @@ export class CrpgGameState {
     const prop = this.map.props.find((p) => p.id === propId);
     if (!prop || !prop.interactive) return;
 
-    const dist = Math.hypot(prop.x - this.player.tileX, prop.y - this.player.tileY);
+    const nearestX = Math.max(prop.x, Math.min(prop.x + prop.sizeX - 1, this.player.tileX));
+    const nearestY = Math.max(prop.y, Math.min(prop.y + prop.sizeY - 1, this.player.tileY));
+    const dist = Math.hypot(nearestX - this.player.tileX, nearestY - this.player.tileY);
     if (dist <= 1.85) {
       this.togglePropInteraction(prop.id);
       return;
@@ -2861,7 +2863,11 @@ export class CrpgGameState {
       return;
     }
 
-    if (prop.kind === 'chest' || prop.kind === 'ground_loot') {
+    if (
+      prop.kind === 'chest' ||
+      prop.kind === 'ground_loot' ||
+      (prop.kind === 'sarcophagus' && prop.lootItems !== undefined)
+    ) {
       if (!prop.isOpen) {
         const loot = prop.lootItems ?? [];
         const taken: string[] = [];
@@ -3180,7 +3186,11 @@ export class CrpgGameState {
     }
 
     if (choice.unlocksDoorId) {
-      const door = this.map.props.find((p) => p.id === choice.unlocksDoorId);
+      const door = this.map.props.find(
+        (p) =>
+          p.id === choice.unlocksDoorId ||
+          (choice.unlocksDoorId === 'door_vault_west' && p.id === 'door_watchtower')
+      );
       if (door && !door.isOpen) {
         door.isOpen = true;
         this.recomputeFov();

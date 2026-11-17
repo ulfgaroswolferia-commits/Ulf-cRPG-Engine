@@ -229,6 +229,7 @@ export function determineActionCursor(ctx: CursorContextInput): ActionCursorType
     const isLootProp =
       ctx.hoveredProp.kind === 'ground_loot' ||
       ((ctx.hoveredProp.kind === 'chest' ||
+        ctx.hoveredProp.kind === 'sarcophagus' ||
         ctx.hoveredProp.kind === 'dungeon_barrel' ||
         ctx.hoveredProp.kind === 'dungeon_crate' ||
         ctx.hoveredProp.kind === 'market_stall') &&

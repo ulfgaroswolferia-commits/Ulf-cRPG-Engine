@@ -490,7 +490,7 @@ export class HudOverlay {
       mode: CombatAttackMode;
       badge: string;
     }> = [
-      { mode: 'aimed_head', badge: '💫 Ogłuszenie (-2 AP, -20% Celności)' },
+      { mode: 'aimed_head', badge: '💫 Ogłuszenie (-3 AP, -24% Celności)' },
       { mode: 'aimed_torso', badge: '🗡️ Przebicie Pancerza (+20% Penetracji)' },
       { mode: 'aimed_legs', badge: '🩸 Okaleczenie (2× koszt ruchu wroga)' }
     ];
@@ -692,7 +692,7 @@ export class HudOverlay {
 
             <div class="veteran-footer-row">
               <span class="veteran-tip">
-                💡 <strong>Wskazówka taktyczna:</strong> Jeśli wróg ma wysoki pancerz (DT ${enemySnap.derived.damageThreshold}), użyj <em>Silnego Ciosu</em> lub <em>Celowania w Korpus</em>. Przeciwko groźnym bossom celuj w <em>Głowę</em> (Ogłuszenie odbiera wrogowi 2 AP).
+                💡 <strong>Wskazówka taktyczna:</strong> Jeśli wróg ma wysoki pancerz (DT ${enemySnap.derived.damageThreshold}), użyj <em>Silnego Ciosu</em> lub <em>Celowania w Korpus</em>. Przeciwko groźnym bossom celuj w <em>Głowę</em> (Ogłuszenie odbiera wrogowi 3 AP).
               </span>
               <button
                 type="button"
@@ -2276,6 +2276,9 @@ export class HudOverlay {
                 </li>
                 <li>
                   <strong>Kafelki Terenu, Klify i Zarośla (Grassland & Cliffs):</strong> OpenGameArt contributors — Licencja <em>CC-BY 3.0 / OGA-BY</em>
+                </li>
+                <li>
+                  <strong>Izometryczne Modele Postaci i Bestiariusza 8-Kierunkowe (Flare RPG Fantasycore):</strong> Clint Bellanger &amp; Flare Team (<a href="https://flarerpg.org" target="_blank" rel="noopener noreferrer">flarerpg.org</a> / OpenGameArt.org) — Licencja <em>CC-BY-SA 3.0 / CC-BY 3.0</em>
                 </li>
               </ul>
             </div>
