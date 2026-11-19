@@ -16,12 +16,29 @@ import {
   computeCharacterRecipeHash,
   generateRandomCharacterRecipe
 } from '../assets/characterBakery';
-import { preloadGlionoxForestAssets } from '../assets/glionoxAtlas';
+import {
+  getOgaGroundMicroTuftPbr,
+  preloadGlionoxForestAssets
+} from '../assets/glionoxAtlas';
 import {
   generatePropPbrBuffers,
   generateTilePbrBuffers,
   SynthesizedPbrBufferPair
 } from '../assets/proceduralForge';
+import {
+  clearTerrainTransitionCache,
+  computeReachableTilesBfs,
+  computeTileTransitions,
+  generateTerrainTransitionPbr,
+  getMicroFoliagePlacement,
+  getWorldGroundColorMod,
+  getWorldTileVariant,
+  MicroFoliagePlacement,
+  NeighborTileInfo,
+  TerrainEdgeSlot,
+  TerrainTransitionKind,
+  TerrainTransitionOverlay
+} from '../assets/terrainBlending';
 import {
   DepthBox3D,
   shouldApplyWallCutaway,
@@ -248,6 +265,8 @@ export class IsoSceneView {
   public editorPropOrientation: EditorPropOrientation = '1x1';
   public editorEnemyDifficulty: EnemyDifficultyTier = 'normal';
   public zoom = 1.0;
+  public organicTerrainBlending = true;
+  public showGridInExploration = false;
   public cameraOffsetX = 0;
   public cameraOffsetY = 140;
   public edgePanEnabled = true;
@@ -272,11 +291,27 @@ export class IsoSceneView {
   private readonly debugOverlayContainer = new Container();
 
   private readonly tileTextureCache = new Map<string, DualPbrTexturePair>();
+  private readonly transitionTextureCache = new Map<string, DualPbrTexturePair>();
+  private readonly microFoliageTextureCache = new Map<number, DualPbrTexturePair>();
   private readonly propTextureCache = new Map<string, DualPbrTexturePair>();
   private readonly characterTextureCache = new Map<string, CharacterDualFrameTextures>();
   private readonly displayPool = new FrameDisplayPool();
   private readonly scratchPbrLit = { r: 0, g: 0, b: 0, specular: 0 };
   private readonly scratchSurface = { nx: 0, ny: 0, roughness: 0, metallic: 0 };
+  private readonly scratchGroundMod = { r: 1, g: 1, b: 1 };
+  private readonly scratchMicroFoliage: MicroFoliagePlacement = {
+    variant: 0,
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1,
+    alpha: 1
+  };
+  private readonly scratchNeighbor: NeighborTileInfo = { terrain: 'forest_grass', z: 0 };
+  private readonly scratchTransitions: TerrainTransitionOverlay[] = [];
+  private readonly scratchCombatPoly: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+  private readonly combatEnemyTileSet = new Set<number>();
+  private readonly cachedCombatReachSet = new Set<number>();
+  private cachedCombatReachKey = '';
   private cachedHoverPathKey = '';
   private cachedHoverPath: PathStepNode[] = [];
   private readonly particles: FloatingParticle[] = [];
@@ -332,8 +367,8 @@ export class IsoSceneView {
 
   public async mount(containerEl: HTMLElement): Promise<void> {
     await preloadGlionoxForestAssets();
-    this.tileTextureCache.clear();
-    this.propTextureCache.clear();
+    this.clearCachedTextures();
+    clearTerrainTransitionCache();
 
     try {
       await this.app.init({
@@ -1077,12 +1112,16 @@ export class IsoSceneView {
     return entry;
   }
 
-  private getTileTexturePair(terrain: TileTerrainType, z: number): DualPbrTexturePair {
-    const key = `${terrain}_z${z}`;
+  private getTileTexturePair(
+    terrain: TileTerrainType,
+    z: number,
+    variant = 0
+  ): DualPbrTexturePair {
+    const key = `${terrain}_z${z}_v${variant}`;
     const existing = this.tileTextureCache.get(key);
     if (existing) return existing;
 
-    const synth: SynthesizedPbrBufferPair = generateTilePbrBuffers(terrain, z);
+    const synth: SynthesizedPbrBufferPair = generateTilePbrBuffers(terrain, z, variant);
     const pair: DualPbrTexturePair = {
       albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
       normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
@@ -1090,6 +1129,45 @@ export class IsoSceneView {
       anchorY: synth.anchorY
     };
     this.tileTextureCache.set(key, pair);
+    return pair;
+  }
+
+  private getTransitionTexturePair(
+    terrain: TileTerrainType,
+    slot: TerrainEdgeSlot,
+    kind: TerrainTransitionKind,
+    variant = 0
+  ): DualPbrTexturePair {
+    const key = `${terrain}_${slot}_${kind}_v${variant}`;
+    const existing = this.transitionTextureCache.get(key);
+    if (existing) return existing;
+
+    const synth = generateTerrainTransitionPbr(terrain, slot, kind, variant);
+    const pair: DualPbrTexturePair = {
+      albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
+      normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
+      anchorX: synth.anchorX,
+      anchorY: synth.anchorY
+    };
+    this.transitionTextureCache.set(key, pair);
+    return pair;
+  }
+
+  private getMicroFoliageTexturePair(variant: number): DualPbrTexturePair | null {
+    const vNorm = ((variant % 8) + 8) % 8;
+    const existing = this.microFoliageTextureCache.get(vNorm);
+    if (existing) return existing;
+
+    const synth = getOgaGroundMicroTuftPbr(vNorm);
+    if (!synth) return null;
+
+    const pair: DualPbrTexturePair = {
+      albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
+      normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
+      anchorX: synth.anchorX,
+      anchorY: synth.anchorY
+    };
+    this.microFoliageTextureCache.set(vNorm, pair);
     return pair;
   }
 
@@ -1115,21 +1193,37 @@ export class IsoSceneView {
     return pair;
   }
 
-  public destroy(): void {
-    this.inputAbortController?.abort();
-    this.inputAbortController = null;
-
+  private clearCachedTextures(): void {
     for (const pair of this.tileTextureCache.values()) {
       pair.albedo.destroy(true);
       pair.normalMat.destroy(true);
     }
     this.tileTextureCache.clear();
 
+    for (const pair of this.transitionTextureCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.transitionTextureCache.clear();
+
+    for (const pair of this.microFoliageTextureCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.microFoliageTextureCache.clear();
+
     for (const pair of this.propTextureCache.values()) {
       pair.albedo.destroy(true);
       pair.normalMat.destroy(true);
     }
     this.propTextureCache.clear();
+  }
+
+  public destroy(): void {
+    this.inputAbortController?.abort();
+    this.inputAbortController = null;
+
+    this.clearCachedTextures();
 
     for (const charTex of this.characterTextureCache.values()) {
       for (const row of charTex.albedoFrames) {
@@ -1862,7 +1956,61 @@ export class IsoSceneView {
     const minLocalY = (-this.cameraOffsetY - cullPad) / Math.max(0.25, this.zoom);
     const maxLocalY = (viewH - this.cameraOffsetY + cullPad) / Math.max(0.25, this.zoom);
 
-    // 1. Render Isometric Floor Tiles in Painter Order (rx + ry from 0 to rotW + rotH)
+    // 1. Render Seamless Isometric Floor Tiles + Organic Terrain Transitions in Painter Order
+    const showTacticalGrid =
+      this.bufferMode !== 'walkability_fov' &&
+      (this.game.combatState.active || this.showGridInExploration);
+    const isPlayerCombatTurn =
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id;
+    const combatApPerStep =
+      this.game.player.combat && this.game.player.combat.crippledLegsTurns > 0 ? 2 : 1;
+    const combatMaxReachSteps = isPlayerCombatTurn
+      ? Math.floor((this.game.player.combat?.ap ?? 0) / combatApPerStep)
+      : 0;
+
+    if (showTacticalGrid) {
+      this.combatEnemyTileSet.clear();
+      let enemyPosSig = '';
+      for (const npc of this.game.npcs) {
+        if (npc.combat?.isHostile && npc.combat.isAlive) {
+          this.combatEnemyTileSet.add(npc.tileY * mapW + npc.tileX);
+          enemyPosSig += `${npc.tileX},${npc.tileY};`;
+        }
+      }
+
+      if (isPlayerCombatTurn && combatMaxReachSteps > 0) {
+        const reachKey = `${this.game.map.id}:${this.game.map.props.length}:${this.game.player.tileX},${this.game.player.tileY}:${combatMaxReachSteps}:${enemyPosSig}`;
+        if (reachKey !== this.cachedCombatReachKey) {
+          this.cachedCombatReachKey = reachKey;
+          computeReachableTilesBfs(
+            mapW,
+            mapH,
+            this.game.player.tileX,
+            this.game.player.tileY,
+            combatMaxReachSteps,
+            (tx, ty) => this.game.isTileWalkable(tx, ty, this.game.player.id),
+            (tx, ty) => this.game.map.tiles[ty][tx].z,
+            1,
+            this.cachedCombatReachSet
+          );
+        }
+      } else {
+        this.cachedCombatReachSet.clear();
+        this.cachedCombatReachKey = '';
+      }
+    }
+
+    const getRotatedNeighborInfo = (nrx: number, nry: number): NeighborTileInfo | null => {
+      if (nrx < 0 || nrx >= rotW || nry < 0 || nry >= rotH) return null;
+      const nw = toWorldGrid(nrx, nry, mapW, mapH, this.rotation);
+      const nCell = this.game.map.tiles[nw.y]?.[nw.x];
+      if (!nCell) return null;
+      this.scratchNeighbor.terrain = nCell.terrain;
+      this.scratchNeighbor.z = nCell.z;
+      return this.scratchNeighbor;
+    };
+
     for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
       for (let rx = 0; rx < rotW; rx++) {
         const ry = sum - rx;
@@ -1881,15 +2029,26 @@ export class IsoSceneView {
           continue;
         }
 
-        const texPair = this.getTileTexturePair(cell.terrain, cell.z);
+        const variantCount =
+          cell.terrain === 'forest_grass'
+            ? 12
+            : cell.terrain === 'dirt_path' ||
+                cell.terrain === 'forest_soil' ||
+                cell.terrain === 'abyss_water'
+              ? 8
+              : 4;
+        const tileVariant = getWorldTileVariant(cell.x, cell.y, variantCount);
+        const texPair = this.getTileTexturePair(cell.terrain, cell.z, tileVariant);
         const sprite = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
         sprite.anchor.set(texPair.anchorX, texPair.anchorY);
         sprite.position.set(scr.x, scr.y);
+        // Subtle 1.5% overdraw prevents any hairline subpixel grid seams across zoom levels
+        sprite.scale.set(1.015, 1.015);
 
         const fovFactor = this.game.fogOfWarEnabled
           ? this.game.fov.getLightFactor(cell.x, cell.y)
           : 1.0;
-        sprite.tint = this.computeRgbTintForScreenPoint(
+        const baseTint = this.computeRgbTintForScreenPoint(
           scr.x,
           scr.y,
           0,
@@ -1900,7 +2059,76 @@ export class IsoSceneView {
           screenLights
         );
 
+        let tileTint = baseTint;
+        if (this.bufferMode === 'final_pbr') {
+          const mod = getWorldGroundColorMod(cell.x, cell.y, this.scratchGroundMod);
+          const rMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 16) & 0xff) * mod.r)));
+          const gMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 8) & 0xff) * mod.g)));
+          const bMod = Math.min(255, Math.max(0, Math.round((baseTint & 0xff) * mod.b)));
+          tileTint = (rMod << 16) | (gMod << 8) | bMod;
+        }
+
+        sprite.tint = tileTint;
         this.floorLayer.addChild(sprite);
+
+        // 1B. Organic Terrain Edge & Corner Transition Blending (eliminates blocky diamond borders between grass/paths/soil/water)
+        if (this.organicTerrainBlending && this.bufferMode !== 'depth_dag') {
+          const transitions = computeTileTransitions(
+            rx,
+            ry,
+            cell.terrain,
+            cell.z,
+            getRotatedNeighborInfo,
+            this.scratchTransitions
+          );
+          if (transitions.length > 0) {
+            const transVariant = getWorldTileVariant(cell.x, cell.y, 4);
+            for (let ti = 0; ti < transitions.length; ti++) {
+              const tr = transitions[ti];
+              const trTex = this.getTransitionTexturePair(
+                tr.terrain,
+                tr.slot,
+                tr.kind,
+                transVariant
+              );
+              const trSprite = this.displayPool.sprite(
+                useNormalTex ? trTex.normalMat : trTex.albedo
+              );
+              trSprite.anchor.set(trTex.anchorX, trTex.anchorY);
+              trSprite.position.set(scr.x, scr.y);
+              trSprite.scale.set(1.015, 1.015);
+              trSprite.tint = tileTint;
+              this.floorLayer.addChild(trSprite);
+            }
+          }
+        }
+
+        // 1C. Subtle Ground-Level Grass Tufts & Field Pebbles on open natural tiles
+        if (
+          this.organicTerrainBlending &&
+          this.bufferMode === 'final_pbr' &&
+          cell.walkable &&
+          !this.game.getPropAtTile(cell.x, cell.y)
+        ) {
+          const mf = getMicroFoliagePlacement(
+            cell.x,
+            cell.y,
+            cell.terrain,
+            this.scratchMicroFoliage
+          );
+          if (mf) {
+            const mfTex = this.getMicroFoliageTexturePair(mf.variant);
+            if (mfTex) {
+              const mfSprite = this.displayPool.sprite(mfTex.albedo);
+              mfSprite.anchor.set(mfTex.anchorX, mfTex.anchorY);
+              mfSprite.position.set(scr.x + mf.offsetX, scr.y + mf.offsetY);
+              mfSprite.scale.set(mf.scale, mf.scale);
+              mfSprite.alpha = mf.alpha;
+              mfSprite.tint = tileTint;
+              this.floorLayer.addChild(mfSprite);
+            }
+          }
+        }
 
         if (cell.terrain === 'abyss_water' && this.bufferMode === 'final_pbr') {
           // Dynamic specular caustics rippling across dark water surface
@@ -1918,6 +2146,46 @@ export class IsoSceneView {
               .ellipse(scr.x - caustOffX * 0.5, scr.y - caustOffY * 0.5, caustW * 0.55, caustH * 0.45)
               .fill({ color: 0x00b4d8, alpha: shimmerAlpha * 0.35 });
             this.floorLayer.addChild(causticGfx);
+          }
+        }
+
+        // 1D. Tactical Isometric Ground Grid — rendered EXCLUSIVELY during active combat (or explicit debug toggle)
+        if (showTacticalGrid) {
+          const vis = this.game.fov.getVisibility(cell.x, cell.y);
+          if (!this.game.fogOfWarEnabled || vis !== 'unexplored') {
+            const cellIdx = cell.y * mapW + cell.x;
+            const walkOk = this.game.isTileWalkable(cell.x, cell.y, this.game.player.id);
+            const isPlayerTile =
+              cell.x === this.game.player.tileX && cell.y === this.game.player.tileY;
+            const hasHostileEnemy = this.combatEnemyTileSet.has(cellIdx);
+
+            if (walkOk || isPlayerTile || hasHostileEnemy) {
+              const poly = this.scratchCombatPoly;
+              poly[0] = scr.x;
+              poly[1] = scr.y - TILE_HEIGHT * 0.5;
+              poly[2] = scr.x + TILE_WIDTH * 0.5;
+              poly[3] = scr.y;
+              poly[4] = scr.x;
+              poly[5] = scr.y + TILE_HEIGHT * 0.5;
+              poly[6] = scr.x - TILE_WIDTH * 0.5;
+              poly[7] = scr.y;
+
+              if (hasHostileEnemy) {
+                this.cursorAndPathGraphics
+                  .poly(poly)
+                  .fill({ color: 0xff453a, alpha: 0.08 })
+                  .stroke({ color: 0xff453a, width: 1.35, alpha: 0.48 });
+              } else if (isPlayerCombatTurn && walkOk && this.cachedCombatReachSet.has(cellIdx)) {
+                this.cursorAndPathGraphics
+                  .poly(poly)
+                  .fill({ color: 0x4deeea, alpha: 0.055 })
+                  .stroke({ color: 0x4deeea, width: 1.35, alpha: 0.48 });
+              } else {
+                this.cursorAndPathGraphics
+                  .poly(poly)
+                  .stroke({ color: 0xdccaa4, width: 1.05, alpha: 0.30 });
+              }
+            }
           }
         }
 
@@ -1967,19 +2235,36 @@ export class IsoSceneView {
               ? 0x4deeea
               : 0xff453a;
 
-      this.cursorAndPathGraphics
-        .poly([
-          hScr.x,
-          hScr.y - TILE_HEIGHT * 0.5,
-          hScr.x + TILE_WIDTH * 0.5,
-          hScr.y,
-          hScr.x,
-          hScr.y + TILE_HEIGHT * 0.5,
-          hScr.x - TILE_WIDTH * 0.5,
-          hScr.y
-        ])
-        .fill({ color: highlightColor, alpha: 0.18 })
-        .stroke({ color: highlightColor, width: 2.2, alpha: 0.92 });
+      const useDiamondHover =
+        this.game.combatState.active ||
+        this.activeTool !== 'interact' ||
+        this.showGridInExploration ||
+        this.bufferMode === 'walkability_fov';
+
+      if (useDiamondHover) {
+        this.cursorAndPathGraphics
+          .poly([
+            hScr.x,
+            hScr.y - TILE_HEIGHT * 0.5,
+            hScr.x + TILE_WIDTH * 0.5,
+            hScr.y,
+            hScr.x,
+            hScr.y + TILE_HEIGHT * 0.5,
+            hScr.x - TILE_WIDTH * 0.5,
+            hScr.y
+          ])
+          .fill({ color: highlightColor, alpha: 0.18 })
+          .stroke({ color: highlightColor, width: 2.2, alpha: 0.92 });
+      } else {
+        // Organic circular/elliptical ground reticle during exploration (no blocky grid diamond)
+        const pulse = 1.0 + Math.sin(this.elapsedSeconds * 5.0) * 0.06;
+        this.cursorAndPathGraphics
+          .ellipse(hScr.x, hScr.y, 26 * pulse, 13 * pulse)
+          .fill({ color: highlightColor, alpha: 0.10 })
+          .stroke({ color: highlightColor, width: 1.8, alpha: 0.72 })
+          .ellipse(hScr.x, hScr.y, 11, 5.5)
+          .stroke({ color: highlightColor, width: 1.1, alpha: 0.45 });
+      }
 
       // Preview A* path if in interact mode and hovering walkable tile
       if (this.activeTool === 'interact' && this.game.isTileWalkable(hx, hy)) {

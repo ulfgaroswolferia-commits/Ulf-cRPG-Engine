@@ -200,7 +200,8 @@ const tileCache = new Map<string, SynthesizedPbrBufferPair>();
  */
 export function generateTilePbrBuffers(
   terrain: TileTerrainType,
-  elevationSteps = 1
+  elevationSteps = 1,
+  variant = 0
 ): SynthesizedPbrBufferPair {
   if (
     terrain === 'forest_grass' ||
@@ -208,13 +209,17 @@ export function generateTilePbrBuffers(
     terrain === 'dirt_path' ||
     terrain === 'abyss_water'
   ) {
-    const glionoxTile = generateGlionoxForestTilePbr(terrain, elevationSteps);
+    const glionoxTile = generateGlionoxForestTilePbr(terrain, elevationSteps, variant);
     if (glionoxTile) return glionoxTile;
   }
 
-  const key = `${terrain}_z${elevationSteps}`;
+  const vNorm = ((variant % 4) + 4) % 4;
+  const key = `${terrain}_z${elevationSteps}_v${vNorm}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
+
+  const variantSeedX = vNorm * 19.3;
+  const variantSeedY = vNorm * 31.7;
 
   const skirtSteps = Math.max(1, elevationSteps + 1);
   const skirtPx = skirtSteps * ELEVATION_STEP_PX;
@@ -267,29 +272,27 @@ export function generateTilePbrBuffers(
   const isNatural =
     terrain === 'forest_grass' || terrain === 'dirt_path' || terrain === 'forest_soil';
 
-  // 1. Render Top Diamond Face with Voronoi Cellular Relief & fBm Micro-Detail
+  // 1. Render Top Diamond Face with Voronoi Cellular Relief & fBm Micro-Detail (seamless 1px overdraw, no dark grid borders)
   for (let y = 0; y < TILE_HEIGHT; y++) {
     for (let x = 0; x < width; x++) {
       const dx = Math.abs(x - halfW) / halfW;
       const dy = Math.abs(y - halfH) / halfH;
-      if (dx + dy <= 1.0) {
+      if (dx + dy <= 1.032) {
         const u = ((x - halfW) / halfW + (y - halfH) / halfH) * 0.5 + 0.5;
         const v = ((y - halfH) / halfH - (x - halfW) / halfW) * 0.5 + 0.5;
 
-        const detailNoise = fbm(x * 0.12, y * 0.12, 4);
-        const fineNoise = valueNoise(x * 0.45, y * 0.45);
-        let nx = (detailNoise - fbm((x + 1) * 0.12, y * 0.12, 3)) * 2.8;
-        let ny = (detailNoise - fbm(x * 0.12, (y + 1) * 0.12, 3)) * 2.8 - 0.22;
+        const detailNoise = fbm((x + variantSeedX) * 0.12, (y + variantSeedY) * 0.12, 4);
+        const fineNoise = valueNoise((x + variantSeedX) * 0.45, (y + variantSeedY) * 0.45);
+        let nx = (detailNoise - fbm((x + variantSeedX + 1) * 0.12, (y + variantSeedY) * 0.12, 3)) * 2.8;
+        let ny = (detailNoise - fbm((x + variantSeedX) * 0.12, (y + variantSeedY + 1) * 0.12, 3)) * 2.8 - 0.22;
         let shade = 0.82 + (detailNoise - 0.5) * 0.38 + (fineNoise - 0.5) * 0.14;
         let pixelColor = { ...baseColor };
-
-        const edgeDist = 1.0 - (dx + dy);
 
         let pixelRoughness = roughness;
         let pixelMetallic = metallic;
 
         if (terrain === 'forest_grass' || terrain === 'forest_soil') {
-          const patch = fbm(u * 4.5, v * 4.5, 3);
+          const patch = fbm((u + vNorm * 0.7) * 4.5, (v + vNorm * 0.4) * 4.5, 3);
           if (patch > 0.56) {
             pixelColor =
               terrain === 'forest_grass'
@@ -298,36 +301,25 @@ export function generateTilePbrBuffers(
           } else if (patch < 0.38) {
             pixelColor = { r: 58, g: 52, b: 36 }; // Earthy soil showing through
           }
-          if (edgeDist < 0.04) shade *= 0.9;
         } else if (terrain === 'dirt_path') {
-          const vor = voronoiStone(u * 7.5, v * 7.5);
-          // Embedded trail cobblestones & gravel
+          const vor = voronoiStone((u + vNorm * 0.6) * 7.5, (v + vNorm * 0.3) * 7.5);
+          // Embedded trail cobblestones & gravel (no artificial green diamond border)
           if (vor.f1 < 0.28 && detailNoise > 0.46) {
             pixelColor = { r: 124, g: 108, b: 88 };
             shade = 0.95 + (0.28 - vor.f1) * 0.6;
             nx += (vor.f1 - 0.14) * 1.4;
             pixelRoughness = 0.45;
             pixelMetallic = 0.18;
-          } else if (edgeDist < 0.14) {
-            // Grassy border blending into the trail edges
-            pixelColor = { r: 56, g: 88, b: 44 };
           }
         } else if (terrain === 'abyss_water') {
           const wave =
-            Math.sin(u * 18 + detailNoise * 5) * 0.5 +
-            Math.cos(v * 18 - detailNoise * 5) * 0.5;
+            Math.sin((u + vNorm * 0.25) * 18 + detailNoise * 5) * 0.5 +
+            Math.cos((v + vNorm * 0.25) * 18 - detailNoise * 5) * 0.5;
           shade = 0.88 + wave * 0.22;
           nx = wave * 0.45;
           ny = -0.35 + wave * 0.35;
           pixelRoughness = 0.05;
           pixelMetallic = 0.88;
-          if (edgeDist < 0.09) {
-            // Shoreline foam & shallow tint
-            pixelColor = { r: 68, g: 142, b: 168 };
-            shade = 1.15;
-            pixelRoughness = 0.25;
-            pixelMetallic = 0.45;
-          }
         } else if (terrain === 'stairs_stone') {
           const stepIdx = Math.floor(y / 8);
           const stepLocal = y % 8;
@@ -336,7 +328,7 @@ export function generateTilePbrBuffers(
         } else {
           // Sculpted Voronoi Flagstones / Cobblestones for dungeon_stone, mossy_cobble, sanctum_marble, arcane_inlay
           const scale = terrain === 'mossy_cobble' ? 6.2 : 4.2;
-          const vor = voronoiStone(u * scale, v * scale);
+          const vor = voronoiStone((u + vNorm * 0.5) * scale, (v + vNorm * 0.5) * scale);
           const slabTint = (vor.cellId - 0.5) * 18;
           pixelColor = {
             r: Math.min(255, Math.max(0, baseColor.r + slabTint)),
@@ -377,10 +369,6 @@ export function generateTilePbrBuffers(
               pixelRoughness = 0.12;
               pixelMetallic = 0.82;
             }
-          }
-
-          if (edgeDist < 0.05) {
-            shade *= 0.65;
           }
         }
 
