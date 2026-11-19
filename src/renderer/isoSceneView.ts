@@ -1940,17 +1940,6 @@ export class IsoSceneView {
     const useNormalTex = this.bufferMode === 'normal_map';
     const screenLights = this.buildScreenSpaceLights();
 
-    updateAtmosphericFilterUniforms(
-      this.postFilter,
-      this.game.ambientLightIntensity,
-      this.elapsedSeconds,
-      this.bufferMode === 'final_pbr',
-      this.cameraOffsetX + shakeX,
-      this.cameraOffsetY + shakeY,
-      this.zoom,
-      screenLights
-    );
-
     const viewW =
       (this.app.renderer ? this.app.screen.width : 0) ||
       (typeof window !== 'undefined' ? window.innerWidth : 0) ||
@@ -1959,6 +1948,28 @@ export class IsoSceneView {
       (this.app.renderer ? this.app.screen.height : 0) ||
       (typeof window !== 'undefined' ? window.innerHeight : 0) ||
       720;
+
+    updateAtmosphericFilterUniforms(
+      this.postFilter,
+      this.game.ambientLightIntensity,
+      this.elapsedSeconds,
+      this.bufferMode === 'final_pbr',
+      this.cameraOffsetX + shakeX,
+      this.cameraOffsetY + shakeY,
+      this.zoom,
+      screenLights,
+      viewW * 0.5,
+      viewH * 0.5
+    );
+
+    // When the WebGL per-pixel atmospheric post-filter is active, floor tiles MUST use a uniform
+    // ambient tint so point lights and world dappling are evaluated smoothly per-pixel in GLSL
+    // instead of creating flat-shaded diamond steps across the ground.
+    const usePerPixelFloorLighting = this.postFilter !== null && this.bufferMode === 'final_pbr';
+    const emptyLights: ReadonlyArray<ScreenSpacePointLight> = [];
+    const uniformFloorAmbientTint = usePerPixelFloorLighting
+      ? this.computeRgbTintForScreenPoint(0, 0, 0, -0.25, 0.6, 0.15, 1.0, emptyLights)
+      : 0xffffff;
     const cullPad = 380;
     const minLocalX = (-this.cameraOffsetX - cullPad) / Math.max(0.25, this.zoom);
     const maxLocalX = (viewW - this.cameraOffsetX + cullPad) / Math.max(0.25, this.zoom);
@@ -2061,13 +2072,12 @@ export class IsoSceneView {
         }
 
         const variantCount =
-          cell.terrain === 'forest_grass'
-            ? 12
-            : cell.terrain === 'dirt_path' ||
-                cell.terrain === 'forest_soil' ||
-                cell.terrain === 'abyss_water'
-              ? 8
-              : 4;
+          cell.terrain === 'forest_grass' ||
+          cell.terrain === 'dirt_path' ||
+          cell.terrain === 'forest_soil' ||
+          cell.terrain === 'abyss_water'
+            ? 8
+            : 4;
         const tileVariant = getWorldTileVariant(cell.x, cell.y, variantCount);
         const texPair = this.getTileTexturePair(cell.terrain, cell.z, tileVariant);
         const sprite = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
@@ -2079,24 +2089,41 @@ export class IsoSceneView {
         const fovFactor = this.game.fogOfWarEnabled
           ? this.game.fov.getLightFactor(cell.x, cell.y)
           : 1.0;
-        const baseTint = this.computeRgbTintForScreenPoint(
-          scr.x,
-          scr.y,
-          0,
-          -0.25,
-          0.6,
-          0.15,
-          fovFactor,
-          screenLights
-        );
 
-        let tileTint = baseTint;
-        if (this.bufferMode === 'final_pbr') {
-          const mod = getWorldGroundColorMod(cell.x, cell.y, this.scratchGroundMod);
-          const rMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 16) & 0xff) * mod.r)));
-          const gMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 8) & 0xff) * mod.g)));
-          const bMod = Math.min(255, Math.max(0, Math.round((baseTint & 0xff) * mod.b)));
-          tileTint = (rMod << 16) | (gMod << 8) | bMod;
+        let tileTint: number;
+        if (usePerPixelFloorLighting) {
+          tileTint =
+            fovFactor >= 0.999
+              ? uniformFloorAmbientTint
+              : this.computeRgbTintForScreenPoint(
+                  0,
+                  0,
+                  0,
+                  -0.25,
+                  0.6,
+                  0.15,
+                  fovFactor,
+                  emptyLights
+                );
+        } else {
+          const baseTint = this.computeRgbTintForScreenPoint(
+            scr.x,
+            scr.y,
+            0,
+            -0.25,
+            0.6,
+            0.15,
+            fovFactor,
+            screenLights
+          );
+          tileTint = baseTint;
+          if (this.bufferMode === 'final_pbr') {
+            const mod = getWorldGroundColorMod(cell.x, cell.y, this.scratchGroundMod);
+            const rMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 16) & 0xff) * mod.r)));
+            const gMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 8) & 0xff) * mod.g)));
+            const bMod = Math.min(255, Math.max(0, Math.round((baseTint & 0xff) * mod.b)));
+            tileTint = (rMod << 16) | (gMod << 8) | bMod;
+          }
         }
 
         sprite.tint = tileTint;

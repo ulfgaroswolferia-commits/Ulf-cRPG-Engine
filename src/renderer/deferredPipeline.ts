@@ -155,6 +155,18 @@ uniform vec4 uLight4PosRad;
 uniform vec4 uLight4ColInt;
 uniform vec4 uLight5PosRad;
 uniform vec4 uLight5ColInt;
+uniform vec4 uLight6PosRad;
+uniform vec4 uLight6ColInt;
+uniform vec4 uLight7PosRad;
+uniform vec4 uLight7ColInt;
+uniform vec4 uLight8PosRad;
+uniform vec4 uLight8ColInt;
+uniform vec4 uLight9PosRad;
+uniform vec4 uLight9ColInt;
+uniform vec4 uLight10PosRad;
+uniform vec4 uLight10ColInt;
+uniform vec4 uLight11PosRad;
+uniform vec4 uLight11ColInt;
 
 float hash21(vec2 p) {
     p = fract(p * vec2(234.34, 435.345));
@@ -191,16 +203,16 @@ vec3 evalPointLight(vec4 posRad, vec4 colInt, vec2 fragPx, vec3 N, vec3 albedo) 
     if (dist >= posRad.w) return vec3(0.0);
 
     float normD = dist / posRad.w;
-    float atten = pow(max(0.0, 1.0 - normD * normD), 2.4) * min(colInt.w, 1.25);
+    float atten = pow(max(0.0, 1.0 - normD * normD), 2.15) * min(colInt.w, 1.45);
 
     vec3 L = normalize(vec3(delta, posRad.z));
     float nDotL = max(0.0, dot(N, L));
 
     vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
     float nDotH = max(0.0, dot(N, H));
-    float spec = pow(nDotH, 32.0) * 0.14 * atten;
+    float spec = pow(nDotH, 28.0) * 0.16 * atten;
 
-    vec3 diffuse = albedo * colInt.rgb * (0.12 + 0.34 * nDotL) * atten;
+    vec3 diffuse = albedo * colInt.rgb * (0.24 + 0.56 * nDotL) * atten;
     vec3 specular = colInt.rgb * spec;
     return diffuse + specular;
 }
@@ -243,9 +255,14 @@ void main(void) {
     vec3 bloomThreshold = clamp((bloomSample - vec3(0.55)) * 2.0, 0.0, 1.0);
     vec3 bloomGlow = bloomThreshold * bloomThreshold * vec3(1.35, 1.08, 0.85) * 0.35;
 
+    // Smooth continuous per-pixel world-space organic light dappling (replaces per-tile tint steps)
+    vec2 worldCoord = (vScreenPx - uCameraOffset) / max(0.2, uZoom);
+    float dappleNoise = fbmMist(worldCoord * 0.0055);
+    float dappleMod = 0.94 + dappleNoise * 0.12;
+
     // Natural ambient illumination preserving dark fantasy contrast & texture details
-    float ambFactor = mix(0.55, 0.98, clamp(uAmbient, 0.1, 1.0));
-    vec3 ambientCol = base.rgb * vec3(0.96, 0.98, 1.02) * ambFactor;
+    float ambFactor = mix(0.58, 1.02, clamp(uAmbient, 0.1, 1.0));
+    vec3 ambientCol = base.rgb * vec3(0.96, 0.98, 1.02) * ambFactor * dappleMod;
 
     vec3 dynamicLights = vec3(0.0);
     dynamicLights += evalPointLight(uLight0PosRad, uLight0ColInt, vScreenPx, N, base.rgb);
@@ -254,12 +271,17 @@ void main(void) {
     dynamicLights += evalPointLight(uLight3PosRad, uLight3ColInt, vScreenPx, N, base.rgb);
     dynamicLights += evalPointLight(uLight4PosRad, uLight4ColInt, vScreenPx, N, base.rgb);
     dynamicLights += evalPointLight(uLight5PosRad, uLight5ColInt, vScreenPx, N, base.rgb);
+    dynamicLights += evalPointLight(uLight6PosRad, uLight6ColInt, vScreenPx, N, base.rgb);
+    dynamicLights += evalPointLight(uLight7PosRad, uLight7ColInt, vScreenPx, N, base.rgb);
+    dynamicLights += evalPointLight(uLight8PosRad, uLight8ColInt, vScreenPx, N, base.rgb);
+    dynamicLights += evalPointLight(uLight9PosRad, uLight9ColInt, vScreenPx, N, base.rgb);
+    dynamicLights += evalPointLight(uLight10PosRad, uLight10ColInt, vScreenPx, N, base.rgb);
+    dynamicLights += evalPointLight(uLight11PosRad, uLight11ColInt, vScreenPx, N, base.rgb);
 
     // Energy-conserving soft-knee compression so overlapping lights never blind or wash out textures
-    dynamicLights = dynamicLights / (vec3(1.0) + dynamicLights * 1.25);
+    dynamicLights = dynamicLights / (vec3(1.0) + dynamicLights * 0.95);
 
     // Subtle drifting woodland mist (soft continuous atmosphere without tile stepping)
-    vec2 worldCoord = (vScreenPx - uCameraOffset) / max(0.2, uZoom);
     float mist = fbmMist(worldCoord * 0.0035 + vec2(uTime * 0.03, -uTime * 0.015));
     float mistMask = smoothstep(0.50, 0.82, mist) * 0.035;
     vec3 mistCol = (vec3(0.12, 0.16, 0.22) + dynamicLights * 0.22) * mistMask;
@@ -305,7 +327,19 @@ export function createAtmosphericPostFilter(): Filter | null {
           uLight4PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
           uLight4ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
           uLight5PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
-          uLight5ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' }
+          uLight5ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
+          uLight6PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
+          uLight6ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
+          uLight7PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
+          uLight7ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
+          uLight8PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
+          uLight8ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
+          uLight9PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
+          uLight9ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
+          uLight10PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
+          uLight10ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' },
+          uLight11PosRad: { value: [0, 0, 42, 0], type: 'vec4<f32>' },
+          uLight11ColInt: { value: [1, 0.65, 0.25, 0], type: 'vec4<f32>' }
         }
       }
     });
@@ -313,6 +347,8 @@ export function createAtmosphericPostFilter(): Filter | null {
     return null;
   }
 }
+
+const MAX_POST_LIGHTS = 12;
 
 export function updateAtmosphericFilterUniforms(
   filter: Filter | null,
@@ -322,7 +358,9 @@ export function updateAtmosphericFilterUniforms(
   cameraOffsetX: number,
   cameraOffsetY: number,
   zoom: number,
-  lights: ReadonlyArray<ScreenSpacePointLight>
+  lights: ReadonlyArray<ScreenSpacePointLight>,
+  viewportCenterX = 640,
+  viewportCenterY = 360
 ): void {
   if (!filter) return;
   const group = filter.resources.postUniforms?.uniforms;
@@ -340,7 +378,7 @@ export function updateAtmosphericFilterUniforms(
   group.uZoom = zoom;
 
   const selectedLights: ScreenSpacePointLight[] =
-    lights.length <= 6
+    lights.length <= MAX_POST_LIGHTS
       ? (lights as ScreenSpacePointLight[])
       : [...lights]
           .sort((a, b) => {
@@ -348,14 +386,19 @@ export function updateAtmosphericFilterUniforms(
             const ay = cameraOffsetY + a.screenY * zoom;
             const bx = cameraOffsetX + b.screenX * zoom;
             const by = cameraOffsetY + b.screenY * zoom;
-            // Approximate viewport center around (640, 360) in CSS px; prioritize bright & nearby lights
-            const da = ((ax - 640) * (ax - 640) + (ay - 360) * (ay - 360)) / Math.max(0.25, a.intensity);
-            const db = ((bx - 640) * (bx - 640) + (by - 360) * (by - 360)) / Math.max(0.25, b.intensity);
+            const da =
+              ((ax - viewportCenterX) * (ax - viewportCenterX) +
+                (ay - viewportCenterY) * (ay - viewportCenterY)) /
+              Math.max(0.25, a.intensity);
+            const db =
+              ((bx - viewportCenterX) * (bx - viewportCenterX) +
+                (by - viewportCenterY) * (by - viewportCenterY)) /
+              Math.max(0.25, b.intensity);
             return da - db;
           })
-          .slice(0, 6);
+          .slice(0, MAX_POST_LIGHTS);
 
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < MAX_POST_LIGHTS; i++) {
     const l = selectedLights[i];
     const posKey = `uLight${i}PosRad`;
     const colKey = `uLight${i}ColInt`;

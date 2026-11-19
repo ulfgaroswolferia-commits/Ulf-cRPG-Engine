@@ -934,13 +934,51 @@ const glionoxTileCache = new Map<string, SynthesizedPbrBufferPair>();
  * Notice: No dark tile borders are baked into the diamond edges so adjacent tiles merge seamlessly
  * without a visible square/diamond grid during exploration.
  */
+const ogaRowMeanCache = new Map<number, { r: number; g: number; b: number }>();
+
+function getOgaRowMeanRgb(
+  ogaTiles: LoadedImageBuffer,
+  ogaRow: number
+): { r: number; g: number; b: number } {
+  const cached = ogaRowMeanCache.get(ogaRow);
+  if (cached) return cached;
+
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+  const cols = Math.min(8, Math.floor(ogaTiles.width / 128));
+  for (let col = 0; col < cols; col++) {
+    for (let sy = 8; sy < 56; sy += 2) {
+      for (let sx = 16; sx < 112; sx += 2) {
+        const dx = Math.abs(sx - 64) / 64;
+        const dy = Math.abs(sy - 32) / 32;
+        if (dx + dy > 0.85) continue;
+        const idx = ((ogaRow * 64 + sy) * ogaTiles.width + (col * 128 + sx)) * 4;
+        if (ogaTiles.rgba[idx + 3] > 180) {
+          sumR += ogaTiles.rgba[idx];
+          sumG += ogaTiles.rgba[idx + 1];
+          sumB += ogaTiles.rgba[idx + 2];
+          count++;
+        }
+      }
+    }
+  }
+  const mean =
+    count > 0
+      ? { r: sumR / count, g: sumG / count, b: sumB / count }
+      : { r: 80, g: 102, b: 56 };
+  ogaRowMeanCache.set(ogaRow, mean);
+  return mean;
+}
+
 export function generateGlionoxForestTilePbr(
   terrain: 'forest_grass' | 'forest_soil' | 'dirt_path' | 'abyss_water',
   elevationSteps: number,
   variant = 0
 ): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const maxVariants = terrain === 'forest_grass' ? 12 : 8;
+  const maxVariants = 8;
   const vNorm = ((variant % maxVariants) + maxVariants) % maxVariants;
   const key = `oga_glionox_tile_${terrain}_z${elevationSteps}_v${vNorm}`;
   const cached = glionoxTileCache.get(key);
@@ -976,29 +1014,23 @@ export function generateGlionoxForestTilePbr(
     };
   };
 
-  // Select OGA 128x64 isometric diamond tile row & column across all 8 columns for natural variety
+  // Select OGA 128x64 isometric diamond tile row & column (consistent single row per terrain so
+  // adjacent tiles never create a checkerboard between bright meadow and dark forest grass)
   let ogaRow: number;
-  let ogaCol: number;
+  const ogaCol: number = vNorm;
   if (terrain === 'forest_grass') {
-    if (vNorm >= 8) {
-      ogaRow = 0; // wildflower meadow grass (4 curated variants)
-      ogaCol = ((vNorm - 8) * 2 + 1) % 8;
-    } else {
-      ogaRow = 1; // deep lush grassland (all 8 variants)
-      ogaCol = vNorm;
-    }
+    ogaRow = 1; // deep lush grassland (all 8 consistent variants)
   } else if (terrain === 'dirt_path') {
     ogaRow = 2; // stylized warm dirt path (all 8 variants)
-    ogaCol = vNorm;
   } else if (terrain === 'forest_soil') {
     ogaRow = 3; // dark forest soil (all 8 variants)
-    ogaCol = vNorm;
   } else {
     ogaRow = 5; // rippled deep water (all 8 variants)
-    ogaCol = vNorm;
   }
 
-  // 1. Top Isometric Diamond Face (1px overdraw with inward-clamped sampling for zero seams)
+  const rowMean = ogaTiles ? getOgaRowMeanRgb(ogaTiles, ogaRow) : null;
+
+  // 1. Top Isometric Diamond Face (1px overdraw + smooth perimeter harmonization for zero grid seams)
   for (let y = 0; y < TILE_HEIGHT; y++) {
     for (let x = 0; x < width; x++) {
       const dx = Math.abs(x - halfW) / halfW;
@@ -1020,6 +1052,15 @@ export function generateGlionoxForestTilePbr(
             r = ogaTiles.rgba[oIdx];
             g = ogaTiles.rgba[oIdx + 1];
             b = ogaTiles.rgba[oIdx + 2];
+          }
+          // Harmonize outer diamond rim toward the row's shared mean color so adjacent variants
+          // merge seamlessly without visible tile boundaries or clipped corner blotches
+          if (rowMean && diamondDist > 0.62) {
+            const edgeT = Math.min(1, (diamondDist - 0.62) / 0.36);
+            const smoothEdge = edgeT * edgeT * (3 - 2 * edgeT) * 0.65;
+            r = Math.round(r * (1 - smoothEdge) + rowMean.r * smoothEdge);
+            g = Math.round(g * (1 - smoothEdge) + rowMean.g * smoothEdge);
+            b = Math.round(b * (1 - smoothEdge) + rowMean.b * smoothEdge);
           }
         } else {
           const detailSample = sampleTileset(48, 144, 64, 32, x, y);

@@ -479,11 +479,11 @@ export function generateTerrainTransitionPbr(
 
       let reach: number;
       if (kind === 'inner_round') {
-        reach = 0.42 + (wave - 0.5) * 0.18 + (tuftNoise - 0.5) * 0.07;
+        reach = 0.46 + (wave - 0.5) * 0.20 + (tuftNoise - 0.5) * 0.08;
       } else if (kind === 'outer_tip') {
-        reach = 0.25 + (wave - 0.5) * 0.12 + (tuftNoise - 0.5) * 0.06;
+        reach = 0.28 + (wave - 0.5) * 0.14 + (tuftNoise - 0.5) * 0.07;
       } else {
-        reach = 0.23 + (wave - 0.5) * 0.16 + (tuftNoise - 0.5) * 0.08;
+        reach = 0.28 + (wave - 0.5) * 0.18 + (tuftNoise - 0.5) * 0.08;
       }
 
       if (edgeDist >= reach) continue;
