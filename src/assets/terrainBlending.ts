@@ -549,6 +549,30 @@ export function generateTerrainTransitionPbr(
     }
   }
 
+  // Sobel luminance-derived micro-relief normal pass so transition edges catch dynamic point lights
+  const lumGrid = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    const p = i * 4;
+    if (albedoRGBA[p + 3] > 16) {
+      lumGrid[i] =
+        (albedoRGBA[p] * 0.299 + albedoRGBA[p + 1] * 0.587 + albedoRGBA[p + 2] * 0.114) / 255;
+    }
+  }
+  const reliefStrength = 2.6;
+  for (let y = 1; y < height - 1; y++) {
+    const rowOff = y * width;
+    for (let x = 1; x < width - 1; x++) {
+      const idx = (rowOff + x) * 4;
+      if (albedoRGBA[idx + 3] <= 16) continue;
+      const dX = (lumGrid[rowOff + x - 1] - lumGrid[rowOff + x + 1]) * reliefStrength;
+      const dY = (lumGrid[rowOff - width + x] - lumGrid[rowOff + width + x]) * reliefStrength;
+      const nx = Math.max(-1, Math.min(1, dX));
+      const ny = Math.max(-1, Math.min(1, -0.12 + dY));
+      normalMaterialRGBA[idx] = Math.round((nx * 0.5 + 0.5) * 255);
+      normalMaterialRGBA[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+    }
+  }
+
   const pair: SynthesizedPbrBufferPair = {
     width,
     height,

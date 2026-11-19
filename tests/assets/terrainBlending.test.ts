@@ -235,4 +235,37 @@ describe('terrainBlending - Organic Seamless Ground, Path Feathering & Combat-On
     expect(transRes).toBe(scratchTrans);
     expect(transRes).toHaveLength(1);
   });
+
+  it('synthesizes non-flat Sobel relief normals on terrain transition overlays', () => {
+    clearTerrainTransitionCache();
+    const pair = generateTerrainTransitionPbr('forest_grass', 'edge_tl', 'edge', 0);
+    const uniqueNx = new Set<number>();
+    const uniqueNy = new Set<number>();
+    for (let i = 0; i < pair.width * pair.height; i++) {
+      const idx = i * 4;
+      if (pair.albedoRGBA[idx + 3] > 32) {
+        uniqueNx.add(pair.normalMaterialRGBA[idx]);
+        uniqueNy.add(pair.normalMaterialRGBA[idx + 1]);
+      }
+    }
+    expect(uniqueNx.size).toBeGreaterThan(3);
+    expect(uniqueNy.size).toBeGreaterThan(3);
+  });
+
+  it('increments CrpgGameState.mapRevision on map load and door toggle', () => {
+    const game = new CrpgGameState('sanctum_dungeon');
+    const revInitial = game.mapRevision;
+
+    game.loadMap('forest_clearing');
+    expect(game.mapRevision).toBeGreaterThan(revInitial);
+
+    game.loadMap('sanctum_dungeon');
+    const revAfterLoad = game.mapRevision;
+    const door = game.map.props.find((p) => p.kind === 'door');
+    expect(door).toBeDefined();
+    if (door) {
+      game.togglePropInteraction(door.id);
+      expect(game.mapRevision).toBeGreaterThan(revAfterLoad);
+    }
+  });
 });

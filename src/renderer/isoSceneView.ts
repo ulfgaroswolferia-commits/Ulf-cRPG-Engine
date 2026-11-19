@@ -307,7 +307,8 @@ export class IsoSceneView {
     alpha: 1
   };
   private readonly scratchNeighbor: NeighborTileInfo = { terrain: 'forest_grass', z: 0 };
-  private readonly scratchTransitions: TerrainTransitionOverlay[] = [];
+  private cachedTransitionsKey = '';
+  private cachedTransitionsByTile: TerrainTransitionOverlay[][] = [];
   private readonly scratchCombatPoly: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
   private readonly combatEnemyTileSet = new Set<number>();
   private readonly cachedCombatReachSet = new Set<number>();
@@ -545,6 +546,7 @@ export class IsoSceneView {
         map.tiles[c.y][c.x].walkable =
           this.editorTerrainType === 'abyss_water' ? false : this.editorTerrainWalkable;
       }
+      this.game.bumpMapRevision();
       this.game.recomputeFov();
       this.game.addLog(
         `[Edytor] Pomalowano teren (${centerX}, ${centerY}) pędzlem ${this.editorBrushSize}×${this.editorBrushSize}: ${this.editorTerrainType}.`
@@ -572,6 +574,7 @@ export class IsoSceneView {
           this.game.player.z = tz;
         }
       }
+      this.game.bumpMapRevision();
     };
 
     if (this.activeTool === 'raise_elevation') {
@@ -620,6 +623,7 @@ export class IsoSceneView {
           if (lIdx >= 0) map.lights.splice(lIdx, 1);
         }
         this.game.rebuildPropGrid();
+        this.game.bumpMapRevision();
         this.game.recomputeFov();
         this.game.addLog(`[Edytor] Usunięto obiekt „${existing.name}” z (${centerX}, ${centerY}).`);
         return;
@@ -746,6 +750,7 @@ export class IsoSceneView {
       });
 
       this.game.rebuildPropGrid();
+      this.game.bumpMapRevision();
       this.game.recomputeFov();
       this.game.addLog(
         `[Edytor] Postawiono obiekt „${kind}” (wariant #${this.editorPropVariant}, ${sizeX}×${sizeY}) na (${centerX}, ${centerY}).`
@@ -917,6 +922,7 @@ export class IsoSceneView {
       this.game.map.props = parsed.props;
       this.game.map.lights = Array.isArray(parsed.lights) ? parsed.lights : [];
       this.game.rebuildPropGrid();
+      this.game.bumpMapRevision();
       this.game.recomputeFov();
       this.game.addLog(`[Edytor] Wczytano mapę „${this.game.map.name}” (${parsed.width}×${parsed.height}) z pliku JSON.`);
       this.onUiStateChange?.();
@@ -939,6 +945,7 @@ export class IsoSceneView {
         map.tiles[y][x].walkable = isWalkable;
       }
     }
+    this.game.bumpMapRevision();
     this.game.recomputeFov();
     this.game.addLog(`[Edytor] Wypełniono całą mapę (${map.width}×${map.height}) terenem: ${terrain}.`);
     this.onUiStateChange?.();
@@ -960,6 +967,7 @@ export class IsoSceneView {
     }
     this.game.player.z = clampedZ;
     map.maxElevation = Math.max(map.maxElevation, clampedZ);
+    this.game.bumpMapRevision();
     this.game.addLog(`[Edytor] Wyrównano wysokość całej mapy do poziomu Z=${clampedZ}.`);
     this.onUiStateChange?.();
   }
@@ -969,6 +977,7 @@ export class IsoSceneView {
     this.game.map.lights.length = 0;
     this.game.npcs.length = 0;
     this.game.rebuildPropGrid();
+    this.game.bumpMapRevision();
     this.game.recomputeFov();
     this.game.addLog('[Edytor] Wyczyszczono wszystkie obiekty, światła i NPC z mapy (czysta makieta).');
     this.onUiStateChange?.();
@@ -1980,7 +1989,7 @@ export class IsoSceneView {
       }
 
       if (isPlayerCombatTurn && combatMaxReachSteps > 0) {
-        const reachKey = `${this.game.map.id}:${this.game.map.props.length}:${this.game.player.tileX},${this.game.player.tileY}:${combatMaxReachSteps}:${enemyPosSig}`;
+        const reachKey = `${this.game.map.id}:${this.game.mapRevision}:${this.game.map.props.length}:${this.game.player.tileX},${this.game.player.tileY}:${combatMaxReachSteps}:${enemyPosSig}`;
         if (reachKey !== this.cachedCombatReachKey) {
           this.cachedCombatReachKey = reachKey;
           computeReachableTilesBfs(
@@ -2001,15 +2010,37 @@ export class IsoSceneView {
       }
     }
 
-    const getRotatedNeighborInfo = (nrx: number, nry: number): NeighborTileInfo | null => {
-      if (nrx < 0 || nrx >= rotW || nry < 0 || nry >= rotH) return null;
-      const nw = toWorldGrid(nrx, nry, mapW, mapH, this.rotation);
-      const nCell = this.game.map.tiles[nw.y]?.[nw.x];
-      if (!nCell) return null;
-      this.scratchNeighbor.terrain = nCell.terrain;
-      this.scratchNeighbor.z = nCell.z;
-      return this.scratchNeighbor;
-    };
+    if (this.organicTerrainBlending && this.bufferMode !== 'depth_dag') {
+      const transitionsKey = `${this.game.map.id}:${this.game.mapRevision}:${this.rotation}:${rotW}x${rotH}`;
+      if (transitionsKey !== this.cachedTransitionsKey) {
+        this.cachedTransitionsKey = transitionsKey;
+        const totalRotated = rotW * rotH;
+        const cache = new Array<TerrainTransitionOverlay[]>(totalRotated);
+        const getRotatedNeighborInfo = (nrx: number, nry: number): NeighborTileInfo | null => {
+          if (nrx < 0 || nrx >= rotW || nry < 0 || nry >= rotH) return null;
+          const nw = toWorldGrid(nrx, nry, mapW, mapH, this.rotation);
+          const nCell = this.game.map.tiles[nw.y]?.[nw.x];
+          if (!nCell) return null;
+          this.scratchNeighbor.terrain = nCell.terrain;
+          this.scratchNeighbor.z = nCell.z;
+          return this.scratchNeighbor;
+        };
+        for (let cry = 0; cry < rotH; cry++) {
+          for (let crx = 0; crx < rotW; crx++) {
+            const cw = toWorldGrid(crx, cry, mapW, mapH, this.rotation);
+            const cCell = this.game.map.tiles[cw.y][cw.x];
+            cache[cry * rotW + crx] = computeTileTransitions(
+              crx,
+              cry,
+              cCell.terrain,
+              cCell.z,
+              getRotatedNeighborInfo
+            );
+          }
+        }
+        this.cachedTransitionsByTile = cache;
+      }
+    }
 
     for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
       for (let rx = 0; rx < rotW; rx++) {
@@ -2071,17 +2102,10 @@ export class IsoSceneView {
         sprite.tint = tileTint;
         this.floorLayer.addChild(sprite);
 
-        // 1B. Organic Terrain Edge & Corner Transition Blending (eliminates blocky diamond borders between grass/paths/soil/water)
+        // 1B. Organic Terrain Edge & Corner Transition Blending (cached per mapRevision & camera rotation)
         if (this.organicTerrainBlending && this.bufferMode !== 'depth_dag') {
-          const transitions = computeTileTransitions(
-            rx,
-            ry,
-            cell.terrain,
-            cell.z,
-            getRotatedNeighborInfo,
-            this.scratchTransitions
-          );
-          if (transitions.length > 0) {
+          const transitions = this.cachedTransitionsByTile[ry * rotW + rx];
+          if (transitions && transitions.length > 0) {
             const transVariant = getWorldTileVariant(cell.x, cell.y, 4);
             for (let ti = 0; ti < transitions.length; ti++) {
               const tr = transitions[ti];

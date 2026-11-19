@@ -212,6 +212,11 @@ export class CrpgGameState {
   public fogOfWarEnabled = false;
   public wallCutawayEnabled = true;
   public ambientLightIntensity = 0.46;
+  public mapRevision = 1;
+
+  public bumpMapRevision(): void {
+    this.mapRevision++;
+  }
 
   /**
    * Returns a flat list of all definitionIds currently held in the backpack or equipped,
@@ -455,6 +460,7 @@ export class CrpgGameState {
           ? createSlavicVillageMap()
           : createSanctumWorldMap();
     this.fov = new FovGridState(this.map.width, this.map.height);
+    this.bumpMapRevision();
     this.npcs.length = 0;
     this.activeDialogue = null;
     this.combatState.active = false;
@@ -2858,6 +2864,7 @@ export class CrpgGameState {
 
     if (prop.kind === 'door') {
       prop.isOpen = !prop.isOpen;
+      this.bumpMapRevision();
       this.addLog(`${prop.name}: ${prop.isOpen ? 'otwarto' : 'zamknięto'}.`);
       this.recomputeFov();
       return;
@@ -3193,6 +3200,7 @@ export class CrpgGameState {
       );
       if (door && !door.isOpen) {
         door.isOpen = true;
+        this.bumpMapRevision();
         this.recomputeFov();
       }
     }
