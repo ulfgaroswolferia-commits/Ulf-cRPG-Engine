@@ -22,10 +22,37 @@ describe('Combat Tactical Dock & 1-Turn Auto-Collapsing Aiming Drawer', () => {
     hud.render();
 
     // Verify bottom-hud has combat-mode-active class and houses combat-tactical-bar
+    expect(fakeRoot.innerHTML).toContain('combat-top-banner');
+    expect(fakeRoot.innerHTML).toContain('TWOJA TURA');
     expect(fakeRoot.innerHTML).toContain('bottom-hud combat-mode-active');
     expect(fakeRoot.innerHTML).toContain('combat-tactical-bar');
     expect(fakeRoot.innerHTML).toContain('combat-live-log');
     expect(fakeRoot.innerHTML).toContain('hero-card');
+  });
+
+  it('shows enemy turn state and multi-target switcher in the top tactical banner', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const hostiles = game.npcs.filter((n) => n.combat?.isHostile);
+    expect(hostiles.length).toBeGreaterThanOrEqual(2);
+
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const hud = new HudOverlay(fakeRoot, game, scene);
+    game.startCombatWithEnemy(hostiles[0].id);
+    hud.render();
+    expect(fakeRoot.innerHTML).toContain('combat-target-switcher');
+
+    // Simulate enemy turn
+    game.combatState.activeTurnActorId = hostiles[0].id;
+    hud.render();
+    expect(fakeRoot.innerHTML).toContain('combat-top-banner enemy-turn');
+    expect(fakeRoot.innerHTML).toContain('TURA PRZECIWNIKA');
+    expect(fakeRoot.innerHTML).toContain('combat-tactical-bar  enemy-turn');
   });
 
   it('automatically collapses aiming drawer after an aimed attack or quick strike is triggered', () => {

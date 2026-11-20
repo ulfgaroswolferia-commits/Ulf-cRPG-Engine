@@ -1369,7 +1369,7 @@ export class IsoSceneView {
       const target = e.target as HTMLElement | null;
       const overUi = Boolean(
         target?.closest(
-          '.top-bar button, .hero-card, .chronicle-log, .combat-tactical-bar, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
+          '.top-bar button, .hero-card, .chronicle-log, .combat-top-banner, .combat-tactical-bar, .combat-live-log, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
         )
       );
       this.updateEdgePanPointerState(e.clientX, e.clientY, true, overUi);

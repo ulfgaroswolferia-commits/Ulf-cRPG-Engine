@@ -121,6 +121,7 @@ export class HudOverlay {
   private isPlaytestInEditor = false;
   private isChronicleExpanded = false;
   private isCombatAdvancedOpen = false;
+  private isFleeConfirmPending = false;
   private isCreditsOpen = false;
   public activeBattleLogTab: 'combat' | 'chronicle' = 'combat';
   public isCombatLogExpanded = false;
@@ -193,45 +194,73 @@ export class HudOverlay {
       this.saveGameDiscreetly();
     } else if (
       this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive &&
       (e.code === 'Space' || e.key === ' ')
     ) {
       e.preventDefault?.();
       this.isCombatAdvancedOpen = false;
+      this.isFleeConfirmPending = false;
       this.game.endPlayerCombatTurn(true);
       this.render();
     } else if (
       this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive &&
       e.key === '1'
     ) {
+      this.isFleeConfirmPending = false;
       this.executeQuickStrike('quick');
     } else if (
       this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive &&
       e.key === '2'
     ) {
+      this.isFleeConfirmPending = false;
       this.executeQuickStrike('power');
     } else if (
       this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive &&
       e.key === '3'
     ) {
       this.isCombatAdvancedOpen = false;
+      this.isFleeConfirmPending = false;
       this.game.activatePlayerDefendStance();
       this.render();
-    } else if (this.game.combatState.active && e.key?.toLowerCase() === 'v') {
+    } else if (
+      this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
+      e.key?.toLowerCase() === 'v'
+    ) {
+      this.isFleeConfirmPending = false;
       this.toggleCombatAdvanced();
     } else if (e.key?.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
       const audio = CombatAudioEngine.getInstance();
       audio.setMuted(!audio.getMuted());
       this.render();
     } else if (e.key === 'Escape') {
-      if (this.activeCombatReportModalId) {
+      if (this.isFleeConfirmPending) {
+        this.isFleeConfirmPending = false;
+        this.render();
+      } else if (this.activeCombatReportModalId) {
         this.activeCombatReportModalId = null;
         this.render();
       } else if (this.isCreditsOpen) {
@@ -454,6 +483,115 @@ export class HudOverlay {
     `;
   }
 
+  private buildCombatTopBannerHtml(): string {
+    if (!this.game.combatState.active) return '';
+
+    const pCombat = this.game.player.combat!;
+    const livingEnemies = this.game.npcs.filter(
+      (n) => n.combat?.isHostile && n.combat.isAlive
+    );
+    const selectedEnemy =
+      livingEnemies.find((e) => e.id === this.game.combatState.selectedTargetId) ??
+      livingEnemies[0];
+
+    if (!selectedEnemy || !selectedEnemy.combat) return '';
+
+    const playerSnap = this.game.getActorCombatant(this.game.player);
+    const enemySnap = this.game.getActorCombatant(selectedEnemy);
+    const dist = Math.hypot(
+      selectedEnemy.tileX - this.game.player.tileX,
+      selectedEnemy.tileY - this.game.player.tileY
+    );
+    const activeMode = this.game.combatState.selectedAttackMode;
+    const activePreview = computeAttackPreview(playerSnap, enemySnap, dist, activeMode);
+
+    const enemyHpPct = Math.max(
+      0,
+      Math.min(100, Math.round((selectedEnemy.combat.hp / selectedEnemy.combat.maxHp) * 100))
+    );
+
+    const isPlayerTurn =
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive;
+    const actingEnemy = !isPlayerTurn
+      ? livingEnemies.find((e) => e.id === this.game.combatState.activeTurnActorId)
+      : undefined;
+    const enemyTurnLabel = actingEnemy
+      ? `TURA PRZECIWNIKA: ${escapeHtml(actingEnemy.recipe.name)}…`
+      : 'TURA PRZECIWNIKA…';
+
+    const playerStatuses: string[] = [];
+    if (pCombat.defending) playerStatuses.push('<span class="cb-status-tag defend">Garda +20%</span>');
+    if (pCombat.dazedHeadTurns > 0) playerStatuses.push(`<span class="cb-status-tag debuff">Ogłuszony (${pCombat.dazedHeadTurns})</span>`);
+    if (pCombat.crippledLegsTurns > 0) playerStatuses.push(`<span class="cb-status-tag debuff">Okaleczony (${pCombat.crippledLegsTurns})</span>`);
+
+    const enemyStatuses: string[] = [];
+    if (selectedEnemy.combat.dazedHeadTurns > 0) enemyStatuses.push(`<span class="cb-status-tag debuff">Ogłuszony (${selectedEnemy.combat.dazedHeadTurns})</span>`);
+    if (selectedEnemy.combat.crippledLegsTurns > 0) enemyStatuses.push(`<span class="cb-status-tag debuff">Okaleczony (${selectedEnemy.combat.crippledLegsTurns})</span>`);
+
+    const rangeBadgeHtml = activePreview.inRange
+      ? `<span class="combat-range-pill in-range" title="Wróg jest w zasięgu Twojej broni (${dist.toFixed(1)} / ${activePreview.maxRange} kafli)">W zasięgu</span>`
+      : `<span class="combat-range-pill out-of-range" title="Dystans: ${dist.toFixed(1)} pola (zasięg: ${activePreview.maxRange}). Kliknij atak, aby automatycznie podejść.">${dist.toFixed(1)} pola · podejdź</span>`;
+
+    const enemySwitcherHtml =
+      livingEnemies.length > 1
+        ? `
+          <div class="combat-target-switcher" role="group" aria-label="Wybór celu">
+            ${livingEnemies
+              .map((e) => {
+                const hp = e.combat?.hp ?? 0;
+                const maxHp = e.combat?.maxHp ?? 1;
+                const diff = e.combat?.difficulty ?? 'normal';
+                return `
+                  <button
+                    type="button"
+                    class="target-switch-btn ${e.id === selectedEnemy.id ? 'active' : ''}"
+                    data-combat-target="${escapeHtml(e.id)}"
+                    aria-pressed="${e.id === selectedEnemy.id ? 'true' : 'false'}"
+                    title="Przełącz cel na: ${escapeHtml(e.recipe.name)} (${hp}/${maxHp} HP)"
+                  >
+                    <span class="diff-dot diff-${diff}"></span>
+                    <span class="ts-name">${escapeHtml(e.recipe.name)}</span>
+                    <span class="ts-hp">${hp}/${maxHp}</span>
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+        `
+        : '';
+
+    return `
+      <div class="combat-top-banner ${isPlayerTurn ? 'player-turn' : 'enemy-turn'}" role="status" aria-live="polite">
+        <div class="combat-top-main">
+          <div class="combat-turn-group">
+            <span class="combat-round-pill">RUNDA ${this.game.combatState.round}</span>
+            <span class="combat-turn-owner ${isPlayerTurn ? 'is-player' : 'is-enemy'}">
+              ${isPlayerTurn ? 'TWOJA TURA' : enemyTurnLabel}
+            </span>
+            ${playerStatuses.join('')}
+          </div>
+
+          <span class="combat-top-divider" aria-hidden="true"></span>
+
+          <div class="combat-target-inline">
+            <div class="target-identity">
+              <span class="diff-dot diff-${selectedEnemy.combat.difficulty ?? 'normal'}" title="${escapeHtml(selectedEnemy.combat.difficultyLabel ?? 'Wróg')}"></span>
+              <strong class="target-name">${escapeHtml(selectedEnemy.recipe.name)}</strong>
+              ${enemyStatuses.join('')}
+            </div>
+            <div class="target-hp-track" title="Życie celu: ${selectedEnemy.combat.hp} / ${selectedEnemy.combat.maxHp} HP">
+              <div class="target-hp-fill" style="width:${enemyHpPct}%;"></div>
+              <span class="target-hp-text">${selectedEnemy.combat.hp} / ${selectedEnemy.combat.maxHp} HP</span>
+            </div>
+            ${rangeBadgeHtml}
+          </div>
+        </div>
+        ${enemySwitcherHtml}
+      </div>
+    `;
+  }
+
   private buildCombatOverlayHtml(): string {
     if (!this.game.combatState.active) return '';
 
@@ -483,180 +621,147 @@ export class HudOverlay {
       const filled = idx < pCombat.ap;
       const willSpend =
         filled && idx >= pCombat.ap - activePreview.apCost && activePreview.hasEnoughAp;
-      return `<span class="ap-orb ${filled ? 'filled' : 'empty'} ${willSpend ? 'preview-spend' : ''}" title="Punkt Akcji #${idx + 1}"></span>`;
+      return `<span class="ap-orb ${filled ? 'filled' : 'empty'} ${willSpend ? 'preview-spend' : ''}" title="Punkt Akcji ${idx + 1}/${pCombat.maxAp}"></span>`;
     }).join('');
 
     const aimedModes: ReadonlyArray<{
       mode: CombatAttackMode;
       badge: string;
     }> = [
-      { mode: 'aimed_head', badge: '💫 Ogłuszenie (-3 AP, -24% Celności)' },
-      { mode: 'aimed_torso', badge: '🗡️ Przebicie Pancerza (+20% Penetracji)' },
-      { mode: 'aimed_legs', badge: '🩸 Okaleczenie (2× koszt ruchu wroga)' }
+      { mode: 'aimed_head', badge: 'Ogłuszenie · -3 AP wroga (-24% celn.)' },
+      { mode: 'aimed_torso', badge: 'Przebicie · +20% penetracji pancerza' },
+      { mode: 'aimed_legs', badge: 'Okaleczenie · 2× koszt ruchu wroga' }
     ];
-
-    const enemyHpPct = Math.max(
-      0,
-      Math.min(100, Math.round((selectedEnemy.combat.hp / selectedEnemy.combat.maxHp) * 100))
-    );
-
-    const rangeBadgeHtml = activePreview.inRange
-      ? `<span class="combat-range-pill in-range" title="Wróg jest w zasięgu Twojej broni (${dist.toFixed(1)} / ${activePreview.maxRange} kafli)">✓ W zasięgu ciosu</span>`
-      : `<span class="combat-range-pill out-of-range" title="Dystans: ${dist.toFixed(1)} kafli (zasięg broni: ${activePreview.maxRange}). Kliknij dowolny atak, a bohater sam podejdzie!">👣 Za daleko (${dist.toFixed(1)} kafli) — kliknij atak, aby podejść</span>`;
 
     const armorPenPct = Math.round(playerSnap.derived.weaponProfile.armorPenetrationRatio * 100);
     const isPlayerTurn =
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive;
+    const actingEnemy = !isPlayerTurn
+      ? livingEnemies.find((e) => e.id === this.game.combatState.activeTurnActorId)
+      : undefined;
+    const enemyTurnLabel = actingEnemy
+      ? `TURA PRZECIWNIKA: ${escapeHtml(actingEnemy.recipe.name)}…`
+      : 'TURA PRZECIWNIKA…';
+    const lowApReadyToEnd = isPlayerTurn && pCombat.ap < 2;
 
     return `
-      <div class="combat-tactical-bar ${this.isCombatAdvancedOpen ? 'veteran-open' : ''}">
-        <div class="combat-bar-top">
-          <div class="combat-turn-banner">
-            <span class="combat-round-pill">⚔️ RUNDA ${this.game.combatState.round}</span>
-            <span class="combat-turn-owner">${
-              isPlayerTurn
-                ? `TWOJA KOLEJ • ${playerSnap.derived.weaponProfile.icon} ${playerSnap.derived.weaponProfile.label}`
-                : `⏳ TURA PRZECIWNIKA...`
-            }</span>
-            ${rangeBadgeHtml}
-          </div>
-
-          <div class="combat-ap-strip" title="Punkty Akcji (AP) określają, ile czynności możesz wykonać w tej turze. Ruch o 1 pole = 1 AP.">
-            <div class="ap-strip-header">
-              <span class="ap-label">⚡ ENERGIA W TURZE: <strong>${pCombat.ap} / ${pCombat.maxAp} AP</strong></span>
-              <span class="ap-hint">1 krok = 1 AP</span>
-            </div>
+      <div class="combat-tactical-bar ${this.isCombatAdvancedOpen ? 'veteran-open' : ''} ${isPlayerTurn ? 'player-turn' : 'enemy-turn'}">
+        <div class="combat-ap-bar" title="Punkty Akcji (AP) określają liczbę akcji w turze. Ruch o 1 pole = 1 AP.">
+          <div class="ap-bar-left">
+            <span class="ap-label">AP <strong>${pCombat.ap}/${pCombat.maxAp}</strong></span>
             <div class="ap-orbs-row">${apOrbsHtml}</div>
           </div>
-
-          <div class="combat-target-card">
-            <div class="target-card-top">
-              <div class="target-identity">
-                <span class="target-diff-badge diff-${selectedEnemy.combat.difficulty ?? 'normal'}">${escapeHtml(selectedEnemy.combat.difficultyLabel ?? 'WRÓG')}</span>
-                <strong>${escapeHtml(selectedEnemy.recipe.name)}</strong>
-              </div>
-              ${
-                livingEnemies.length > 1
-                  ? `<div class="target-switch-row">
-                      ${livingEnemies
-                        .map(
-                          (e) => `
-                        <button type="button" class="target-switch-btn ${e.id === selectedEnemy.id ? 'active' : ''}" data-combat-target="${escapeHtml(e.id)}" title="Przełącz cel na: ${escapeHtml(e.recipe.name)}">
-                          ${e.combat?.difficulty === 'easy' ? '🟢' : e.combat?.difficulty === 'normal' ? '🟡' : '🔴'} ${escapeHtml(e.recipe.name.split(' ')[0])} (${e.combat?.hp} HP)
-                        </button>
-                      `
-                        )
-                        .join('')}
-                    </div>`
-                  : ''
-              }
-            </div>
-            <div class="target-hp-track">
-              <div class="target-hp-fill" style="width:${enemyHpPct}%;"></div>
-              <span class="target-hp-text">❤️ ${selectedEnemy.combat.hp} / ${selectedEnemy.combat.maxHp} HP (${enemyHpPct}%)</span>
-            </div>
+          <div class="ap-bar-right">
+            <span class="combat-weapon-label">${escapeHtml(playerSnap.derived.weaponProfile.label)}</span>
+            <span class="ap-hint">1 pole = 1 AP</span>
           </div>
         </div>
 
-        <!-- WIDOK PODSTAWOWY: Czytelne przyciski 1-klikowe dla każdego gracza -->
         <div class="combat-primary-deck">
           <div class="combat-quick-strikes">
             <button
               type="button"
               class="quick-strike-card strike-quick ${activeMode === 'quick' ? 'selected' : ''} ${!isPlayerTurn || !quickPreview.hasEnoughAp ? 'disabled' : ''}"
               data-quick-strike="quick"
-              title="Kliknij (lub wciśnij [1]), aby od razu wykonać Szybki Cios (albo podejść do wroga)"
+              ${!isPlayerTurn || !quickPreview.hasEnoughAp ? 'disabled' : ''}
+              title="Szybki Cios [1]: pewny, oszczędny atak (${quickPreview.apCost} AP)"
             >
               <div class="qs-header">
-                <span class="qs-title">⚔️ Szybki Cios <kbd>[1]</kbd></span>
-                <span class="qs-ap">⚡ ${quickPreview.apCost} AP</span>
+                <span class="qs-title"><kbd>1</kbd> Szybki Cios</span>
+                <span class="qs-ap">${quickPreview.apCost} AP</span>
               </div>
               <div class="qs-metrics">
-                <span class="qs-hit" title="Szansa na trafienie">🎯 <strong>${quickPreview.hitChancePct}%</strong> trafienia</span>
-                <span class="qs-dmg" title="Szacowane obrażenia">🩸 <strong>${quickPreview.estimatedMinDamage}–${quickPreview.estimatedMaxDamage}</strong> obr.</span>
+                <span class="qs-hit" title="Szansa trafienia"><strong>${quickPreview.hitChancePct}%</strong></span>
+                <span class="qs-dmg" title="Szacowane obrażenia"><strong>${quickPreview.estimatedMinDamage}–${quickPreview.estimatedMaxDamage}</strong> obr.</span>
               </div>
-              <div class="qs-caption">${quickPreview.inRange ? 'Pewny, celny atak podstawowy (1 klik)' : '👣 Kliknij, aby podejść do wroga'}</div>
+              <div class="qs-caption">${quickPreview.inRange ? 'Celny atak' : 'Podejdź i uderz'}</div>
             </button>
 
             <button
               type="button"
               class="quick-strike-card strike-power ${activeMode === 'power' ? 'selected' : ''} ${!isPlayerTurn || !powerPreview.hasEnoughAp ? 'disabled' : ''}"
               data-quick-strike="power"
-              title="Kliknij (lub wciśnij [2]), aby od razu wykonać Silny Cios (+38% obrażeń, łatwiej przebija pancerz)"
+              ${!isPlayerTurn || !powerPreview.hasEnoughAp ? 'disabled' : ''}
+              title="Silny Cios [2]: +38% obrażeń, łatwiej przebija pancerz (${powerPreview.apCost} AP)"
             >
               <div class="qs-header">
-                <span class="qs-title">💥 Silny Cios <kbd>[2]</kbd></span>
-                <span class="qs-ap">⚡ ${powerPreview.apCost} AP</span>
+                <span class="qs-title"><kbd>2</kbd> Silny Cios</span>
+                <span class="qs-ap">${powerPreview.apCost} AP</span>
               </div>
               <div class="qs-metrics">
-                <span class="qs-hit" title="Szansa na trafienie">🎯 <strong>${powerPreview.hitChancePct}%</strong> trafienia</span>
-                <span class="qs-dmg" title="Szacowane obrażenia">🩸 <strong>${powerPreview.estimatedMinDamage}–${powerPreview.estimatedMaxDamage}</strong> obr.</span>
+                <span class="qs-hit" title="Szansa trafienia"><strong>${powerPreview.hitChancePct}%</strong></span>
+                <span class="qs-dmg" title="Szacowane obrażenia"><strong>${powerPreview.estimatedMinDamage}–${powerPreview.estimatedMaxDamage}</strong> obr.</span>
               </div>
-              <div class="qs-caption">${powerPreview.inRange ? 'Mocne uderzenie (+38% obrażeń)' : '👣 Kliknij, aby podejść do wroga'}</div>
+              <div class="qs-caption">${powerPreview.inRange ? '+38% obrażeń' : 'Podejdź i uderz'}</div>
             </button>
 
             <button
               type="button"
               class="quick-strike-card strike-defend ${!isPlayerTurn || pCombat.ap < 2 || pCombat.defending ? 'disabled' : ''} ${pCombat.defending ? 'active-stance' : ''}"
               data-combat-action="defend"
-              title="Przyjmij postawę obronną [Klawisz 3]: +20% Uniku i ochrona przed ciosami do następnej tury"
+              ${!isPlayerTurn || pCombat.ap < 2 || pCombat.defending ? 'disabled' : ''}
+              title="Obrona [3]: +20% Uniku i +2 Pancerza do następnej tury (2 AP)"
             >
               <div class="qs-header">
-                <span class="qs-title">🛡️ Obrona <kbd>[3]</kbd></span>
-                <span class="qs-ap">⚡ 2 AP</span>
+                <span class="qs-title"><kbd>3</kbd> Obrona</span>
+                <span class="qs-ap">2 AP</span>
               </div>
               <div class="qs-metrics">
-                <span class="qs-hit">${pCombat.defending ? '✓ Garda Aktywna' : '+20% Szansy Uniku'}</span>
-                <span class="qs-dmg">+2 Pancerza</span>
+                <span class="qs-hit">${pCombat.defending ? '<strong>Aktywna</strong>' : '<strong>+20%</strong> unik'}</span>
+                <span class="qs-dmg"><strong>+2</strong> panc.</span>
               </div>
-              <div class="qs-caption">Zwiększa obronę na turę wroga</div>
+              <div class="qs-caption">${pCombat.defending ? 'Garda podniesiona' : 'Postawa obronna'}</div>
             </button>
           </div>
 
-          <div class="combat-utility-controls">
+          <button
+            type="button"
+            class="combat-util-btn expert-toggle ${this.isCombatAdvancedOpen ? 'active' : ''}"
+            data-action="toggle-combat-advanced"
+            aria-expanded="${this.isCombatAdvancedOpen ? 'true' : 'false'}"
+            ${!isPlayerTurn ? 'disabled' : ''}
+            title="Precyzyjne celowanie w części ciała i parametry pancerza DT/DR [V]"
+          >
+            <span class="et-key"><kbd>V</kbd></span>
+            <span class="et-label">Celuj</span>
+            <span class="et-arrow">${this.isCombatAdvancedOpen ? '▼' : '▲'}</span>
+          </button>
+
+          <div class="combat-turn-controls">
             <button
               type="button"
-              class="combat-util-btn expert-toggle ${this.isCombatAdvancedOpen ? 'active' : ''}"
-              data-action="toggle-combat-advanced"
-              title="Pokaż/ukryj precyzyjne celowanie w części ciała oraz szczegółowe przeliczniki pancerza DT/DR [Klawisz V]"
+              class="combat-exec-btn end-turn ${!isPlayerTurn ? 'disabled' : ''} ${lowApReadyToEnd ? 'pulse-ready' : ''}"
+              data-combat-action="end-turn"
+              ${!isPlayerTurn ? 'disabled' : ''}
+              title="Zakończ turę i odnów punkty AP [Spacja]"
             >
-              🎯 Tryb Eksperta (Celowanie) <kbd>[V]</kbd> ${this.isCombatAdvancedOpen ? '▲' : '▼'}
+              <span>Koniec Tury</span>
+              <kbd>Spacja</kbd>
             </button>
 
-            <div class="combat-turn-btns">
-              <button
-                type="button"
-                class="combat-exec-btn end-turn ${!isPlayerTurn ? 'disabled' : ''}"
-                data-combat-action="end-turn"
-                title="Zakończ swoją turę i odnów punkty AP w kolejnej rundzie (Klawisz Spacja)"
-              >
-                ⏭️ Koniec Tury <kbd>[Spacja]</kbd>
-              </button>
-
-              <button
-                type="button"
-                class="combat-exec-btn flee ${!isPlayerTurn ? 'disabled' : ''}"
-                data-combat-action="flee"
-                title="Wycofaj się taktycznie z walki"
-              >
-                🏃 Odwrót
-              </button>
-            </div>
+            <button
+              type="button"
+              class="combat-exec-btn flee ${this.isFleeConfirmPending ? 'confirming' : ''} ${!isPlayerTurn ? 'disabled' : ''}"
+              data-combat-action="flee"
+              ${!isPlayerTurn ? 'disabled' : ''}
+              title="${this.isFleeConfirmPending ? 'Kliknij ponownie, aby potwierdzić wycofanie się z walki' : 'Wycofaj się taktycznie z walki'}"
+            >
+              ${this.isFleeConfirmPending ? 'Na pewno?' : 'Odwrót'}
+            </button>
           </div>
         </div>
 
-        <!-- TRYB EKSPERTA: Rozwijany panel celowania anatomicznego dla wyjadacza -->
         ${
           this.isCombatAdvancedOpen
             ? `
           <div class="combat-veteran-panel combat-veteran-drawer">
             <div class="veteran-header-strip">
-              <span class="veteran-title">🎯 PRECYZYJNE CELOWANIE ANATOMICZNE — Kliknij część ciała, aby od razu uderzyć</span>
-              <span class="veteran-telemetry" title="Szczegółowe parametry bojowe celu i Twojej broni">
-                Wróg: 🛡️ DT <strong>${enemySnap.derived.damageThreshold}</strong> (Próg) • DR <strong>${enemySnap.derived.damageResistancePct}%</strong> (Redukcja) • Unik <strong>${enemySnap.derived.evasionPct}%</strong>
-                &nbsp;|&nbsp;
-                Twoja broń: Penetracja Pancerza <strong>${armorPenPct}%</strong> • Biegłość <strong>${playerSnap.derived.activeProficiency}%</strong>
+              <span class="veteran-title">PRECYZYJNE CELOWANIE</span>
+              <span class="veteran-telemetry" title="Parametry pancerza celu i Twojej broni">
+                Cel: DT <strong>${enemySnap.derived.damageThreshold}</strong> · DR <strong>${enemySnap.derived.damageResistancePct}%</strong> · Unik <strong>${enemySnap.derived.evasionPct}%</strong>
+                <span class="vt-sep">|</span>
+                Penetracja <strong>${armorPenPct}%</strong> · Biegłość <strong>${playerSnap.derived.activeProficiency}%</strong>
               </span>
             </div>
 
@@ -666,22 +771,24 @@ export class HudOverlay {
                   const meta = ATTACK_MODE_META[mode];
                   const prev = computeAttackPreview(playerSnap, enemySnap, dist, mode);
                   const isSelected = mode === activeMode;
+                  const canUse = isPlayerTurn && prev.hasEnoughAp;
                   return `
                     <button
                       type="button"
-                      class="combat-mode-btn veteran-aim-card ${isSelected ? 'active' : ''} ${!isPlayerTurn || !prev.hasEnoughAp ? 'no-ap' : ''}"
+                      class="combat-mode-btn veteran-aim-card ${isSelected ? 'active' : ''} ${!canUse ? 'no-ap' : ''}"
                       data-attack-mode="${mode}"
                       data-quick-strike="${mode}"
-                      title="${meta.description} (Kliknij, aby zaatakować)"
+                      ${!canUse ? 'disabled' : ''}
+                      title="${meta.description} (1 klik = natychmiastowy atak)"
                     >
                       <div class="cm-top">
-                        <span>${meta.icon} ${meta.label}</span>
-                        <span class="cm-ap">⚡ ${prev.apCost} AP</span>
+                        <span>${meta.label}</span>
+                        <span class="cm-ap">${prev.apCost} AP</span>
                       </div>
                       <div class="cm-stats">
-                        <span class="cm-hit">🎯 Trafienie: <strong>${prev.hitChancePct}%</strong></span>
-                        <span class="cm-dmg">⚔️ Obr: <strong>${prev.estimatedMinDamage}–${prev.estimatedMaxDamage}</strong></span>
-                        <span class="cm-crit">💥 Kryt: <strong>${prev.critChancePct}%</strong></span>
+                        <span class="cm-hit"><strong>${prev.hitChancePct}%</strong> traf.</span>
+                        <span class="cm-dmg"><strong>${prev.estimatedMinDamage}–${prev.estimatedMaxDamage}</strong> obr.</span>
+                        <span class="cm-crit"><strong>${prev.critChancePct}%</strong> kryt</span>
                       </div>
                       <div class="cm-effect-badge">${badge}</div>
                     </button>
@@ -692,20 +799,8 @@ export class HudOverlay {
 
             <div class="veteran-footer-row">
               <span class="veteran-tip">
-                💡 <strong>Wskazówka taktyczna:</strong> Jeśli wróg ma wysoki pancerz (DT ${enemySnap.derived.damageThreshold}), użyj <em>Silnego Ciosu</em> lub <em>Celowania w Korpus</em>. Przeciwko groźnym bossom celuj w <em>Głowę</em> (Ogłuszenie odbiera wrogowi 3 AP).
+                Kliknij kartę powyżej, aby od razu uderzyć. Wysoki pancerz (DT ${enemySnap.derived.damageThreshold}): <strong>Korpus</strong> lub <strong>Silny Cios</strong> · Bossowie: <strong>Głowa</strong> (-3 AP).
               </span>
-              <button
-                type="button"
-                class="combat-exec-btn primary ${!isPlayerTurn || !activePreview.hasEnoughAp ? 'disabled' : ''}"
-                data-combat-action="attack"
-                title="Wykonaj aktualnie zaznaczony tryb ataku (${ATTACK_MODE_META[activeMode].label})"
-              >
-                ${
-                  activePreview.inRange
-                    ? `⚔️ Wykonaj: ${ATTACK_MODE_META[activeMode].label} (${activePreview.hitChancePct}% • ${activePreview.apCost} AP)`
-                    : `👣 Podejdź i wykonaj: ${ATTACK_MODE_META[activeMode].label}`
-                }
-              </button>
             </div>
           </div>
         `
@@ -717,19 +812,11 @@ export class HudOverlay {
 
   private buildCombatLiveLogHtml(): string {
     const logs = this.game.combatLogs;
-    const livingEnemies = this.game.npcs.filter(
-      (n) => n.combat?.isHostile && n.combat.isAlive
-    );
-    const selectedEnemy =
-      livingEnemies.find((e) => e.id === this.game.combatState.selectedTargetId) ??
-      livingEnemies[0];
-
-    const targetName = selectedEnemy ? selectedEnemy.recipe.name : 'Przeciwnik';
 
     const entriesHtml = logs.length === 0
-      ? '<div class="combat-log-empty">⚔️ Wybierz akcję bojową lub wciśnij [1], [2], [3], aby rozpocząć wymianę ciosów.</div>'
+      ? '<div class="combat-log-empty">Wybierz atak [1/2], Obronę [3] lub kliknij wroga.</div>'
       : logs
-          .slice(0, this.isCombatLogExpanded ? 50 : 16)
+          .slice(0, this.isCombatLogExpanded ? 50 : 12)
           .map((entry, idx) => {
             const isCrit = entry.includes('KRYTYK');
             const isHit = !isCrit && (entry.includes('Trafienie') || entry.includes('Zadano') || entry.includes('trafia'));
@@ -743,33 +830,30 @@ export class HudOverlay {
 
             if (isCrit) {
               entryClass = 'combat-entry-crit';
-              badge = '<span class="c-badge c-badge-crit">💥 KRYTYK</span>';
+              badge = '<span class="c-badge c-badge-crit">KRYTYK</span>';
             } else if (isHit) {
               entryClass = 'combat-entry-hit';
-              badge = '<span class="c-badge c-badge-hit">🗡️ TRAFIENIE</span>';
+              badge = '<span class="c-badge c-badge-hit">TRAFIENIE</span>';
             } else if (isMiss) {
               entryClass = 'combat-entry-miss';
-              badge = '<span class="c-badge c-badge-miss">💨 PUDŁO</span>';
+              badge = '<span class="c-badge c-badge-miss">PUDŁO</span>';
             } else if (isDefend) {
               entryClass = 'combat-entry-defend';
-              badge = '<span class="c-badge c-badge-defend">🛡️ GARDA</span>';
+              badge = '<span class="c-badge c-badge-defend">GARDA</span>';
             } else if (isVictory) {
               entryClass = 'combat-entry-victory';
-              badge = '<span class="c-badge c-badge-victory">🏆 ZWYCIĘSTWO</span>';
+              badge = '<span class="c-badge c-badge-victory">ZWYCIĘSTWO</span>';
             }
 
             const statusPill = isStatus
-              ? '<span class="c-badge c-badge-status">💫 STATUS</span>'
+              ? '<span class="c-badge c-badge-status">STATUS</span>'
               : '';
 
             const isNewest = idx === 0 ? 'combat-entry-newest' : '';
 
             return `
               <div class="combat-log-row ${entryClass} ${isNewest}">
-                <div class="c-row-header">
-                  ${badge}
-                  ${statusPill}
-                </div>
+                ${badge || statusPill ? `<div class="c-row-header">${badge}${statusPill}</div>` : ''}
                 <div class="c-row-text">${escapeHtml(entry)}</div>
               </div>
             `;
@@ -779,20 +863,16 @@ export class HudOverlay {
     return `
       <div class="combat-live-log ${this.isCombatLogExpanded ? 'expanded' : ''}">
         <div class="combat-log-header">
-          <div class="combat-log-tabs">
-            <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-combat">⚔️ Dziennik Walki (${logs.length})</button>
-            <button type="button" class="combat-tab-btn" data-action="set-battle-tab-chronicle" title="Przełącz na Kronikę Świata">📜 Kronika</button>
+          <div class="combat-log-tabs" role="tablist" aria-label="Zakładki dziennika">
+            <button type="button" class="combat-tab-btn active" role="tab" aria-selected="true" data-action="set-battle-tab-combat">Dziennik Walki (${logs.length})</button>
+            <button type="button" class="combat-tab-btn" role="tab" aria-selected="false" data-action="set-battle-tab-chronicle" title="Przełącz na Kronikę Świata">Kronika</button>
           </div>
-          <span class="combat-log-target-pill" title="Aktualny cel starcia">🎯 ${escapeHtml(targetName)} • Runda ${this.game.combatState.round}</span>
+          <button type="button" class="combat-log-expand-btn" data-action="toggle-combat-log-expanded" aria-expanded="${this.isCombatLogExpanded ? 'true' : 'false'}" aria-label="${this.isCombatLogExpanded ? 'Zwiń dziennik walki' : 'Rozwiń dziennik walki'}" title="Rozwiń/zwiń wysokość dziennika walki">
+            ${this.isCombatLogExpanded ? '▼' : '▲'}
+          </button>
         </div>
         <div class="combat-log-entries">
           ${entriesHtml}
-        </div>
-        <div class="combat-log-footer">
-          <span class="combat-log-hint">Rzuty k100, obrażenia, DT/DR pancerza</span>
-          <button type="button" class="combat-log-expand-btn" data-action="toggle-combat-log-expanded" title="Rozwiń/zwiń wysokość dziennika walki">
-            ${this.isCombatLogExpanded ? '▼ Mniej' : '▲ Więcej'}
-          </button>
         </div>
       </div>
     `;
@@ -1612,6 +1692,7 @@ export class HudOverlay {
         : `
       ${dialogueHtml}
       ${inventoryDrawerHtml}
+      ${this.buildCombatTopBannerHtml()}
 
       <div class="bottom-hud ${this.game.combatState.active ? 'combat-mode-active' : ''}">
         <div class="hero-card">
@@ -1620,7 +1701,19 @@ export class HudOverlay {
             <span class="armor-badge" title="Całkowity Pancerz / Obrażenia">🛡️ ${totalArmor} | ⚔️ ${totalAttack}</span>
           </div>
           <div class="hero-details">
-            <div class="hero-name">${escapeHtml(player.recipe.name)} <span class="hero-hp-ap-pill">❤️ ${player.combat?.hp ?? 215}/${player.combat?.maxHp ?? 215} • ⚡ ${player.combat?.ap ?? 11}/${player.combat?.maxAp ?? 11} AP</span></div>
+            <div class="hero-name">${escapeHtml(player.recipe.name)} ${
+              this.game.combatState.active
+                ? ''
+                : `<span class="hero-hp-ap-pill">❤️ ${player.combat?.hp ?? 215}/${player.combat?.maxHp ?? 215} • ⚡ ${player.combat?.ap ?? 11}/${player.combat?.maxAp ?? 11} AP</span>`
+            }</div>
+            ${
+              this.game.combatState.active
+                ? `<div class="hero-combat-hp-track" title="Zdrowie bohatera: ${player.combat?.hp ?? 0} / ${player.combat?.maxHp ?? 1} HP">
+                    <div class="hero-combat-hp-fill" style="width:${Math.max(0, Math.min(100, Math.round(((player.combat?.hp ?? 0) / Math.max(1, player.combat?.maxHp ?? 1)) * 100)))}%;"></div>
+                    <span class="hero-combat-hp-text">${player.combat?.hp ?? 0} / ${player.combat?.maxHp ?? 1} HP</span>
+                  </div>`
+                : ''
+            }
             <div class="hero-title">${escapeHtml(player.recipe.title)}</div>
             <div class="attr-row">
               <span title="Siła">SIŁ <strong>${attrs.might}</strong></span>
@@ -2012,17 +2105,25 @@ export class HudOverlay {
           const targetId = this.game.combatState.selectedTargetId;
           if (targetId) {
             this.isCombatAdvancedOpen = false;
+            this.isFleeConfirmPending = false;
             this.game.commandAttackEnemy(targetId);
           }
         } else if (act === 'defend') {
           this.isCombatAdvancedOpen = false;
+          this.isFleeConfirmPending = false;
           this.game.activatePlayerDefendStance();
         } else if (act === 'end-turn') {
           this.isCombatAdvancedOpen = false;
+          this.isFleeConfirmPending = false;
           this.game.endPlayerCombatTurn(true);
         } else if (act === 'flee') {
-          this.isCombatAdvancedOpen = false;
-          this.game.fleeCombat();
+          if (!this.isFleeConfirmPending) {
+            this.isFleeConfirmPending = true;
+          } else {
+            this.isFleeConfirmPending = false;
+            this.isCombatAdvancedOpen = false;
+            this.game.fleeCombat();
+          }
         }
         this.render();
       });
