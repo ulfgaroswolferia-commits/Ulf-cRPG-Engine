@@ -94,6 +94,40 @@ export type InspectorToolMode =
 
 export type EditorPropOrientation = '1x1' | '2x1' | '1x2';
 
+export interface PropVisualTransform {
+  scaleX: number;
+  scaleY: number;
+  centerOnFootprint: boolean;
+  offsetY: number;
+  aoScale: number;
+}
+
+export type PropVisualTransformResolver = (
+  prop: Pick<WorldPropEntity, 'kind' | 'sizeX' | 'sizeY' | 'heightZ'>
+) => PropVisualTransform;
+
+const IDENTITY_PROP_VISUAL_TRANSFORM: PropVisualTransform = {
+  scaleX: 1,
+  scaleY: 1,
+  centerOnFootprint: false,
+  offsetY: 0,
+  aoScale: 1
+};
+
+let customPropVisualTransformResolver: PropVisualTransformResolver | null = null;
+
+export function registerPropVisualTransform(resolver: PropVisualTransformResolver | null): void {
+  customPropVisualTransformResolver = resolver;
+}
+
+export function resolvePropVisualTransform(
+  prop: Pick<WorldPropEntity, 'kind' | 'sizeX' | 'sizeY' | 'heightZ'>
+): PropVisualTransform {
+  return customPropVisualTransformResolver
+    ? customPropVisualTransformResolver(prop)
+    : IDENTITY_PROP_VISUAL_TRANSFORM;
+}
+
 interface DualPbrTexturePair {
   albedo: Texture;
   normalMat: Texture;
@@ -1277,7 +1311,7 @@ export class IsoSceneView {
         this.rotateCamera(-1);
       } else if (k === 'e') {
         this.rotateCamera(1);
-      } else if (k === 'c') {
+      } else if (k === 'home' || k === 'f') {
         this.centerCameraOnPlayer();
       } else if (k === 'r' && this.activeTool === 'place_prop') {
         this.editorPropOrientation =
@@ -1380,7 +1414,7 @@ export class IsoSceneView {
       const target = e.target as HTMLElement | null;
       const overUi = Boolean(
         target?.closest(
-          '.top-bar button, .hero-card, .chronicle-log, .combat-top-banner, .combat-tactical-bar, .combat-live-log, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
+          '.top-bar button, .hero-card, .chronicle-log.expanded, .chronicle-log .chronicle-toggle-btn, .chronicle-log .combat-tab-btn, .chronicle-log .combat-report-tag-btn, .combat-top-banner, .combat-tactical-bar, .combat-live-log, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
         )
       );
       this.updateEdgePanPointerState(e.clientX, e.clientY, true, overUi);
@@ -2505,7 +2539,10 @@ export class IsoSceneView {
         this.rotation
       );
 
-      const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
+      const vt = resolvePropVisualTransform(prop);
+      const scr = vt.centerOnFootprint
+        ? gridToScreen(fp.rx + fp.width * 0.5, fp.ry + fp.height * 0.5, prop.z)
+        : gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
       if (
         scr.x < minLocalX - 500 ||
         scr.x > maxLocalX + 500 ||
@@ -2542,8 +2579,8 @@ export class IsoSceneView {
               prop.kind === 'exit_path';
 
             if (!isFloraOrNonSolid) {
-              const baseRx = Math.max(16, (fp.width + fp.height) * 14);
-              const baseRy = Math.max(8, (fp.width + fp.height) * 7);
+              const baseRx = Math.max(16, (fp.width + fp.height) * 14 * vt.aoScale);
+              const baseRy = Math.max(8, (fp.width + fp.height) * 7 * vt.aoScale);
 
               const aoGfx = this.displayPool.graphics();
               // Dense inner contact AO anchoring prop to ground
@@ -2598,7 +2635,10 @@ export class IsoSceneView {
 
           const sp = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
           sp.anchor.set(texPair.anchorX, texPair.anchorY);
-          sp.position.set(scr.x, scr.y);
+          sp.position.set(scr.x, scr.y + vt.offsetY);
+          if (vt.scaleX !== 1 || vt.scaleY !== 1) {
+            sp.scale.set(vt.scaleX, vt.scaleY);
+          }
 
           // Apply X-Ray Wall Cutaway if wall occludes the player character!
           const selfBox: DepthBox3D = {

@@ -1903,7 +1903,7 @@ export class HudOverlay {
 
           return `
         <div class="hero-card">
-          <div class="portrait-frame">
+          <div class="portrait-frame" title="Kliknij dwukrotnie, aby wycentrować kamerę na bohaterze [F / Home]">
             <img src="${charTex.portraitDataUrl}" alt="Portret Bohatera" class="hero-portrait-img" />
             <span class="armor-badge" title="Pancerz / Obrażenia">🛡️ ${totalArmor} · ⚔️ ${totalAttack}</span>
           </div>
@@ -1930,7 +1930,7 @@ export class HudOverlay {
                 ${this.game.isStealthActive ? '👁️ Skryty [C]' : 'Skradanie [C]'}
               </button>
               ${campBtnHtml}
-              <button type="button" class="hud-btn hud-btn-icon" data-action="center-camera" title="Wycentruj kamerę na bohaterze">
+              <button type="button" class="hud-btn hud-btn-icon" data-action="center-camera" title="Wycentruj kamerę na bohaterze [F / Home]">
                 🎯
               </button>
               ${
@@ -2247,6 +2247,10 @@ export class HudOverlay {
           this.scene.centerCameraOnPlayer();
         }
       });
+    });
+
+    this.root.querySelector<HTMLElement>('.portrait-frame')?.addEventListener('dblclick', () => {
+      this.scene.centerCameraOnPlayer();
     });
 
     const devSelect = this.root.querySelector<HTMLSelectElement>('[data-action="dev-scene-select"]');

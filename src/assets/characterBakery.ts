@@ -31,6 +31,20 @@ export interface BakedCharacterBuffers {
   normalMaterialRGBA: Uint8ClampedArray;
 }
 
+export interface CustomCharacterBaker {
+  matches: (recipe: CharacterVisualRecipe) => boolean;
+  computeHash: (recipe: CharacterVisualRecipe) => string;
+  bake: (recipe: CharacterVisualRecipe) => BakedCharacterBuffers;
+}
+
+const customCharacterBakers: CustomCharacterBaker[] = [];
+
+export function registerCustomCharacterBaker(baker: CustomCharacterBaker): void {
+  if (!customCharacterBakers.includes(baker)) {
+    customCharacterBakers.push(baker);
+  }
+}
+
 const HAIR_STYLES: ReadonlyArray<HairStyle> = [
   'short_crop',
   'long_braids',
@@ -266,6 +280,11 @@ export function resolveCharacterArchetypeTag(recipe: CharacterVisualRecipe): str
 }
 
 export function computeCharacterRecipeHash(recipe: CharacterVisualRecipe): string {
+  for (const baker of customCharacterBakers) {
+    if (baker.matches(recipe)) {
+      return baker.computeHash(recipe);
+    }
+  }
   const { skinTone, hairColor, hairStyle, equipment } = recipe;
   const base = [
     `${skinTone.r}_${skinTone.g}_${skinTone.b}`,
@@ -2238,6 +2257,11 @@ function tryBakeFromLoadedCharacterSheets(
  * into both an Albedo RGBA buffer and a Normal+Material RGBA buffer with articulated heroic anatomy.
  */
 export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharacterBuffers {
+  for (const baker of customCharacterBakers) {
+    if (baker.matches(recipe)) {
+      return baker.bake(recipe);
+    }
+  }
   const hash = computeCharacterRecipeHash(recipe);
   const cached = bufferCache.get(hash);
   if (cached) return cached;

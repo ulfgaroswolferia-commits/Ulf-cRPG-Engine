@@ -536,15 +536,7 @@ export class CrpgGameState {
     this.loadMap(initialMapId);
   }
 
-  public loadMap(mapId: MapId): void {
-    this.map =
-      mapId === 'forest_clearing'
-        ? createForestClearingMap()
-        : mapId === 'slavic_village'
-          ? createSlavicVillageMap()
-          : createSanctumWorldMap();
-    this.fov = new FovGridState(this.map.width, this.map.height);
-    this.bumpMapRevision();
+  protected resetRuntimeStateForCustomMap(): void {
     this.npcs.length = 0;
     this.activeDialogue = null;
     this.combatState.active = false;
@@ -555,6 +547,21 @@ export class CrpgGameState {
     this.combatState.activeTurnActorId = null;
     this.combatState.selectedTargetId = null;
     this.combatState.floatingTexts = [];
+    this.isStealthActive = false;
+    this.isSurpriseAmbushActive = false;
+    this.surpriseBonusPending = false;
+  }
+
+  public loadMap(mapId: MapId): void {
+    this.map =
+      mapId === 'forest_clearing'
+        ? createForestClearingMap()
+        : mapId === 'slavic_village'
+          ? createSlavicVillageMap()
+          : createSanctumWorldMap();
+    this.fov = new FovGridState(this.map.width, this.map.height);
+    this.bumpMapRevision();
+    this.resetRuntimeStateForCustomMap();
 
     const startX = mapId === 'forest_clearing' ? 15 : mapId === 'slavic_village' ? 22 : 4;
     const startY = mapId === 'forest_clearing' ? 17 : mapId === 'slavic_village' ? 26 : 4;
