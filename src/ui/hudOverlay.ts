@@ -248,10 +248,34 @@ export class HudOverlay {
       !e.metaKey &&
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive &&
+      (e.key === '4' || e.key === '5' || e.key === '6' || e.key === '7')
+    ) {
+      const slotIdx = Number(e.key) - 4;
+      this.isFleeConfirmPending = false;
+      if (this.game.useCombatQuickBeltSlot(slotIdx)) {
+        this.isCombatAdvancedOpen = false;
+        this.render();
+      }
+    } else if (
+      this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
       e.key?.toLowerCase() === 'v'
     ) {
       this.isFleeConfirmPending = false;
       this.toggleCombatAdvanced();
+    } else if (
+      !this.game.combatState.active &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      e.key?.toLowerCase() === 'c'
+    ) {
+      this.game.toggleStealth();
+      this.render();
     } else if (e.key?.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
       const audio = CombatAudioEngine.getInstance();
       audio.setMuted(!audio.getMuted());
@@ -521,6 +545,7 @@ export class HudOverlay {
       : 'TURA PRZECIWNIKA…';
 
     const playerStatuses: string[] = [];
+    if (this.game.surpriseBonusPending) playerStatuses.push('<span class="cb-status-tag ambush">Zaskoczenie +25%/+35%</span>');
     if (pCombat.defending) playerStatuses.push('<span class="cb-status-tag defend">Garda +20%</span>');
     if (pCombat.dazedHeadTurns > 0) playerStatuses.push(`<span class="cb-status-tag debuff">Ogłuszony (${pCombat.dazedHeadTurns})</span>`);
     if (pCombat.crippledLegsTurns > 0) playerStatuses.push(`<span class="cb-status-tag debuff">Okaleczony (${pCombat.crippledLegsTurns})</span>`);
@@ -645,8 +670,54 @@ export class HudOverlay {
       : 'TURA PRZECIWNIKA…';
     const lowApReadyToEnd = isPlayerTurn && pCombat.ap < 2;
 
+    const beltSlots = this.game.getCombatQuickBeltSlots?.() ?? [];
+    const hasAnyBeltSlots = beltSlots.some((s) => s !== null);
+    const beltHtml = hasAnyBeltSlots
+      ? `
+        <div class="combat-quick-belt" role="group" aria-label="Pas szybkiego użycia">
+          ${[0, 1, 2, 3]
+            .map((slotIdx) => {
+              const slot = beltSlots[slotIdx] ?? null;
+              const hotkey = slotIdx + 4;
+              if (!slot) {
+                return `
+                  <div class="belt-slot-card empty" aria-label="Pusty slot pasa ${hotkey}">
+                    <span class="bs-key"><kbd>${hotkey}</kbd></span>
+                    <span class="bs-empty-label">Pusty slot</span>
+                  </div>
+                `;
+              }
+              const enabled = isPlayerTurn && slot.canUse && pCombat.ap >= slot.apCost;
+              const tooltip = enabled
+                ? `${slot.name} (${slot.summary}) · ${slot.apCost} AP [${hotkey}]`
+                : `${slot.name}: ${slot.disabledReason ?? (pCombat.ap < slot.apCost ? `wymaga ${slot.apCost} AP` : 'niedostępne teraz')}`;
+              return `
+                <button
+                  type="button"
+                  class="belt-slot-card cat-${slot.category} ${!enabled ? 'disabled' : ''}"
+                  data-belt-slot="${slotIdx}"
+                  ${!enabled ? 'disabled' : ''}
+                  title="${escapeHtml(tooltip)}"
+                >
+                  <div class="bs-top">
+                    <span class="bs-name"><kbd>${hotkey}</kbd> ${escapeHtml(slot.name)}</span>
+                    <span class="bs-qty">×${slot.qty}</span>
+                  </div>
+                  <div class="bs-bottom">
+                    <span class="bs-summary">${escapeHtml(slot.summary)}</span>
+                    <span class="bs-ap">${slot.apCost} AP</span>
+                  </div>
+                </button>
+              `;
+            })
+            .join('')}
+        </div>
+      `
+      : '';
+
     return `
       <div class="combat-tactical-bar ${this.isCombatAdvancedOpen ? 'veteran-open' : ''} ${isPlayerTurn ? 'player-turn' : 'enemy-turn'}">
+        ${beltHtml}
         <div class="combat-ap-bar" title="Punkty Akcji (AP) określają liczbę akcji w turze. Ruch o 1 pole = 1 AP.">
           <div class="ap-bar-left">
             <span class="ap-label">AP <strong>${pCombat.ap}/${pCombat.maxAp}</strong></span>
@@ -1726,6 +1797,9 @@ export class HudOverlay {
               <button class="hud-btn ${this.isInventoryOpen ? 'active' : ''}" data-action="toggle-inventory" title="Otwórz Plecak (Klawisz I)">
                 🎒 Plecak (${occupiedCount}/${this.game.backpack.capacity})
               </button>
+              <button class="hud-btn ${this.game.isStealthActive ? 'active stealth-active' : ''}" data-action="toggle-stealth" title="Tryb Skradania [C] — pokazuje stożki wzroku wrogów i umożliwia atak z zaskoczenia">
+                ${this.game.isStealthActive ? 'Skryty [C]' : 'Skradanie [C]'}
+              </button>
               <button class="hud-btn" data-action="use-campfire" title="Podejdź do ogniska i upiecz kiełbasę">
                 🔥 ${hasRawSausage ? 'Upiecz Kiełbasę!' : 'Ognisko'}
               </button>
@@ -1968,6 +2042,9 @@ export class HudOverlay {
         } else if (action === 'close-combat-report') {
           this.activeCombatReportModalId = null;
           this.render();
+        } else if (action === 'toggle-stealth') {
+          this.game.toggleStealth();
+          this.render();
         } else if (action === 'toggle-combat-advanced') {
           this.toggleCombatAdvanced();
         } else if (action === 'toggle-fullscreen') {
@@ -2058,6 +2135,19 @@ export class HudOverlay {
         if (npcId) {
           this.game.commandTalkToNpc(npcId);
           this.render();
+        }
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>('[data-belt-slot]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const slotIdx = Number(btn.dataset.beltSlot);
+        if (!Number.isNaN(slotIdx)) {
+          this.isFleeConfirmPending = false;
+          if (this.game.useCombatQuickBeltSlot(slotIdx)) {
+            this.isCombatAdvancedOpen = false;
+            this.render();
+          }
         }
       });
     });

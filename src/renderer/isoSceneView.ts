@@ -69,7 +69,7 @@ import {
   createDefaultProficiencies,
   EnemyDifficultyTier
 } from '../rpg/combatSystem';
-import { ActorEntity, CrpgGameState } from '../rpg/gameLoop';
+import { ActorEntity, CrpgGameState, direction8ToVector } from '../rpg/gameLoop';
 import {
   createAtmosphericPostFilter,
   evaluateDeferredPbrLightAtPoint,
@@ -442,6 +442,7 @@ export class IsoSceneView {
         const prevPlayerAp = this.game.player.combat?.ap;
         const prevDialogue = this.game.activeDialogue;
         const prevCombatActive = this.game.combatState.active;
+        const prevStealthActive = this.game.isStealthActive;
 
         // 1. Update game simulation first so render uses fresh actor positions
         this.game.update(dt);
@@ -457,7 +458,8 @@ export class IsoSceneView {
           this.game.player.combat?.hp !== prevPlayerHp ||
           this.game.player.combat?.ap !== prevPlayerAp ||
           this.game.activeDialogue !== prevDialogue ||
-          this.game.combatState.active !== prevCombatActive
+          this.game.combatState.active !== prevCombatActive ||
+          this.game.isStealthActive !== prevStealthActive
         ) {
           this.onUiStateChange?.();
         }
@@ -2264,6 +2266,48 @@ export class IsoSceneView {
             .fill({ color, alpha: 0.28 })
             .stroke({ color, width: 1.2, alpha: 0.75 });
         }
+      }
+    }
+
+    // 1D. Stealth Mode: Enemy Vision Cones & Player Shadow Ring (BG3/DOS2 style)
+    if (this.game.isStealthActive && !this.game.combatState.active) {
+      const pRot = toRotatedContinuous(
+        this.game.player.x,
+        this.game.player.y,
+        mapW,
+        mapH,
+        this.rotation
+      );
+      const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
+      this.cursorAndPathGraphics
+        .ellipse(pScr.x, pScr.y, 26, 13)
+        .fill({ color: 0x312e81, alpha: 0.34 })
+        .stroke({ color: 0x818cf8, width: 1.5, alpha: 0.78 });
+
+      const halfAngle = (48 * Math.PI) / 180;
+      const arcSteps = 7;
+      for (const npc of this.game.npcs) {
+        if (!npc.combat?.isHostile || !npc.combat.isAlive) continue;
+        const coneRange = Math.min(5.5, (npc.combat.aggroRadius || 3.5) + 1.5);
+        const fwd = direction8ToVector(npc.direction);
+        const baseAngle = Math.atan2(fwd.y, fwd.x);
+        const originRot = toRotatedContinuous(npc.x, npc.y, mapW, mapH, this.rotation);
+        const originScr = gridToScreen(originRot.rx, originRot.ry, npc.z);
+
+        const polyPts: number[] = [originScr.x, originScr.y];
+        for (let i = 0; i <= arcSteps; i++) {
+          const a = baseAngle - halfAngle + (2 * halfAngle * i) / arcSteps;
+          const wx = npc.x + Math.cos(a) * coneRange;
+          const wy = npc.y + Math.sin(a) * coneRange;
+          const ptRot = toRotatedContinuous(wx, wy, mapW, mapH, this.rotation);
+          const ptScr = gridToScreen(ptRot.rx, ptRot.ry, npc.z);
+          polyPts.push(ptScr.x, ptScr.y);
+        }
+
+        this.cursorAndPathGraphics
+          .poly(polyPts)
+          .fill({ color: 0xef4444, alpha: 0.22 })
+          .stroke({ color: 0xf87171, width: 1.4, alpha: 0.62 });
       }
     }
 

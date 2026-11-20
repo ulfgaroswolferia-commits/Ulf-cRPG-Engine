@@ -2305,6 +2305,12 @@ body,
   color: #bfdbfe;
 }
 
+.cb-status-tag.ambush {
+  background: rgba(99, 102, 241, 0.28);
+  border: 1px solid rgba(165, 180, 252, 0.65);
+  color: #e0e7ff;
+}
+
 .cb-status-tag.debuff {
   background: rgba(168, 85, 247, 0.22);
   border: 1px solid rgba(192, 132, 252, 0.5);
@@ -2436,8 +2442,15 @@ body,
 .bottom-hud.combat-mode-active .hero-card .hero-title,
 .bottom-hud.combat-mode-active .hero-card .attr-row,
 .bottom-hud.combat-mode-active .hero-card [data-action='use-campfire'],
+.bottom-hud.combat-mode-active .hero-card [data-action='toggle-stealth'],
 .bottom-hud.combat-mode-active .hero-card [data-action='spawn-npc'] {
   display: none;
+}
+
+.hud-btn.stealth-active {
+  background: rgba(67, 56, 202, 0.42);
+  border-color: #818cf8;
+  color: #e0e7ff;
 }
 
 .bottom-hud.combat-mode-active .hero-card .hero-details {
@@ -2508,9 +2521,161 @@ body,
 }
 
 .combat-tactical-bar.enemy-turn .combat-primary-deck,
-.combat-tactical-bar.enemy-turn .combat-veteran-drawer {
+.combat-tactical-bar.enemy-turn .combat-veteran-drawer,
+.combat-tactical-bar.enemy-turn .combat-quick-belt {
   opacity: 0.48;
   pointer-events: none;
+}
+
+/* 3A. Quick-Use Consumables & Throwables Belt (4 slots: [4][5][6][7]) */
+.combat-quick-belt {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(229, 189, 104, 0.14);
+}
+
+.belt-slot-card {
+  background: rgba(20, 26, 38, 0.9);
+  border: 1px solid rgba(196, 158, 84, 0.28);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: var(--text-main);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  min-width: 0;
+  transition: transform 0.1s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.belt-slot-card.empty {
+  cursor: default;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(12, 16, 24, 0.52);
+  opacity: 0.55;
+}
+
+.bs-empty-label {
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.belt-slot-card.cat-heal {
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.belt-slot-card.cat-remedy {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.belt-slot-card.cat-buff {
+  border-color: rgba(251, 191, 36, 0.42);
+}
+
+.belt-slot-card.cat-throwable {
+  border-color: rgba(248, 113, 113, 0.44);
+}
+
+.belt-slot-card:hover:not(.disabled):not(.empty) {
+  transform: translateY(-1px);
+  border-color: var(--gold-accent);
+  background: rgba(34, 42, 60, 0.96);
+}
+
+.belt-slot-card:focus-visible {
+  outline: 2px solid rgba(246, 211, 139, 0.7);
+  outline-offset: 2px;
+}
+
+.belt-slot-card.disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.bs-top,
+.bs-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bs-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.bs-name kbd,
+.bs-key kbd {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: #f4dfba;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0 3px;
+  border-radius: 3px;
+  border: 1px solid rgba(229, 189, 104, 0.32);
+  flex-shrink: 0;
+}
+
+.bs-qty {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #cbd5e1;
+  flex-shrink: 0;
+}
+
+.bs-summary {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.belt-slot-card.cat-heal .bs-summary {
+  color: #86efac;
+}
+
+.belt-slot-card.cat-remedy .bs-summary {
+  color: #7dd3fc;
+}
+
+.belt-slot-card.cat-buff .bs-summary {
+  color: #fde68a;
+}
+
+.belt-slot-card.cat-throwable .bs-summary {
+  color: #fca5a5;
+}
+
+.bs-ap {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #38bdf8;
+  flex-shrink: 0;
 }
 
 .combat-ap-bar {
