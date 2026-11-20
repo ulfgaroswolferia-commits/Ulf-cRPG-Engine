@@ -76,18 +76,19 @@ body,
 /* Top Bar */
 .top-bar {
   position: absolute;
-  top: 12px;
+  top: 10px;
   left: 16px;
   right: 16px;
-  height: 54px;
+  height: 42px;
   background: var(--bg-obsidian);
   border: 1px solid var(--border-brass);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+  gap: 12px;
+  padding: 0 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(8px);
   overflow-x: auto;
   overflow-y: hidden;
@@ -101,38 +102,40 @@ body,
 .brand-block {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 9px;
   flex-shrink: 0;
   min-width: 0;
 }
 
 .brand-crest {
-  font-size: 22px;
+  font-size: 18px;
   color: var(--gold-accent);
 }
 
 .world-title {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13.5px;
+  line-height: 1.15;
   color: var(--gold-accent);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .world-subtitle {
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.15;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 380px;
+  max-width: 340px;
 }
 
 .camera-compass-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
@@ -142,11 +145,58 @@ body,
   color: var(--text-primary);
   border: 1px solid rgba(196, 158, 84, 0.3);
   border-radius: 5px;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 11px;
   font-family: var(--font-mono);
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.dev-switcher-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding-left: 7px;
+  border-left: 1px solid rgba(196, 158, 84, 0.22);
+}
+
+.dev-toggle-btn {
+  background: rgba(24, 29, 42, 0.92);
+  color: #9aa7bf;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dev-toggle-btn:hover,
+.dev-toggle-btn.active {
+  color: var(--gold-accent);
+  border-color: var(--gold-accent);
+  background: rgba(196, 158, 84, 0.16);
+}
+
+.dev-scene-select {
+  background: #121722;
+  color: #f3e6cc;
+  border: 1px solid var(--border-brass);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+
+.dev-scene-select:focus {
+  border-color: var(--gold-accent);
 }
 
 .compass-btn:hover,
@@ -309,14 +359,14 @@ body,
   background: var(--bg-panel);
   border: 1px solid var(--border-brass);
   border-radius: 8px;
-  padding: 9px 12px;
-  max-width: 395px;
+  padding: 8px 10px;
+  max-width: 360px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
 }
 
 .portrait-frame {
-  width: 62px;
-  height: 86px;
+  width: 56px;
+  height: 78px;
   background: radial-gradient(circle at 50% 35%, #253048, #0c1018);
   border: 1px solid var(--gold-accent);
   border-radius: 6px;
@@ -329,8 +379,8 @@ body,
 }
 
 .hero-portrait-img {
-  width: 56px;
-  height: 84px;
+  width: 52px;
+  height: 76px;
   image-rendering: pixelated;
 }
 
@@ -341,7 +391,7 @@ body,
   right: 0;
   background: rgba(8, 10, 15, 0.88);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 9px;
   text-align: center;
   padding: 1px 0;
   color: var(--gold-accent);
@@ -351,41 +401,95 @@ body,
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.hero-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   min-width: 0;
 }
 
 .hero-name {
   font-family: var(--font-display);
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--gold-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.hero-title {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  margin-bottom: 4px;
+.hero-meta-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-.attr-row {
+.hero-lvl-pill,
+.hero-purse-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(12, 16, 24, 0.82);
+  border: 1px solid rgba(196, 158, 84, 0.3);
+  color: #e9d9b4;
+  white-space: nowrap;
+}
+
+.hero-vitals-row {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-vitals-row .hero-combat-hp-track {
+  flex: 1;
+  margin: 0;
+  height: 16px;
+}
+
+.hero-combat-hp-track.is-low .hero-combat-hp-fill {
+  background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
+}
+
+.hero-ap-pill {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--text-muted);
-  background: rgba(8, 10, 16, 0.65);
-  padding: 4px 7px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(10, 18, 30, 0.88);
+  border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 4px;
-  margin-bottom: 6px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.attr-row strong {
-  color: #fff;
+.hero-xp-track {
+  height: 3px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hero-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c49e54 0%, #f6d38b 100%);
+  transition: width 0.25s ease;
 }
 
 .quick-actions {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
@@ -394,11 +498,23 @@ body,
   color: var(--text-primary);
   border: 1px solid var(--border-brass);
   border-radius: 5px;
-  padding: 5px 9px;
-  font-size: 11.5px;
+  padding: 4px 7px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.hud-btn.hud-btn-icon {
+  padding: 4px 6px;
+}
+
+.hud-btn.is-levelup {
+  border-color: #f5c451;
+  background: linear-gradient(180deg, rgba(164, 122, 42, 0.45) 0%, rgba(92, 66, 22, 0.6) 100%);
+  color: #fff6d6;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(245, 196, 81, 0.35);
 }
 
 .hud-btn:hover,
@@ -2899,36 +3015,70 @@ body,
 
 /* Compact Aimed Shot Toggle */
 .combat-util-btn.expert-toggle {
-  flex: 0 0 50px;
-  background: rgba(24, 31, 46, 0.94);
+  flex: 0 0 68px;
+  background: linear-gradient(180deg, rgba(28, 35, 50, 0.94) 0%, rgba(17, 22, 33, 0.96) 100%);
   border: 1px solid rgba(196, 158, 84, 0.4);
   color: #e5d8bd;
   border-radius: 7px;
-  padding: 5px 4px;
+  padding: 6px 5px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  gap: 5px;
+  transition: transform 0.12s ease, background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.combat-util-btn.expert-toggle .et-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--gold-accent);
+  transition: transform 0.14s ease, color 0.14s ease;
 }
 
 .combat-util-btn.expert-toggle .et-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   font-size: 10.5px;
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.combat-util-btn.expert-toggle .et-arrow {
+.combat-util-btn.expert-toggle .et-label kbd {
+  padding: 1px 3.5px;
   font-size: 9px;
-  color: var(--gold-accent);
 }
 
-.combat-util-btn.expert-toggle:hover,
-.combat-util-btn.expert-toggle.active {
-  background: rgba(229, 189, 104, 0.2);
+.combat-util-btn.expert-toggle:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(44, 52, 70, 0.98) 0%, rgba(24, 30, 44, 0.98) 100%);
   border-color: var(--gold-accent);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.combat-util-btn.expert-toggle.active {
+  background: linear-gradient(180deg, rgba(64, 52, 28, 0.95) 0%, rgba(32, 26, 18, 0.97) 100%);
+  border-color: var(--gold-accent);
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(229, 189, 104, 0.35);
+}
+
+.combat-util-btn.expert-toggle.active .et-icon {
+  color: #ffe082;
+  transform: scale(1.06);
+}
+
+.combat-util-btn.expert-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Turn Controls Column */

@@ -131,27 +131,27 @@ describe('isoMath - 2:1 Isometric Projection & Elevation Raycasting', () => {
     expect(blockedByUiInner.direction).toBeNull();
     expect(blockedByUiInner.offsetDeltaX).toBe(0);
 
-    // Outer rim (x = 12, marginPx = 56): pans even if a side panel extends near the border
-    const outerRimOverUi = computeEdgePanState({
+    // Even near the outer border, hovering over interactive UI suppresses automatic edge panning
+    const overUiNearEdge = computeEdgePanState({
       pointerX: 12,
       pointerY: 360,
       viewportWidth: 1280,
       viewportHeight: 720,
-      marginPx: 56,
+      marginPx: 24,
       enabled: true,
       isPointerInside: true,
       isOverUi: true,
       forcedDirection: null
     });
-    expect(outerRimOverUi.direction).toBe('W');
-    expect(outerRimOverUi.offsetDeltaX).toBeGreaterThan(0);
+    expect(overUiNearEdge.direction).toBeNull();
+    expect(overUiNearEdge.offsetDeltaX).toBe(0);
 
     const forcedArrow = computeEdgePanState({
       pointerX: 8,
       pointerY: 360,
       viewportWidth: 1280,
       viewportHeight: 720,
-      marginPx: 56,
+      marginPx: 24,
       enabled: false,
       isPointerInside: true,
       isOverUi: true,
@@ -163,24 +163,36 @@ describe('isoMath - 2:1 Isometric Projection & Elevation Raycasting', () => {
     expect(forcedArrow.strength).toBe(1);
   });
 
-  it('activates smooth 360-degree circular ring panning around the entire screen perimeter', () => {
-    // A point in the upper-left circular ring sector (e.g. x=150, y=105 on 1280x720)
-    // is outside the old 48px rectangular strip (150 > 48 and 105 > 48),
-    // but lies in the outer elliptical ring of the screen!
-    const ringNW = computeEdgePanState({
+  it('activates tight cRPG edge panning strictly within marginPx and diagonally in corners', () => {
+    // Outside marginPx must NOT pan (no intrusive mid-screen ring)
+    const outsideMargin = computeEdgePanState({
       pointerX: 150,
       pointerY: 105,
       viewportWidth: 1280,
       viewportHeight: 720,
-      marginPx: 90,
+      marginPx: 24,
       enabled: true,
       isPointerInside: true,
       isOverUi: false,
       forcedDirection: null
     });
-    expect(ringNW.direction).toBe('NW');
-    expect(ringNW.offsetDeltaX).toBeGreaterThan(0);
-    expect(ringNW.offsetDeltaY).toBeGreaterThan(0);
-    expect(ringNW.strength).toBeGreaterThan(0);
+    expect(outsideMargin.direction).toBeNull();
+
+    // Inside top-left corner margin triggers diagonal NW
+    const cornerNW = computeEdgePanState({
+      pointerX: 6,
+      pointerY: 6,
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      marginPx: 24,
+      enabled: true,
+      isPointerInside: true,
+      isOverUi: false,
+      forcedDirection: null
+    });
+    expect(cornerNW.direction).toBe('NW');
+    expect(cornerNW.offsetDeltaX).toBeGreaterThan(0);
+    expect(cornerNW.offsetDeltaY).toBeGreaterThan(0);
+    expect(cornerNW.strength).toBeGreaterThan(0);
   });
 });

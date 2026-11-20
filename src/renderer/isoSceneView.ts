@@ -270,8 +270,8 @@ export class IsoSceneView {
   public cameraOffsetX = 0;
   public cameraOffsetY = 140;
   public edgePanEnabled = true;
-  public edgePanMarginPx = 96;
-  public edgePanSpeed = 520;
+  public edgePanMarginPx = 24;
+  public edgePanSpeed = 580;
   public activeEdgeDirection: EdgePanDirection | null = null;
   public forcedEdgeDirection: EdgePanDirection | null = null;
   public targetZoom = 1.0;
@@ -280,6 +280,7 @@ export class IsoSceneView {
   private isManualCameraPanning = false;
   private currentAppliedCursor = '';
   public hoveredWorldTile: { x: number; y: number; z: number } | null = null;
+  public isHighlightAltHeld = false;
   public lastBakeDurationMs = 1.2;
   public fps = 60;
 
@@ -1265,6 +1266,11 @@ export class IsoSceneView {
 
     window.addEventListener('keydown', (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+      if (e.key === 'Alt') {
+        e.preventDefault();
+        this.isHighlightAltHeld = true;
+        return;
+      }
       const k = e.key.toLowerCase();
       this.keysDown.add(k);
       if (k === 'q') {
@@ -1285,6 +1291,9 @@ export class IsoSceneView {
     }, { signal });
 
     window.addEventListener('keyup', (e) => {
+      if (e.key === 'Alt') {
+        this.isHighlightAltHeld = false;
+      }
       this.keysDown.delete(e.key.toLowerCase());
     }, { signal });
 
@@ -1421,6 +1430,7 @@ export class IsoSceneView {
       this.isPointerInsideViewport = false;
       this.forcedEdgeDirection = null;
       this.keysDown.clear();
+      this.isHighlightAltHeld = false;
     }, { signal });
   }
 
@@ -2420,6 +2430,40 @@ export class IsoSceneView {
       }
     }
 
+    // 2b. Highlight exit_path travel zones directly on the ground across the entire exit footprint
+    if (this.bufferMode !== 'depth_dag') {
+      const pulse = 0.5 + 0.5 * Math.sin(this.elapsedSeconds * 3.4);
+      for (const prop of this.game.map.props) {
+        if (prop.kind !== 'exit_path') continue;
+        const fp = rotateFootprint(prop.x, prop.y, prop.sizeX, prop.sizeY, mapW, mapH, this.rotation);
+        const pTop = gridToScreen(fp.rx, fp.ry, prop.z);
+        const pRight = gridToScreen(fp.rx + fp.width, fp.ry, prop.z);
+        const pBottom = gridToScreen(fp.rx + fp.width, fp.ry + fp.height, prop.z);
+        const pLeft = gridToScreen(fp.rx, fp.ry + fp.height, prop.z);
+
+        // Luminous amber travel-zone carpet covering the full exit width & depth
+        this.cursorAndPathGraphics
+          .poly([
+            pTop.x, pTop.y,
+            pRight.x, pRight.y,
+            pBottom.x, pBottom.y,
+            pLeft.x, pLeft.y
+          ])
+          .fill({ color: 0xffb300, alpha: 0.22 + 0.14 * pulse })
+          .stroke({ color: 0xffe082, width: 2.6, alpha: 0.72 + 0.24 * pulse });
+
+        // Individual exit tile diamonds + subtle glowing center chevrons
+        for (let dy = 0; dy < fp.height; dy++) {
+          for (let dx = 0; dx < fp.width; dx++) {
+            const c = gridToScreen(fp.rx + dx + 0.5, fp.ry + dy + 0.5, prop.z);
+            this.cursorAndPathGraphics
+              .ellipse(c.x, c.y, 18 + pulse * 4, 9 + pulse * 2)
+              .stroke({ color: 0xfff176, width: 1.6, alpha: 0.55 + 0.3 * pulse });
+          }
+        }
+      }
+    }
+
     // 3. Build 3D Bounding Boxes for Props and Characters & Run Topological DAG Sorter
     type RenderableNode = DepthBox3D & {
       kind: 'prop' | 'actor';
@@ -2644,7 +2688,15 @@ export class IsoSceneView {
             prop.kind === 'exit_path' ||
             prop.kind === 'travel_signpost' ||
             (prop.kind === 'market_stall' && !prop.isOpen) ||
-            (prop.kind === 'ground_loot' && !prop.isOpen);
+            (prop.kind === 'ground_loot' && !prop.isOpen) ||
+            (this.isHighlightAltHeld &&
+              (prop.interactive ||
+                prop.kind === 'chest' ||
+                prop.kind === 'slavic_well' ||
+                prop.kind === 'door' ||
+                prop.kind === 'market_stall' ||
+                prop.kind === 'wildflower_patch' ||
+                prop.kind === 'berry_bush'));
 
           if (showInteractiveHint && this.bufferMode !== 'depth_dag') {
             const styleKey =
@@ -2655,18 +2707,27 @@ export class IsoSceneView {
                   : 'prop_default';
             const label = this.displayPool.text(prop.name, styleKey, () => ({
               fontFamily: 'Inter, sans-serif',
-              fontSize: 11,
-              fontWeight: '600',
+              fontSize: prop.kind === 'exit_path' ? 13 : 11,
+              fontWeight: prop.kind === 'exit_path' ? '700' : '600',
               fill:
                 prop.kind === 'campfire'
                   ? 0xffb74d
                   : prop.kind === 'exit_path'
-                    ? 0xff7043
+                    ? 0xffe082
                     : 0xffe082,
-              stroke: { color: 0x06080c, width: 3.2 }
+              stroke: { color: 0x06080c, width: prop.kind === 'exit_path' ? 4.0 : 3.2 }
             }));
             label.anchor.set(0.5, 1);
-            label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+            if (prop.kind === 'exit_path') {
+              const centerScr = gridToScreen(
+                fp.rx + fp.width * 0.5,
+                fp.ry + fp.height * 0.5,
+                prop.z
+              );
+              label.position.set(centerScr.x, centerScr.y - 84);
+            } else {
+              label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+            }
             this.debugOverlayContainer.addChild(label);
           }
 
@@ -2933,6 +2994,7 @@ export class IsoSceneView {
             }
           } else if (
             isHovered ||
+            this.isHighlightAltHeld ||
             actor.dialogueId ||
             actor.combat?.isHostile ||
             this.bufferMode === 'depth_dag'

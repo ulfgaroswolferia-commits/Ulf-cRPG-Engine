@@ -1485,6 +1485,193 @@ export function generatePropPbrBuffers(
         );
       }
     }
+  } else if (kind === 'training_dummy') {
+    const v = ((variant % 3) + 3) % 3;
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 26, 13);
+
+    // Cross-timber base stand
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY + 1,
+      24,
+      12,
+      5,
+      { r: 122, g: 86, b: 48 },
+      { r: 86, g: 58, b: 32 },
+      0.78,
+      0.06
+    );
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 2,
+      10,
+      5,
+      6,
+      { r: 108, g: 76, b: 42 },
+      { r: 78, g: 52, b: 28 },
+      0.78,
+      0.06
+    );
+
+    if (v === 1) {
+      // Variant 1: Spear-thrusting pell post (słup do pchnięć włócznią)
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 6,
+        11,
+        6,
+        58,
+        { r: 146, g: 104, b: 60 },
+        { r: 106, g: 74, b: 42 },
+        0.76,
+        0.05
+      );
+      // Rope wrapping bands & target ring
+      for (let dy = -48; dy <= -20; dy++) {
+        for (let dx = -7; dx <= 7; dx++) {
+          const px = baseAnchorPxX + dx;
+          const py = baseAnchorPxY + dy;
+          const isTarget = Math.hypot(dx, dy + 35) <= 6.2;
+          const isBullseye = Math.hypot(dx, dy + 35) <= 2.6;
+          const isRope = (dy % 3 === 0 || Math.abs(dy + 34) <= 10) && Math.abs(dx) <= 6;
+          if (!isTarget && !isRope) continue;
+          const col = isBullseye
+            ? { r: 186, g: 46, b: 38 }
+            : isTarget
+              ? { r: 224, g: 204, b: 156 }
+              : { r: 184, g: 152, b: 96 };
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            px,
+            py,
+            col,
+            0.95 - Math.abs(dx) * 0.04,
+            dx / 8,
+            -0.25,
+            0.84,
+            0.04
+          );
+        }
+      }
+    } else {
+      // Variants 0 & 2: Classic straw & timber fencing dummy (kukła treningowa)
+      // Central wooden spine post
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 5,
+        7,
+        4,
+        54,
+        { r: 126, g: 88, b: 48 },
+        { r: 88, g: 60, b: 32 },
+        0.78,
+        0.05
+      );
+      // Horizontal wooden crossbar arms
+      for (let ax = -22; ax <= 22; ax++) {
+        for (let ay = -42; ay <= -37; ay++) {
+          const isTop = ay <= -40;
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + ax,
+            baseAnchorPxY + ay,
+            isTop ? { r: 152, g: 112, b: 64 } : { r: 108, g: 76, b: 42 },
+            0.95 - Math.abs(ax) * 0.008,
+            0,
+            isTop ? -0.6 : 0.2,
+            0.78,
+            0.05
+          );
+        }
+      }
+      // Stuffed straw / burlap torso barrel
+      for (let ty = -46; ty <= -18; ty++) {
+        const halfW = ty < -40 || ty > -22 ? 8 : 10;
+        for (let tx = -halfW; tx <= halfW; tx++) {
+          const edge = Math.abs(tx) / halfW;
+          const isRopeBelt = ty === -31 || ty === -30 || ty === -22 || ty === -43;
+          const strawGrain = ((tx * 7 + ty * 13) & 3) * 0.04;
+          const col = isRopeBelt
+            ? { r: 118, g: 82, b: 46 }
+            : { r: 204, g: 174, b: 112 };
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + tx,
+            baseAnchorPxY + ty,
+            col,
+            1.02 - edge * 0.32 + strawGrain,
+            (tx / halfW) * 0.75,
+            -0.2,
+            0.86,
+            0.03
+          );
+        }
+      }
+      // Straw sack head
+      for (let hy = -61; hy <= -47; hy++) {
+        for (let hx = -7; hx <= 7; hx++) {
+          const d = Math.hypot(hx / 7, (hy + 54) / 7);
+          if (d > 1.0) continue;
+          const isHelm = v === 2 && hy <= -54;
+          const col = isHelm
+            ? { r: 122, g: 130, b: 142 }
+            : { r: 212, g: 184, b: 126 };
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + hx,
+            baseAnchorPxY + hy,
+            col,
+            1.04 - d * 0.34,
+            hx / 7,
+            (hy + 54) / 7,
+            isHelm ? 0.36 : 0.85,
+            isHelm ? 0.72 : 0.03
+          );
+        }
+      }
+      // Variant 2: Round wooden training shield mounted on right arm
+      if (v === 2) {
+        const shX = baseAnchorPxX + 16;
+        const shY = baseAnchorPxY - 37;
+        for (let sy = -10; sy <= 10; sy++) {
+          for (let sx = -9; sx <= 9; sx++) {
+            const d = Math.hypot(sx / 9, sy / 10);
+            if (d > 1.0) continue;
+            const isRim = d > 0.78;
+            const isBoss = d < 0.28;
+            const col = isRim || isBoss
+              ? { r: 138, g: 146, b: 158 }
+              : { r: 156, g: 76, b: 48 };
+            writePbrPixel(
+              albedoRGBA,
+              normalMaterialRGBA,
+              width,
+              height,
+              shX + sx,
+              shY + sy,
+              col,
+              1.05 - d * 0.3,
+              sx / 9,
+              sy / 10,
+              isRim || isBoss ? 0.35 : 0.72,
+              isRim || isBoss ? 0.75 : 0.1
+            );
+          }
+        }
+      }
+    }
   } else if (kind === 'travel_signpost') {
     renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 26, 13);
     // Stone base cairn
@@ -2003,40 +2190,88 @@ export function generatePropPbrBuffers(
         0.05
       );
     } else if (kind === 'exit_path') {
-      renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 56, 26);
-      // Frontier wooden gateposts + crossbeam signpost
+      renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 68, 32);
+      // Stone plinths for both gateposts
       renderIsoPrism(
-        baseAnchorPxX - 18,
-        baseAnchorPxY,
+        baseAnchorPxX - 24,
+        baseAnchorPxY + 2,
+        22,
+        11,
         14,
-        7,
-        58,
-        { r: 138, g: 98, b: 54 },
-        { r: 98, g: 68, b: 38 },
-        0.65,
-        0.2
+        { r: 126, g: 130, b: 138 },
+        { r: 88, g: 92, b: 98 },
+        0.72,
+        0.12
       );
       renderIsoPrism(
-        baseAnchorPxX + stepDx + 14,
-        baseAnchorPxY + stepDy,
+        baseAnchorPxX + stepDx + 20,
+        baseAnchorPxY + stepDy + 2,
+        22,
+        11,
         14,
-        7,
-        58,
-        { r: 138, g: 98, b: 54 },
-        { r: 98, g: 68, b: 38 },
-        0.65,
-        0.2
+        { r: 126, g: 130, b: 138 },
+        { r: 88, g: 92, b: 98 },
+        0.72,
+        0.12
+      );
+      // Heavy timber gateposts spanning the entire 2-tile exit
+      renderIsoPrism(
+        baseAnchorPxX - 24,
+        baseAnchorPxY - 10,
+        16,
+        8,
+        74,
+        { r: 148, g: 104, b: 56 },
+        { r: 102, g: 70, b: 38 },
+        0.68,
+        0.15
       );
       renderIsoPrism(
-        baseAnchorPxX + stepDx * 0.5,
-        baseAnchorPxY + stepDy * 0.5 - 42,
-        42,
+        baseAnchorPxX + stepDx + 20,
+        baseAnchorPxY + stepDy - 10,
+        16,
+        8,
+        74,
+        { r: 148, g: 104, b: 56 },
+        { r: 102, g: 70, b: 38 },
+        0.68,
+        0.15
+      );
+      // Heavy timber arch crossbeam + rooflet cap spanning the gate
+      renderIsoPrism(
+        baseAnchorPxX + stepDx * 0.5 - 2,
+        baseAnchorPxY + stepDy * 0.5 - 66,
+        72,
+        18,
         14,
-        10,
-        { r: 164, g: 118, b: 64 },
-        { r: 118, g: 82, b: 44 },
-        0.58,
-        0.25
+        { r: 168, g: 120, b: 64 },
+        { r: 118, g: 82, b: 42 },
+        0.62,
+        0.18
+      );
+      // Shingled protective ridge on top of gate crossbeam
+      renderIsoPrism(
+        baseAnchorPxX + stepDx * 0.5 - 2,
+        baseAnchorPxY + stepDy * 0.5 - 78,
+        76,
+        20,
+        9,
+        { r: 132, g: 92, b: 52 },
+        { r: 92, g: 64, b: 36 },
+        0.74,
+        0.1
+      );
+      // Hanging golden-rimmed road emblem plaque under the arch
+      renderIsoPrism(
+        baseAnchorPxX + stepDx * 0.5 - 2,
+        baseAnchorPxY + stepDy * 0.5 - 52,
+        28,
+        8,
+        12,
+        { r: 214, g: 172, b: 84 },
+        { r: 158, g: 116, b: 48 },
+        0.48,
+        0.35
       );
     } else {
       renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 58, 28);

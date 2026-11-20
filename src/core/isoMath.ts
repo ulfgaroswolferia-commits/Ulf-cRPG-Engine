@@ -130,8 +130,14 @@ function angleToCompassDirection(nx: number, ny: number): EdgePanDirection {
 }
 
 /**
- * Computes progressive camera 360-degree circular ring & edge-panning vector
- * from pointer coordinates or an explicitly hovered/pressed edge arrow button.
+ * Computes cRPG-standard edge-panning camera vector from pointer coordinates
+ * or an explicitly hovered/pressed edge arrow button.
+ *
+ * Follows classic isometric cRPG UX (Baldur's Gate, Pillars of Eternity, Pathfinder, Divinity):
+ * - Triggers strictly within a tight strip (`marginPx`, typically ~20–28px) along viewport edges.
+ * - Never triggers when hovering interactive UI panels/buttons (`isOverUi`).
+ * - Uses clean axial edge vectors (N/S/E/W along edges, smooth diagonal in corners)
+ *   with a progressive ease-in ramp toward the outer pixel border.
  */
 export function computeEdgePanState(input: EdgePanInput): EdgePanResult {
   if (input.forcedDirection) {
@@ -147,6 +153,7 @@ export function computeEdgePanState(input: EdgePanInput): EdgePanResult {
   if (
     !input.enabled ||
     !input.isPointerInside ||
+    input.isOverUi ||
     input.viewportWidth <= 0 ||
     input.viewportHeight <= 0 ||
     input.marginPx <= 0
@@ -163,64 +170,38 @@ export function computeEdgePanState(input: EdgePanInput): EdgePanResult {
     return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
   }
 
-  const outerRimPx = Math.min(28, input.marginPx * 0.45);
-  const inOuterRim =
-    input.pointerX <= outerRimPx ||
-    input.pointerX >= input.viewportWidth - outerRimPx ||
-    input.pointerY <= outerRimPx ||
-    input.pointerY >= input.viewportHeight - outerRimPx;
-
-  if (input.isOverUi && !inOuterRim) {
-    return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
-  }
-
-  const cx = input.viewportWidth * 0.5;
-  const cy = input.viewportHeight * 0.5;
-  const nx = (input.pointerX - cx) / Math.max(1, cx); // -1 (West) .. +1 (East)
-  const ny = (input.pointerY - cy) / Math.max(1, cy); // -1 (North) .. +1 (South)
-  const radialDist = Math.hypot(nx, ny);
-
   const m = input.marginPx;
-  let edgeProgressX = 0;
-  let edgeProgressY = 0;
+  let panX = 0; // +1 = camera pans West (world moves right), -1 = East
+  let panY = 0; // +1 = camera pans North (world moves down), -1 = South
 
   if (input.pointerX < m) {
-    edgeProgressX = 1 - input.pointerX / m;
+    panX = 1 - input.pointerX / m;
   } else if (input.pointerX > input.viewportWidth - m) {
-    edgeProgressX = 1 - (input.viewportWidth - input.pointerX) / m;
+    panX = -(1 - (input.viewportWidth - input.pointerX) / m);
   }
 
   if (input.pointerY < m) {
-    edgeProgressY = 1 - input.pointerY / m;
+    panY = 1 - input.pointerY / m;
   } else if (input.pointerY > input.viewportHeight - m) {
-    edgeProgressY = 1 - (input.viewportHeight - input.pointerY) / m;
+    panY = -(1 - (input.viewportHeight - input.pointerY) / m);
   }
 
-  const edgeProgress = Math.max(edgeProgressX, edgeProgressY);
-
-  // Elliptical / circular ring threshold around the entire screen
-  const minHalfDim = Math.min(cx, cy);
-  const ringThreshold = Math.max(0.68, 1 - (m * 1.45) / Math.max(1, minHalfDim));
-  const radialProgress =
-    radialDist > ringThreshold
-      ? Math.min(1, (radialDist - ringThreshold) / Math.max(0.12, 1.08 - ringThreshold))
-      : 0;
-
-  const combinedProgress = Math.max(edgeProgress, radialProgress);
-  if (combinedProgress <= 0.001 || radialDist <= 0.001) {
+  const edgeProgress = Math.max(Math.abs(panX), Math.abs(panY));
+  if (edgeProgress <= 0.001) {
     return { direction: null, offsetDeltaX: 0, offsetDeltaY: 0, strength: 0 };
   }
 
-  // Smooth progressive ramp (gentle at inner ring boundary, full speed at outer edge)
-  const smoothRamp = 0.22 + 0.78 * Math.pow(combinedProgress, 1.25);
+  // Smooth progressive ramp: gentle engagement at margin boundary, full speed at screen edge
+  const smoothRamp = 0.25 + 0.75 * Math.pow(edgeProgress, 1.35);
   const strength = Math.min(1, Math.round(smoothRamp * 10000) / 10000);
 
-  // Continuous 360-degree radial camera movement vector toward cursor
-  const unitX = -nx / radialDist;
-  const unitY = -ny / radialDist;
-  const offsetDeltaX = unitX * strength;
-  const offsetDeltaY = unitY * strength;
-  const direction = angleToCompassDirection(nx, ny);
+  const len = Math.hypot(panX, panY) || 1;
+  const offsetDeltaX = (panX / len) * strength;
+  const offsetDeltaY = (panY / len) * strength;
+
+  // Map axial/diagonal edge vector to 8-way compass direction
+  // Note: panX > 0 means cursor is at West edge, panY > 0 means cursor is at North edge
+  const direction = angleToCompassDirection(-panX, -panY);
 
   return {
     direction,

@@ -183,24 +183,84 @@ export function resolveCharacterArchetypeTag(recipe: CharacterVisualRecipe): str
   ) {
     return 'wraith';
   }
-  if (id.includes('wislawa') || name.includes('wisława') || name.includes('zielarka')) {
+  if (
+    id.includes('wislawa') ||
+    id.includes('ragnoslawa') ||
+    id.includes('zona_') ||
+    id.includes('corka_') ||
+    name.includes('wisława') ||
+    name.includes('zielarka') ||
+    name.includes('ragnosława') ||
+    name.includes('żona') ||
+    name.includes('córka')
+  ) {
     return 'peasant_woman';
-  }
-  if (id.includes('sambor') || name.includes('sambor') || name.includes('kmieć')) {
-    return 'peasant_man';
   }
   if (
     id.includes('dobromir') ||
+    id.includes('dobrogost') ||
     id.includes('bogusz') ||
-    id.includes('gniewosz') ||
+    (id.includes('gniewosz') && !name.includes('pomocnik') && !(recipe.title || '').toLowerCase().includes('drwal')) ||
+    id.includes('ostromir') ||
+    id.includes('wrzosek') ||
+    id.includes('kramarz') ||
     name.includes('kupiec') ||
     name.includes('kramarz') ||
+    name.includes('kwatermistrz') ||
+    name.includes('karczmarz') ||
     name.includes('paser')
   ) {
     return 'trader';
   }
-  if (id.includes('gniewko') || name.includes('gniewko') || name.includes('starosta')) {
+  if (
+    id.includes('kurier') ||
+    id.includes('gniewko') ||
+    id.includes('istota') ||
+    name.includes('gniewko') ||
+    name.includes('starosta') ||
+    name.includes('kurier') ||
+    name.includes('istota')
+  ) {
     return 'noble';
+  }
+  if (
+    id.includes('gnieworad') ||
+    id.includes('radogost') ||
+    id.includes('skarimir') ||
+    id.includes('wszebor') ||
+    id.includes('wartownik') ||
+    id.includes('zwiadowc') ||
+    name.includes('mistrz') ||
+    name.includes('instruktor') ||
+    name.includes('komendant') ||
+    name.includes('wartownik') ||
+    name.includes('rycerz') ||
+    name.includes('strażnik')
+  ) {
+    return 'knight';
+  }
+  if (
+    id.includes('sambor') ||
+    id.includes('wojmir') ||
+    id.includes('drwal') ||
+    id.includes('ostap') ||
+    id.includes('kowal') ||
+    id.includes('szkarad') ||
+    id.includes('pielgrzym') ||
+    name.includes('sambor') ||
+    name.includes('kmieć') ||
+    name.includes('wojmir') ||
+    name.includes('młynarz') ||
+    name.includes('kowal') ||
+    name.includes('drwal') ||
+    name.includes('rusznikarz') ||
+    name.includes('pielgrzym')
+  ) {
+    return 'peasant_man';
+  }
+  // Any other non-hostile standing NPC defaults to a standing idle pose rather than frozen mid-sprint
+  if (id.startsWith('npc_')) {
+    return recipe.equipment.mainHand ? 'knight' : 'peasant_man';
   }
   return '';
 }
@@ -1823,6 +1883,21 @@ function tryBakeFromLoadedCharacterSheets(
     singleArchetypeSheet = getSheet('npc_noble');
     singleRoughness = 0.55;
     singleMetallic = 0.24;
+    if (recipe.equipment.cloak === 'cloak_crimson_mantle' || (recipe.id || '').includes('kurier')) {
+      singleTint = { r: 196, g: 58, b: 58 };
+      singleTintStrength = 0.36;
+    } else if ((recipe.id || '').includes('istota')) {
+      singleTint = { r: 108, g: 92, b: 178 };
+      singleTintStrength = 0.52;
+    }
+  } else if (tag === 'knight') {
+    singleArchetypeSheet = getSheet('npc_knight');
+    singleRoughness = 0.48;
+    singleMetallic = 0.34;
+    if (layers.torsoItem.primaryColor) {
+      singleTint = layers.torsoItem.primaryColor;
+      singleTintStrength = 0.16;
+    }
   }
 
   if (singleArchetypeSheet) {
