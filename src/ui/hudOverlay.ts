@@ -1695,14 +1695,14 @@ export class HudOverlay {
           class="dev-toggle-btn ${this.isDevSelectorOpen ? 'active' : ''}"
           data-action="toggle-dev-selector"
           aria-expanded="${this.isDevSelectorOpen ? 'true' : 'false'}"
-          title="Menu deweloperskie: szybkie przełączanie aktu / sceny"
+          title="DEV: teleportuj do dowolnej lokacji bez uruchamiania jej wydarzeń; postać i stan świata pozostają bez zmian"
         >
           dev
         </button>
         ${
           this.isDevSelectorOpen
             ? `
-          <select class="dev-scene-select" data-action="dev-scene-select" aria-label="Wybierz akt lub scenę">
+          <select class="dev-scene-select" data-action="dev-scene-select" aria-label="Wybierz lokację developerską">
             ${devScenes
               .map(
                 (sc) =>
@@ -2094,7 +2094,7 @@ export class HudOverlay {
             ${(['N', 'E', 'S', 'W'] as const)[this.scene.rotation] ?? 'N'}
           </button>
           <button type="button" class="compass-btn" data-action="rot-cw" title="Obróć kamerę o +90° [E]">E ⟳</button>
-          ${devSelectorHtml}
+          ${this.devMode ? devSelectorHtml : ''}
         </div>
 
         ${telemetryOrControlsHtml}
