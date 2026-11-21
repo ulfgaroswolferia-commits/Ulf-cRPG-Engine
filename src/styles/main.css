@@ -4860,3 +4860,40 @@ body,
   line-height: 1.5;
   max-width: 270px;
 }
+
+@media (max-width: 680px) {
+  #hud-root .bottom-hud .chronicle-log:not(.expanded) {
+    box-sizing: border-box;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 4px;
+    margin-left: auto;
+    justify-content: center;
+  }
+
+  #hud-root .bottom-hud .chronicle-log:not(.expanded) .log-header {
+    margin: 0;
+    justify-content: center;
+  }
+
+  #hud-root .bottom-hud .chronicle-log:not(.expanded) .log-header-title,
+  #hud-root .bottom-hud .chronicle-log:not(.expanded) .log-entries {
+    display: none;
+  }
+
+  #hud-root .bottom-hud .chronicle-log:not(.expanded) .chronicle-toggle-btn {
+    box-sizing: border-box;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  #hud-root .bottom-hud .chronicle-log:not(.expanded) .chronicle-toggle-btn::before {
+    content: '▤';
+    font-size: 18px;
+    line-height: 1;
+  }
+}

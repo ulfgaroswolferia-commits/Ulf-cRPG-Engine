@@ -1228,6 +1228,134 @@ export function generatePropPbrBuffers(
         }
       }
     }
+  } else if (kind === 'watermill_wheel') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 24, 12);
+    const wheelCenterY = baseAnchorPxY - 48;
+
+    // Oak axle and eight spokes, with enough width to stay readable at normal zoom.
+    renderIsoPrism(
+      baseAnchorPxX,
+      wheelCenterY,
+      46,
+      5,
+      7,
+      { r: 112, g: 72, b: 38 },
+      { r: 78, g: 48, b: 28 },
+      0.72,
+      0.08
+    );
+
+    for (let y = -40; y <= 40; y++) {
+      for (let x = -40; x <= 40; x++) {
+        const radius = Math.hypot(x, y);
+        if (radius < 32 || radius > 39) continue;
+        const grain = Math.sin(Math.atan2(y, x) * 16) * 0.08 + Math.sin(x * 0.42 + y * 0.17) * 0.035;
+        const rimColor = radius > 37 ? { r: 78, g: 48, b: 27 } : { r: 142, g: 96, b: 52 };
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          baseAnchorPxX + x,
+          wheelCenterY + y,
+          rimColor,
+          0.88 + grain,
+          x / 39,
+          y / 39,
+          0.76,
+          0.04
+        );
+      }
+    }
+
+    for (let spoke = 0; spoke < 8; spoke++) {
+      const angle = (spoke / 8) * Math.PI * 2;
+      const endX = Math.cos(angle) * 33;
+      const endY = Math.sin(angle) * 33;
+      const steps = Math.ceil(Math.hypot(endX, endY));
+      for (let step = 7; step <= steps; step++) {
+        const t = step / steps;
+        const px = baseAnchorPxX + Math.cos(angle) * 33 * t;
+        const py = wheelCenterY + Math.sin(angle) * 33 * t;
+        for (let thickness = -2; thickness <= 2; thickness++) {
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            px + Math.sin(angle) * thickness,
+            py - Math.cos(angle) * thickness,
+            thickness === -2 ? { r: 166, g: 116, b: 62 } : { r: 118, g: 76, b: 40 },
+            0.9,
+            Math.cos(angle),
+            -0.35,
+            0.8,
+            0.02
+          );
+        }
+      }
+    }
+
+    for (let y = -10; y <= 10; y++) {
+      for (let x = -10; x <= 10; x++) {
+        const radius = Math.hypot(x, y);
+        if (radius > 10) continue;
+        const hubColor = radius < 4 ? { r: 76, g: 82, b: 86 } : { r: 166, g: 112, b: 58 };
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          baseAnchorPxX + x,
+          wheelCenterY + y,
+          hubColor,
+          0.9,
+          x / 10,
+          y / 10,
+          0.6,
+          radius < 4 ? 0.62 : 0.04
+        );
+      }
+    }
+  } else if (kind === 'perched_crow') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 18, 9);
+    const bodyCenterOffsetY = -28;
+    const bodyColor = { r: 34, g: 39, b: 48 };
+    const featherColor = { r: 50, g: 59, b: 73 };
+    for (let y = -35; y <= -20; y++) {
+      for (let x = -12; x <= 14; x++) {
+        const body = ((x - 1) / 12) ** 2 + ((y - bodyCenterOffsetY) / 7) ** 2;
+        if (body <= 1) {
+          writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, body < 0.58 ? featherColor : bodyColor, 0.82, 0.12, -0.42, 0.72, 0.08);
+        }
+      }
+    }
+
+    // Beaked head, folded wing, tail, and legs make the silhouette read as a perched bird.
+    for (let y = -38; y <= -29; y++) {
+      for (let x = -17; x <= -8; x++) {
+        if (((x + 12) / 5) ** 2 + ((y + 34) / 4.5) ** 2 <= 1) {
+          writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, bodyColor, 0.88, -0.25, -0.4, 0.7, 0.06);
+        }
+      }
+    }
+    for (let x = -23; x <= -16; x++) {
+      const widthAtX = Math.max(0, Math.floor((x + 23) * 0.45));
+      for (let y = -35 - widthAtX; y <= -35 + widthAtX; y++) {
+        writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, { r: 186, g: 132, b: 52 }, 0.9, -0.4, -0.2, 0.5, 0.08);
+      }
+    }
+    for (let x = -3; x <= 10; x++) {
+      const y = bodyCenterOffsetY + 3 + Math.round((x + 3) * 0.3);
+      writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, y, featherColor, 0.84, 0, -0.3, 0.78, 0.04);
+      writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, y + 1, featherColor, 0.84, 0, -0.3, 0.78, 0.04);
+    }
+    for (const x of [-2, 5]) {
+      for (let y = baseAnchorPxY - 21; y <= baseAnchorPxY - 13; y++) {
+        writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, y, { r: 92, g: 62, b: 40 }, 0.84, 0, -0.4, 0.82, 0.02);
+      }
+    }
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 12, 24, 4, 4, { r: 112, g: 76, b: 44 }, { r: 78, g: 50, b: 30 }, 0.78, 0.06);
   } else if (kind === 'arcane_crystal') {
     renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 28, 14);
     const cColor = isOpen ? { r: 72, g: 232, b: 255 } : { r: 62, g: 84, b: 102 };
@@ -1482,6 +1610,69 @@ export function generatePropPbrBuffers(
           -0.25,
           0.78,
           0.05
+        );
+      }
+    }
+  } else if (kind === 'school_banner') {
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY + 1,
+      4,
+      3,
+      86,
+      { r: 146, g: 103, b: 57 },
+      { r: 91, g: 61, b: 35 },
+      0.76,
+      0.04
+    );
+    renderIsoPrism(
+      baseAnchorPxX + 17,
+      baseAnchorPxY - 84,
+      22,
+      3,
+      4,
+      { r: 184, g: 137, b: 70 },
+      { r: 117, g: 80, b: 42 },
+      0.68,
+      0.14
+    );
+
+    for (let fy = 0; fy <= 46; fy++) {
+      const wave = Math.round(Math.sin(fy * 0.17) * 2);
+      for (let fx = 0; fx <= 34; fx++) {
+        const fringeGap = fy > 41 && fx % 8 >= 5;
+        if (fringeGap) continue;
+
+        const px = baseAnchorPxX + 4 + fx + wave;
+        const py = baseAnchorPxY - 82 + fy;
+        const centerX = fx - 17;
+        const centerY = fy - 22;
+        const crossedSwords =
+          Math.abs(centerY) < 13 &&
+          (Math.abs(centerX - centerY * 0.48) < 1.6 ||
+            Math.abs(centerX + centerY * 0.48) < 1.6);
+        const centerMark = Math.abs(centerX) + Math.abs(centerY) <= 3;
+        const border = fx <= 1 || fx >= 33 || fy <= 1 || fy >= 44;
+        const gold = crossedSwords || centerMark || border;
+        const color = gold
+          ? { r: 218, g: 174, b: 83 }
+          : fx > 27
+            ? { r: 117, g: 25, b: 34 }
+            : { r: 158, g: 35, b: 43 };
+
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          px,
+          py,
+          color,
+          0.94 + Math.sin(fy * 0.11 + fx * 0.2) * 0.08,
+          wave / 3,
+          0.08,
+          0.9,
+          gold ? 0.18 : 0.03
         );
       }
     }

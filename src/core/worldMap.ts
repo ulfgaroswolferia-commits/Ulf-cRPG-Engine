@@ -47,7 +47,10 @@ export type PropKind =
   | 'dungeon_table' // 1x1 dungeon table
   | 'dungeon_support' // 1x1 mine timber support frame
   | 'dungeon_column' // 1x1 dungeon stone column
-  | 'training_dummy'; // 1x1 wooden & straw fencing/combat training dummy
+  | 'training_dummy' // 1x1 wooden & straw fencing/combat training dummy
+  | 'school_banner' // 1x1 crimson-and-gold school standard
+  | 'watermill_wheel' // 1x1 wooden wheel mounted beside a watermill
+  | 'perched_crow'; // 1x1 small crow perched on a broken beam or stone
 
 export interface TileCell {
   x: number;

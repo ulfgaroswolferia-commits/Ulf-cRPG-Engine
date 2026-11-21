@@ -463,7 +463,7 @@ export class IsoSceneView {
           this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 10.0);
           const zoomRatio = this.zoom / prevZoom;
           const cx = viewportW * 0.5;
-          const cy = viewportH * 0.46;
+          const cy = viewportH * 0.53;
           this.cameraOffsetX = cx - (cx - this.cameraOffsetX) * zoomRatio;
           this.cameraOffsetY = cy - (cy - this.cameraOffsetY) * zoomRatio;
         }
@@ -520,7 +520,7 @@ export class IsoSceneView {
           );
           const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
           const targetCamX = viewportW * 0.5 - pScr.x * this.zoom;
-          const targetCamY = viewportH * 0.46 - pScr.y * this.zoom;
+          const targetCamY = viewportH * 0.53 - pScr.y * this.zoom;
 
           const dist = Math.hypot(targetCamX - this.cameraOffsetX, targetCamY - this.cameraOffsetY);
           if (dist > 0.1) {
@@ -708,7 +708,13 @@ export class IsoSceneView {
         }
       }
 
-      const passableKinds: ReadonlyArray<PropKind> = ['wildflower_patch', 'ground_loot', 'exit_path'];
+      const passableKinds: ReadonlyArray<PropKind> = [
+        'wildflower_patch',
+        'ground_loot',
+        'exit_path',
+        'watermill_wheel',
+        'perched_crow'
+      ];
       const sightBlockingKinds: ReadonlyArray<PropKind> = [
         'wall_block',
         'pillar',
@@ -733,6 +739,8 @@ export class IsoSceneView {
         'market_stall',
         'slavic_shrine',
         'slavic_well',
+        'watermill_wheel',
+        'perched_crow',
         'travel_signpost',
         'watchtower',
         'dungeon_barrel',
@@ -1045,7 +1053,7 @@ export class IsoSceneView {
       (typeof window !== 'undefined' ? window.innerHeight : 0) ||
       720;
     this.cameraOffsetX = screenW * 0.5 - pScr.x * this.zoom;
-    this.cameraOffsetY = screenH * 0.46 - pScr.y * this.zoom;
+    this.cameraOffsetY = screenH * 0.53 - pScr.y * this.zoom;
     this.isManualCameraPanning = false;
     this.cameraVelX = 0;
     this.cameraVelY = 0;
@@ -2586,11 +2594,11 @@ export class IsoSceneView {
               // Dense inner contact AO anchoring prop to ground
               aoGfx
                 .ellipse(scr.x, scr.y, baseRx * 0.72, baseRy * 0.72)
-                .fill({ color: 0x010204, alpha: 0.58 });
+                .fill({ color: 0x010204, alpha: 0.13 });
               // Soft feathered outer ambient occlusion
               aoGfx
                 .ellipse(scr.x, scr.y, baseRx, baseRy)
-                .fill({ color: 0x030508, alpha: 0.28 });
+                .fill({ color: 0x030508, alpha: 0.05 });
 
               // Directional penumbra cast shadow for tall structures
               const isTall =
@@ -2626,7 +2634,7 @@ export class IsoSceneView {
                 }
                 aoGfx
                   .ellipse(scr.x + sdx * 0.65, scr.y + sdy * 0.65, baseRx * 1.08, baseRy * 1.08)
-                  .fill({ color: 0x020406, alpha: 0.36 });
+                  .fill({ color: 0x020406, alpha: 0.14 });
               }
 
               this.sortedObjectLayer.addChild(aoGfx);
@@ -2786,6 +2794,7 @@ export class IsoSceneView {
       });
     }
 
+    const actorNameLabelBounds: Array<{ left: number; top: number; right: number; bottom: number }> = [];
     const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
     for (const actor of allActors) {
       const isDead = Boolean(actor.combat && !actor.combat.isAlive);
@@ -2907,11 +2916,11 @@ export class IsoSceneView {
               // Layer 1: Dense tight contact shadow directly beneath feet
               shadowGfx
                 .ellipse(actorScrX, actorScrY + 1, 13, 6.5)
-                .fill({ color: 0x010204, alpha: 0.68 });
+                .fill({ color: 0x010204, alpha: 0.38 });
               // Layer 2: Directional penumbra cast shadow away from light
               shadowGfx
                 .ellipse(actorScrX + shadowOffsetX * 0.55, actorScrY + shadowOffsetY * 0.55, 20, 10)
-                .fill({ color: 0x030509, alpha: 0.42 });
+                .fill({ color: 0x030509, alpha: 0.18 });
 
               // Tactical Combat Stance indicator ring
               if (this.game.combatState.active) {
@@ -3012,6 +3021,11 @@ export class IsoSceneView {
           // Floating nameplate for story NPCs, Hostile Enemies, Dead Corpses, and Player
           const isHovered =
             this.hoveredWorldTile?.x === actor.tileX && this.hoveredWorldTile?.y === actor.tileY;
+          const nameAlreadyShownInMarker = Boolean(
+            actor.speechBubbleText &&
+              (actor.speechBubbleTimer ?? 0) > 0 &&
+              actor.speechBubbleText.includes(actor.recipe.name)
+          );
 
           if (isDead) {
             if (isHovered && this.bufferMode !== 'depth_dag') {
@@ -3035,7 +3049,7 @@ export class IsoSceneView {
           } else if (
             isHovered ||
             this.isHighlightAltHeld ||
-            actor.dialogueId ||
+            (actor.dialogueId && !nameAlreadyShownInMarker) ||
             actor.combat?.isHostile ||
             this.bufferMode === 'depth_dag'
           ) {
@@ -3084,7 +3098,41 @@ export class IsoSceneView {
               })
             );
             nameTag.anchor.set(0.5, 1);
-            nameTag.position.set(scr.x, scr.y - 79);
+            const candidateOffsets = [
+              { x: 0, y: -79 },
+              { x: 0, y: -105 },
+              { x: -28, y: -80 },
+              { x: 28, y: -80 },
+              { x: 0, y: -131 },
+              { x: -38, y: -106 },
+              { x: 38, y: -106 },
+              { x: 0, y: -157 }
+            ];
+            const labelPosition = candidateOffsets
+              .map(({ x, y }) => {
+                const left = scr.x + x - nameTag.width * 0.5 - 5;
+                const top = scr.y + y - nameTag.height - 4;
+                const right = scr.x + x + nameTag.width * 0.5 + 5;
+                const bottom = scr.y + y + 4;
+                const overlaps = actorNameLabelBounds.some(
+                  (placed) =>
+                    left < placed.right &&
+                    right > placed.left &&
+                    top < placed.bottom &&
+                    bottom > placed.top
+                );
+                return { x: scr.x + x, y: scr.y + y, left, top, right, bottom, overlaps };
+              })
+              .find((candidate) => !candidate.overlaps) ?? {
+              x: scr.x,
+              y: scr.y - 79,
+              left: scr.x - nameTag.width * 0.5 - 5,
+              top: scr.y - 79 - nameTag.height - 4,
+              right: scr.x + nameTag.width * 0.5 + 5,
+              bottom: scr.y - 79 + 4
+            };
+            actorNameLabelBounds.push(labelPosition);
+            nameTag.position.set(labelPosition.x, labelPosition.y);
             this.debugOverlayContainer.addChild(nameTag);
 
             // Tactical Hit Chance & Damage Preview when hovering a Hostile Enemy
