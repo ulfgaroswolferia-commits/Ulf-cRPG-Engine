@@ -262,6 +262,29 @@ export function resolveTravelSignpostDestination(
       };
 }
 
+export interface EnemyAiMovePlan {
+  targetTile: { x: number; y: number };
+  maxSteps?: number;
+  logMessage?: string;
+}
+
+export type EnemyAiAttackDecision =
+  | {
+      kind: 'attack';
+      mode: CombatAttackMode;
+      apCostOverride?: number;
+      damageRangeOverride?: [number, number];
+      labelOverride?: string;
+    }
+  | {
+      kind: 'special';
+      apCost: number;
+      execute: (rng: () => number) => void;
+    }
+  | {
+      kind: 'stop';
+    };
+
 export class CrpgGameState {
   public map!: IsometricWorldMap;
   public fov!: FovGridState;
@@ -308,6 +331,7 @@ export class CrpgGameState {
   private pendingEnemyCombatTurnIds: string[] = [];
   private currentEnemyTurnPhase: 'move' | 'pause_before_attack' | 'attack' | 'pause_after_attack' = 'move';
   private enemyTurnPhaseTimer = 0;
+  private currentEnemyAttacksThisTurn = 0;
 
   public addCombatAttackListener(listener: (event: CombatAttackEvent) => void): () => void {
     this.combatAttackListeners.add(listener);
@@ -2802,6 +2826,55 @@ export class CrpgGameState {
     this.addCombatLog(
       `🔔 Runda ${this.combatState.round} — Twoja tura! Odnowiono ${this.player.combat!.ap}/${this.player.combat!.maxAp} AP i +${manaRegen} Many.`
     );
+
+    this.onPlayerCombatTurnStarted();
+  }
+
+  protected onPlayerCombatTurnStarted(): void {
+    // Subclass hook for custom status ticks / turn-start triggers.
+  }
+
+  protected planEnemyCombatMove(
+    enemy: ActorEntity,
+    eSnap: CombatantSnapshot,
+    dist: number
+  ): EnemyAiMovePlan | null {
+    const ec = enemy.combat;
+    if (!ec) return null;
+    const moveApCost = ec.crippledLegsTurns > 0 ? 2 : 1;
+    const maxRange = eSnap.derived.weaponProfile.maxRange;
+    if (dist > maxRange + 0.45 && ec.ap >= moveApCost) {
+      const adj = this.findBestAdjacentWalkableTile(this.player.tileX, this.player.tileY, 1, 1);
+      if (adj) {
+        return { targetTile: adj };
+      }
+    }
+    return null;
+  }
+
+  protected chooseEnemyCombatAttack(
+    enemy: ActorEntity,
+    eSnap: CombatantSnapshot,
+    _playerSnap: CombatantSnapshot,
+    dist: number,
+    attacksThisTurn: number
+  ): EnemyAiAttackDecision {
+    const ec = enemy.combat;
+    if (!ec || attacksThisTurn >= 2) {
+      return { kind: 'stop' };
+    }
+    const maxRange = eSnap.derived.weaponProfile.maxRange;
+    const baseAttackAp = eSnap.derived.weaponProfile.baseApCost;
+    if (dist > maxRange + 0.45 || ec.ap < baseAttackAp) {
+      return { kind: 'stop' };
+    }
+    const mode: CombatAttackMode =
+      ec.difficulty === 'very_hard' && ec.ap >= baseAttackAp + 1 ? 'power' : 'quick';
+    return { kind: 'attack', mode };
+  }
+
+  protected onEnemyCombatTurnEnded(enemy: ActorEntity, _attacksThisTurn: number): void {
+    this.finalizeEnemyCombatTurn(enemy);
   }
 
   private startNextQueuedEnemyTurn(): void {
@@ -2818,6 +2891,7 @@ export class CrpgGameState {
       }
 
       this.combatState.activeTurnActorId = enemy.id;
+      this.currentEnemyAttacksThisTurn = 0;
       const ec = enemy.combat;
       ec.defending = false;
       const eSnap = this.getActorCombatant(enemy);
@@ -2825,37 +2899,36 @@ export class CrpgGameState {
       ec.ap = eSnap.derived.maxAp;
 
       const moveApCost = ec.crippledLegsTurns > 0 ? 2 : 1;
-      const maxRange = eSnap.derived.weaponProfile.maxRange;
       const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
 
-      // Check if enemy needs to move closer to player
-      if (dist > maxRange + 0.45 && ec.ap >= moveApCost) {
-        const adj = this.findBestAdjacentWalkableTile(this.player.tileX, this.player.tileY, 1, 1);
-        if (adj) {
-          const path = findPathAStar3D(
-            {
-              width: this.map.width,
-              height: this.map.height,
-              isWalkable: (x, y) => this.isTileWalkable(x, y, enemy.id),
-              getElevation: (x, y) => this.map.tiles[y][x].z
-            },
-            { x: enemy.tileX, y: enemy.tileY },
-            adj
-          );
-          if (path.length > 1) {
-            const maxSteps = Math.floor(ec.ap / moveApCost);
-            const stepsToTake = Math.min(path.length - 1, maxSteps);
-            if (stepsToTake > 0) {
-              ec.ap -= stepsToTake * moveApCost;
-              enemy.path = path.slice(1, stepsToTake + 1);
-              enemy.isMoving = true;
-              this.currentEnemyTurnPhase = 'move';
-              this.enemyTurnPhaseTimer = 0;
-              this.addCombatLog(
+      const movePlan = ec.ap >= moveApCost ? this.planEnemyCombatMove(enemy, eSnap, dist) : null;
+      if (movePlan) {
+        const path = findPathAStar3D(
+          {
+            width: this.map.width,
+            height: this.map.height,
+            isWalkable: (x, y) => this.isTileWalkable(x, y, enemy.id),
+            getElevation: (x, y) => this.map.tiles[y][x].z
+          },
+          { x: enemy.tileX, y: enemy.tileY },
+          movePlan.targetTile
+        );
+        if (path.length > 1) {
+          const apSteps = Math.floor(ec.ap / moveApCost);
+          const maxSteps =
+            typeof movePlan.maxSteps === 'number' ? Math.min(apSteps, movePlan.maxSteps) : apSteps;
+          const stepsToTake = Math.min(path.length - 1, maxSteps);
+          if (stepsToTake > 0) {
+            ec.ap -= stepsToTake * moveApCost;
+            enemy.path = path.slice(1, stepsToTake + 1);
+            enemy.isMoving = true;
+            this.currentEnemyTurnPhase = 'move';
+            this.enemyTurnPhaseTimer = 0;
+            this.addCombatLog(
+              movePlan.logMessage ??
                 `👣 ${enemy.recipe.name} przemieszcza się o ${stepsToTake} kafli (-${stepsToTake * moveApCost} AP).`
-              );
-              return;
-            }
+            );
+            return;
           }
         }
       }
@@ -2883,11 +2956,6 @@ export class CrpgGameState {
       return;
     }
 
-    const ec = enemy.combat;
-    const eSnap = this.getActorCombatant(enemy);
-    const maxRange = eSnap.derived.weaponProfile.maxRange;
-    const baseAttackAp = eSnap.derived.weaponProfile.baseApCost;
-
     if (this.currentEnemyTurnPhase === 'move') {
       this.updateActorMovement(enemy, dtSeconds, 3.2, false);
       if (!enemy.isMoving) {
@@ -2897,12 +2965,25 @@ export class CrpgGameState {
       return;
     }
 
-    if (this.currentEnemyTurnPhase === 'pause_before_attack') {
+    if (
+      this.currentEnemyTurnPhase === 'pause_before_attack' ||
+      this.currentEnemyTurnPhase === 'pause_after_attack'
+    ) {
       this.enemyTurnPhaseTimer -= dtSeconds;
       if (this.enemyTurnPhaseTimer <= 0) {
+        const freshEnemySnap = this.getActorCombatant(enemy);
+        const freshPlayerSnap = this.getActorCombatant(this.player);
         const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
-        if (dist <= maxRange + 0.45 && ec.ap >= baseAttackAp) {
-          this.executeSingleEnemyAttack(enemy);
+        const decision = this.chooseEnemyCombatAttack(
+          enemy,
+          freshEnemySnap,
+          freshPlayerSnap,
+          dist,
+          this.currentEnemyAttacksThisTurn
+        );
+        if (decision.kind !== 'stop') {
+          this.currentEnemyAttacksThisTurn++;
+          this.executeEnemyDecision(enemy, decision);
           if (!this.combatState.active) {
             this.isSequentialEnemyTurnActive = false;
             return;
@@ -2910,27 +2991,7 @@ export class CrpgGameState {
           this.currentEnemyTurnPhase = 'pause_after_attack';
           this.enemyTurnPhaseTimer = 0.4;
         } else {
-          this.finalizeEnemyCombatTurn(enemy);
-          this.startNextQueuedEnemyTurn();
-        }
-      }
-      return;
-    }
-
-    if (this.currentEnemyTurnPhase === 'pause_after_attack') {
-      this.enemyTurnPhaseTimer -= dtSeconds;
-      if (this.enemyTurnPhaseTimer <= 0) {
-        const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
-        if (dist <= maxRange + 0.45 && ec.ap >= baseAttackAp) {
-          this.executeSingleEnemyAttack(enemy);
-          if (!this.combatState.active) {
-            this.isSequentialEnemyTurnActive = false;
-            return;
-          }
-          this.currentEnemyTurnPhase = 'pause_after_attack';
-          this.enemyTurnPhaseTimer = 0.4;
-        } else {
-          this.finalizeEnemyCombatTurn(enemy);
+          this.onEnemyCombatTurnEnded(enemy, this.currentEnemyAttacksThisTurn);
           this.startNextQueuedEnemyTurn();
         }
       }
@@ -2938,7 +2999,7 @@ export class CrpgGameState {
     }
   }
 
-  private finalizeEnemyCombatTurn(enemy: ActorEntity): void {
+  protected finalizeEnemyCombatTurn(enemy: ActorEntity): void {
     const ec = enemy.combat;
     if (!ec) return;
     if (ec.ap >= 2) {
@@ -2949,17 +3010,66 @@ export class CrpgGameState {
     if (ec.crippledLegsTurns > 0) ec.crippledLegsTurns--;
   }
 
-  private executeSingleEnemyAttack(enemy: ActorEntity, rng: () => number = Math.random): void {
+  private executeEnemyDecision(
+    enemy: ActorEntity,
+    decision: Exclude<EnemyAiAttackDecision, { kind: 'stop' }>,
+    rng: () => number = Math.random
+  ): void {
     const ec = enemy.combat!;
-    const freshEnemySnap = this.getActorCombatant(enemy);
+    enemy.direction = deltaToDirection8(
+      this.player.tileX - enemy.tileX,
+      this.player.tileY - enemy.tileY
+    );
+
+    if (decision.kind === 'special') {
+      ec.ap = Math.max(0, ec.ap - Math.max(0, decision.apCost));
+      decision.execute(rng);
+      if (this.player.combat && this.player.combat.hp <= 0) {
+        this.handlePlayerDefeated();
+      }
+      return;
+    }
+
+    this.executeSingleEnemyAttack(enemy, decision, rng);
+  }
+
+  private executeSingleEnemyAttack(
+    enemy: ActorEntity,
+    decision?: Extract<EnemyAiAttackDecision, { kind: 'attack' }>,
+    rng: () => number = Math.random
+  ): void {
+    const ec = enemy.combat!;
+    const baseEnemySnap = this.getActorCombatant(enemy);
     const freshPlayerSnap = this.getActorCombatant(this.player);
     const dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
-    const baseAttackAp = freshEnemySnap.derived.weaponProfile.baseApCost;
+    const baseAttackAp = baseEnemySnap.derived.weaponProfile.baseApCost;
 
     const chosenMode: CombatAttackMode =
-      ec.difficulty === 'very_hard' && ec.ap >= baseAttackAp + 1
-        ? 'power'
-        : 'quick';
+      decision?.mode ??
+      (ec.difficulty === 'very_hard' && ec.ap >= baseAttackAp + 1 ? 'power' : 'quick');
+
+    const freshEnemySnap: CombatantSnapshot =
+      decision && (decision.apCostOverride !== undefined || decision.damageRangeOverride !== undefined)
+        ? {
+            ...baseEnemySnap,
+            derived: {
+              ...baseEnemySnap.derived,
+              minDamage: decision.damageRangeOverride
+                ? decision.damageRangeOverride[0]
+                : baseEnemySnap.derived.minDamage,
+              maxDamage: decision.damageRangeOverride
+                ? decision.damageRangeOverride[1]
+                : baseEnemySnap.derived.maxDamage,
+              weaponProfile:
+                decision.apCostOverride !== undefined
+                  ? {
+                      ...baseEnemySnap.derived.weaponProfile,
+                      baseApCost: decision.apCostOverride
+                    }
+                  : baseEnemySnap.derived.weaponProfile
+            }
+          }
+        : baseEnemySnap;
 
     enemy.direction = deltaToDirection8(
       this.player.tileX - enemy.tileX,
@@ -2981,6 +3091,7 @@ export class CrpgGameState {
         );
       }
     }
+    const attackLabel = decision?.labelOverride ?? ATTACK_MODE_META[chosenMode].label;
     if (!out.hit) {
       this.pushFloatingCombatText(
         this.player.x,
@@ -3002,7 +3113,7 @@ export class CrpgGameState {
         out.critical ? 0xffca28 : 0xff453a
       );
       this.addCombatLog(
-        `${critPrefix}🩸 ${enemy.recipe.name} trafia Cię (${ATTACK_MODE_META[chosenMode].label}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
+        `${critPrefix}🩸 ${enemy.recipe.name} trafia Cię (${attackLabel}) za ${out.damageDealt} obr.! (Pancerz DT/DR pochłonął ${out.mitigatedByArmor} obr.).`
       );
     }
 
@@ -3058,6 +3169,7 @@ export class CrpgGameState {
   private executeEnemyCombatTurn(enemy: ActorEntity): void {
     const ec = enemy.combat!;
     this.combatState.activeTurnActorId = enemy.id;
+    this.currentEnemyAttacksThisTurn = 0;
     ec.defending = false;
 
     const eSnap = this.getActorCombatant(enemy);
@@ -3065,60 +3177,72 @@ export class CrpgGameState {
     ec.ap = eSnap.derived.maxAp;
 
     const moveApCost = ec.crippledLegsTurns > 0 ? 2 : 1;
-    const maxRange = eSnap.derived.weaponProfile.maxRange;
-    const baseAttackAp = eSnap.derived.weaponProfile.baseApCost;
 
-    // 1. Move closer to player if out of weapon range
+    // 1. Plan and execute movement (approach, flank, or kite)
     let dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
-    if (dist > maxRange + 0.45 && ec.ap >= moveApCost) {
-      const adj = this.findBestAdjacentWalkableTile(this.player.tileX, this.player.tileY, 1, 1);
-      if (adj) {
-        const path = findPathAStar3D(
-          {
-            width: this.map.width,
-            height: this.map.height,
-            isWalkable: (x, y) => this.isTileWalkable(x, y, enemy.id),
-            getElevation: (x, y) => this.map.tiles[y][x].z
-          },
-          { x: enemy.tileX, y: enemy.tileY },
-          adj
-        );
-        if (path.length > 1) {
-          const maxSteps = Math.floor(ec.ap / moveApCost);
-          const stepsToTake = Math.min(path.length - 1, maxSteps);
-          if (stepsToTake > 0) {
-            const destNode = path[stepsToTake];
-            ec.ap -= stepsToTake * moveApCost;
-            enemy.tileX = destNode.x;
-            enemy.tileY = destNode.y;
-            enemy.x = destNode.x + 0.5;
-            enemy.y = destNode.y + 0.5;
-            enemy.z = destNode.z;
-            enemy.direction = destNode.direction;
-            this.addCombatLog(
+    const movePlan = ec.ap >= moveApCost ? this.planEnemyCombatMove(enemy, eSnap, dist) : null;
+    if (movePlan) {
+      const path = findPathAStar3D(
+        {
+          width: this.map.width,
+          height: this.map.height,
+          isWalkable: (x, y) => this.isTileWalkable(x, y, enemy.id),
+          getElevation: (x, y) => this.map.tiles[y][x].z
+        },
+        { x: enemy.tileX, y: enemy.tileY },
+        movePlan.targetTile
+      );
+      if (path.length > 1) {
+        const apSteps = Math.floor(ec.ap / moveApCost);
+        const maxSteps =
+          typeof movePlan.maxSteps === 'number' ? Math.min(apSteps, movePlan.maxSteps) : apSteps;
+        const stepsToTake = Math.min(path.length - 1, maxSteps);
+        if (stepsToTake > 0) {
+          const destNode = path[stepsToTake];
+          ec.ap -= stepsToTake * moveApCost;
+          enemy.tileX = destNode.x;
+          enemy.tileY = destNode.y;
+          enemy.x = destNode.x + 0.5;
+          enemy.y = destNode.y + 0.5;
+          enemy.z = destNode.z;
+          enemy.direction = destNode.direction;
+          this.addCombatLog(
+            movePlan.logMessage ??
               `👣 ${enemy.recipe.name} przemieszcza się o ${stepsToTake} kafli (-${stepsToTake * moveApCost} AP).`
-            );
-          }
+          );
         }
       }
     }
 
-    // 2. Attack player while in range and enough AP
-    dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
+    // 2. Attack / execute special actions until strategy returns 'stop'
     let attacksMade = 0;
-    while (dist <= maxRange + 0.45 && ec.ap >= baseAttackAp && attacksMade < 2) {
+    while (attacksMade < 6) {
+      dist = Math.hypot(this.player.tileX - enemy.tileX, this.player.tileY - enemy.tileY);
+      const freshEnemySnap = this.getActorCombatant(enemy);
+      const freshPlayerSnap = this.getActorCombatant(this.player);
+      const decision = this.chooseEnemyCombatAttack(
+        enemy,
+        freshEnemySnap,
+        freshPlayerSnap,
+        dist,
+        attacksMade
+      );
+      if (decision.kind === 'stop') {
+        break;
+      }
       attacksMade++;
-      this.executeSingleEnemyAttack(enemy);
+      this.currentEnemyAttacksThisTurn = attacksMade;
+      this.executeEnemyDecision(enemy, decision);
       if (!this.combatState.active || this.player.combat!.hp <= 0) {
         return;
       }
     }
 
     // 3. Finalize turn
-    this.finalizeEnemyCombatTurn(enemy);
+    this.onEnemyCombatTurnEnded(enemy, attacksMade);
   }
 
-  private handlePlayerDefeated(): void {
+  protected handlePlayerDefeated(): void {
     this.isSequentialEnemyTurnActive = false;
     this.pendingEnemyCombatTurnIds = [];
     this.combatState.active = false;
