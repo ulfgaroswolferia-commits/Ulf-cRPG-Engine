@@ -31,6 +31,20 @@ export interface BakedCharacterBuffers {
   normalMaterialRGBA: Uint8ClampedArray;
 }
 
+export interface CustomCharacterBaker {
+  matches: (recipe: CharacterVisualRecipe) => boolean;
+  computeHash: (recipe: CharacterVisualRecipe) => string;
+  bake: (recipe: CharacterVisualRecipe) => BakedCharacterBuffers;
+}
+
+const customCharacterBakers: CustomCharacterBaker[] = [];
+
+export function registerCustomCharacterBaker(baker: CustomCharacterBaker): void {
+  if (!customCharacterBakers.includes(baker)) {
+    customCharacterBakers.push(baker);
+  }
+}
+
 const HAIR_STYLES: ReadonlyArray<HairStyle> = [
   'short_crop',
   'long_braids',
@@ -149,9 +163,130 @@ export function generateRandomCharacterRecipe(
   };
 }
 
+export function resolveCharacterArchetypeTag(recipe: CharacterVisualRecipe): string {
+  const id = (recipe.id || '').toLowerCase();
+  const name = (recipe.name || '').toLowerCase();
+  if (id.includes('wilk') || id.includes('wolf') || name.includes('wilk') || name.includes('basior') || name.includes('wadera')) {
+    return 'wilk';
+  }
+  if (id.includes('skeleton') || id.includes('vault_warden') || name.includes('szkielet') || name.includes('kościotrup')) {
+    return 'skeleton';
+  }
+  if (id.includes('utopiec') || id.includes('lake_lurker') || name.includes('utopiec') || name.includes('topielec')) {
+    return 'utopiec';
+  }
+  if (id.includes('goblin') || id.includes('cave_raider') || name.includes('goblin')) {
+    return 'goblin';
+  }
+  if (id.includes('leszy') || name.includes('leszy') || name.includes('borowy')) {
+    return 'leszy';
+  }
+  if (id.includes('bies') || name.includes('bies') || name.includes('czart')) {
+    return 'bies';
+  }
+  if (id.includes('poludnica') || name.includes('południca') || name.includes('poludnica')) {
+    return 'poludnica';
+  }
+  if (
+    id.includes('strzyga') ||
+    id.includes('nocnica') ||
+    id.includes('zmora') ||
+    name.includes('strzyga') ||
+    name.includes('nocnica') ||
+    name.includes('zmora')
+  ) {
+    return 'wraith';
+  }
+  if (
+    id.includes('wislawa') ||
+    id.includes('ragnoslawa') ||
+    id.includes('zona_') ||
+    id.includes('corka_') ||
+    name.includes('wisława') ||
+    name.includes('zielarka') ||
+    name.includes('ragnosława') ||
+    name.includes('żona') ||
+    name.includes('córka')
+  ) {
+    return 'peasant_woman';
+  }
+  if (
+    id.includes('dobromir') ||
+    id.includes('dobrogost') ||
+    id.includes('bogusz') ||
+    (id.includes('gniewosz') && !name.includes('pomocnik') && !(recipe.title || '').toLowerCase().includes('drwal')) ||
+    id.includes('ostromir') ||
+    id.includes('wrzosek') ||
+    id.includes('kramarz') ||
+    name.includes('kupiec') ||
+    name.includes('kramarz') ||
+    name.includes('kwatermistrz') ||
+    name.includes('karczmarz') ||
+    name.includes('paser')
+  ) {
+    return 'trader';
+  }
+  if (
+    id.includes('kurier') ||
+    id.includes('gniewko') ||
+    id.includes('istota') ||
+    name.includes('gniewko') ||
+    name.includes('starosta') ||
+    name.includes('kurier') ||
+    name.includes('istota')
+  ) {
+    return 'noble';
+  }
+  if (
+    id.includes('gnieworad') ||
+    id.includes('radogost') ||
+    id.includes('skarimir') ||
+    id.includes('wszebor') ||
+    id.includes('wartownik') ||
+    id.includes('zwiadowc') ||
+    name.includes('mistrz') ||
+    name.includes('instruktor') ||
+    name.includes('komendant') ||
+    name.includes('wartownik') ||
+    name.includes('rycerz') ||
+    name.includes('strażnik')
+  ) {
+    return 'knight';
+  }
+  if (
+    id.includes('sambor') ||
+    id.includes('wojmir') ||
+    id.includes('drwal') ||
+    id.includes('ostap') ||
+    id.includes('kowal') ||
+    id.includes('szkarad') ||
+    id.includes('pielgrzym') ||
+    name.includes('sambor') ||
+    name.includes('kmieć') ||
+    name.includes('wojmir') ||
+    name.includes('młynarz') ||
+    name.includes('kowal') ||
+    name.includes('drwal') ||
+    name.includes('rusznikarz') ||
+    name.includes('pielgrzym')
+  ) {
+    return 'peasant_man';
+  }
+  // Any other non-hostile standing NPC defaults to a standing idle pose rather than frozen mid-sprint
+  if (id.startsWith('npc_')) {
+    return recipe.equipment.mainHand ? 'knight' : 'peasant_man';
+  }
+  return '';
+}
+
 export function computeCharacterRecipeHash(recipe: CharacterVisualRecipe): string {
+  for (const baker of customCharacterBakers) {
+    if (baker.matches(recipe)) {
+      return baker.computeHash(recipe);
+    }
+  }
   const { skinTone, hairColor, hairStyle, equipment } = recipe;
-  return [
+  const base = [
     `${skinTone.r}_${skinTone.g}_${skinTone.b}`,
     `${hairColor.r}_${hairColor.g}_${hairColor.b}`,
     hairStyle,
@@ -162,6 +297,8 @@ export function computeCharacterRecipeHash(recipe: CharacterVisualRecipe): strin
     equipment.mainHand ?? 'none',
     equipment.offHand ?? 'none'
   ].join('|');
+  const tag = resolveCharacterArchetypeTag(recipe);
+  return tag ? `${base}|${tag}` : base;
 }
 
 export function resolveEffectiveCharacterLayers(
@@ -1258,6 +1395,882 @@ function drawDetailedHelm(
 
 const bufferCache = new Map<string, BakedCharacterBuffers>();
 
+export interface CharacterSpriteSheetBuffer {
+  width: number;
+  height: number;
+  rgba: Uint8ClampedArray;
+}
+
+const characterSheetMap = new Map<string, CharacterSpriteSheetBuffer>();
+
+/**
+ * Registers preloaded 256x768 8-directional isometric character and monster sprite sheets
+ * (packed from Flare RPG CC-BY-SA 3.0 / CC-BY 3.0 assets) and flushes the bake cache.
+ */
+export function registerCharacterSpriteSheets(
+  sheets: ReadonlyMap<string, CharacterSpriteSheetBuffer>
+): void {
+  characterSheetMap.clear();
+  for (const [k, v] of sheets.entries()) {
+    characterSheetMap.set(k, v);
+  }
+  bufferCache.clear();
+}
+
+export function hasLoadedCharacterSpriteSheets(): boolean {
+  return characterSheetMap.size > 0;
+}
+
+/**
+ * Blits a 64x96 frame from a registered 256x768 character layer sheet onto the target buffers
+ * with optional color-grading tint and PBR roughness/metallic assignment.
+ */
+function blitCharacterSheetCell(
+  sheet: CharacterSpriteSheetBuffer,
+  albedoRGBA: Uint8ClampedArray,
+  normalMaterialRGBA: Uint8ClampedArray,
+  sheetW: number,
+  dir: number,
+  frame: number,
+  tintColor: RGBAColor | null,
+  tintStrength: number,
+  roughness: number,
+  metallic: number
+): void {
+  const cellW = 64;
+  const cellH = 96;
+  const ox = frame * cellW;
+  const oy = dir * cellH;
+  if (sheet.width < ox + cellW || sheet.height < oy + cellH) return;
+
+  const roughByte = Math.min(255, Math.max(0, Math.round(roughness * 255)));
+  const metalByte = Math.min(255, Math.max(0, Math.round(metallic * 255)));
+  const src = sheet.rgba;
+
+  for (let y = 0; y < cellH; y++) {
+    const sy = oy + y;
+    const rowOff = sy * sheetW;
+    const srcRowOff = sy * sheet.width;
+    for (let x = 0; x < cellW; x++) {
+      const sx = ox + x;
+      const sIdx = (srcRowOff + sx) * 4;
+      const sa = src[sIdx + 3];
+      if (sa < 12) continue;
+
+      let sr = src[sIdx];
+      let sg = src[sIdx + 1];
+      let sb = src[sIdx + 2];
+
+      if (tintColor && tintStrength > 0) {
+        // Luminance-preserving color grading so 3D highlights & folds remain crisp
+        const lum = (sr * 0.299 + sg * 0.587 + sb * 0.114) / 142;
+        const tr = Math.min(255, tintColor.r * lum);
+        const tg = Math.min(255, tintColor.g * lum);
+        const tb = Math.min(255, tintColor.b * lum);
+        sr = Math.round(sr * (1 - tintStrength) + tr * tintStrength);
+        sg = Math.round(sg * (1 - tintStrength) + tg * tintStrength);
+        sb = Math.round(sb * (1 - tintStrength) + tb * tintStrength);
+      }
+
+      const dIdx = (rowOff + sx) * 4;
+      const alpha = sa / 255;
+      const invA = 1 - alpha;
+      const dstA = albedoRGBA[dIdx + 3] / 255;
+      const outA = alpha + dstA * invA;
+
+      if (dstA < 0.05 || alpha > 0.92) {
+        albedoRGBA[dIdx] = Math.min(255, Math.max(0, sr));
+        albedoRGBA[dIdx + 1] = Math.min(255, Math.max(0, sg));
+        albedoRGBA[dIdx + 2] = Math.min(255, Math.max(0, sb));
+        albedoRGBA[dIdx + 3] = Math.max(sa, albedoRGBA[dIdx + 3]);
+      } else {
+        albedoRGBA[dIdx] = Math.min(
+          255,
+          Math.round((sr * alpha + albedoRGBA[dIdx] * dstA * invA) / Math.max(0.01, outA))
+        );
+        albedoRGBA[dIdx + 1] = Math.min(
+          255,
+          Math.round((sg * alpha + albedoRGBA[dIdx + 1] * dstA * invA) / Math.max(0.01, outA))
+        );
+        albedoRGBA[dIdx + 2] = Math.min(
+          255,
+          Math.round((sb * alpha + albedoRGBA[dIdx + 2] * dstA * invA) / Math.max(0.01, outA))
+        );
+        albedoRGBA[dIdx + 3] = Math.min(255, Math.round(outA * 255));
+      }
+
+      normalMaterialRGBA[dIdx + 2] = roughByte;
+      normalMaterialRGBA[dIdx + 3] = metalByte;
+    }
+  }
+}
+
+/**
+ * Synthesizes tangent-space normal vectors (R=Nx, G=Ny) across all 8x4 cells
+ * of a composited character sprite sheet using 3x3 Sobel luminance + cylindrical cell volume.
+ */
+function synthesizeSheetNormalVectors(
+  albedoRGBA: Uint8ClampedArray,
+  normalMaterialRGBA: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number
+): void {
+  const cellW = 64;
+  const cellH = 96;
+  const lumAt = (x: number, y: number): number => {
+    const cx = Math.max(0, Math.min(sheetW - 1, x));
+    const cy = Math.max(0, Math.min(sheetH - 1, y));
+    const idx = (cy * sheetW + cx) * 4;
+    const a = albedoRGBA[idx + 3] / 255;
+    if (a < 0.04) return 0;
+    return (
+      ((albedoRGBA[idx] * 0.299 + albedoRGBA[idx + 1] * 0.587 + albedoRGBA[idx + 2] * 0.114) /
+        255) *
+      0.7 +
+      a * 0.3
+    );
+  };
+
+  for (let y = 0; y < sheetH; y++) {
+    const localY = y % cellH;
+    const volNy = (localY - 52) / 38;
+    for (let x = 0; x < sheetW; x++) {
+      const idx = (y * sheetW + x) * 4;
+      if (albedoRGBA[idx + 3] < 12) continue;
+
+      const localX = x % cellW;
+      const volNx = (localX - 32) / 22;
+
+      const tl = lumAt(x - 1, y - 1);
+      const tc = lumAt(x, y - 1);
+      const tr = lumAt(x + 1, y - 1);
+      const ml = lumAt(x - 1, y);
+      const mr = lumAt(x + 1, y);
+      const bl = lumAt(x - 1, y + 1);
+      const bc = lumAt(x, y + 1);
+      const br = lumAt(x + 1, y + 1);
+
+      const gx = -tl - 2 * ml - bl + tr + 2 * mr + br;
+      const gy = -tl - 2 * tc - tr + bl + 2 * bc + br;
+
+      let nx = -gx * 1.35 + volNx * 0.42;
+      let ny = -gy * 1.35 + volNy * 0.36;
+      const nz = 1.0;
+      const invLen = 1 / Math.hypot(nx, ny, nz);
+      nx *= invLen;
+      ny *= invLen;
+
+      normalMaterialRGBA[idx] = Math.min(255, Math.max(0, Math.round((nx * 0.5 + 0.5) * 255)));
+      normalMaterialRGBA[idx + 1] = Math.min(255, Math.max(0, Math.round((ny * 0.5 + 0.5) * 255)));
+    }
+  }
+}
+
+/**
+ * Renders a sculpted 8-directional quadruped wolf (Wilk Puszczański / Basior)
+ * with 4 articulated legs, torso, hunched shoulders, pointed ears, snout, bushy tail, and glowing eyes.
+ */
+function bakeQuadrupedWolfSheet(
+  recipe: CharacterVisualRecipe,
+  albedoRGBA: Uint8ClampedArray,
+  normalMaterialRGBA: Uint8ClampedArray,
+  sheetWidth: number,
+  sheetHeight: number
+): void {
+  const furBase: RGBAColor = {
+    r: Math.max(54, Math.min(132, Math.round(recipe.skinTone.r * 0.52))),
+    g: Math.max(50, Math.min(124, Math.round(recipe.skinTone.g * 0.5))),
+    b: Math.max(46, Math.min(118, Math.round(recipe.skinTone.b * 0.48)))
+  };
+  const furDark: RGBAColor = {
+    r: Math.max(28, Math.round(furBase.r * 0.62)),
+    g: Math.max(26, Math.round(furBase.g * 0.62)),
+    b: Math.max(24, Math.round(furBase.b * 0.65))
+  };
+  const furHighlight: RGBAColor = {
+    r: Math.min(210, Math.round(furBase.r * 1.32)),
+    g: Math.min(205, Math.round(furBase.g * 1.3)),
+    b: Math.min(198, Math.round(furBase.b * 1.28))
+  };
+
+  for (let dir = 0; dir < 8; dir++) {
+    // Isometric screen angle for Ulf direction `dir`:
+    // dir 3 (SE) = towards camera (bottom); dir 7 (NW) = away (top); dir 1 (NE) = right; dir 5 (SW) = left
+    const screenAngles = [
+      -Math.PI * 0.25, // 0: N -> Top-Right
+      0,               // 1: NE -> Right
+      Math.PI * 0.25,  // 2: E -> Bottom-Right
+      Math.PI * 0.5,   // 3: SE -> Down (towards camera)
+      Math.PI * 0.75,  // 4: S -> Bottom-Left
+      Math.PI,         // 5: SW -> Left
+      -Math.PI * 0.75, // 6: W -> Top-Left
+      -Math.PI * 0.5   // 7: NW -> Up (away from camera)
+    ];
+    const ang = screenAngles[dir];
+    const fx = Math.cos(ang);
+    const fy = Math.sin(ang);
+
+    for (let frame = 0; frame < 4; frame++) {
+      const ox = frame * 64;
+      const oy = dir * 96;
+      const cx = ox + 32;
+      const groundY = oy + 82;
+      const phase = (frame / 4) * Math.PI * 2;
+      const stride = frame === 0 ? 0 : Math.sin(phase) * 4.5;
+      const bob = frame === 0 ? 0 : Math.abs(Math.cos(phase)) * 1.8;
+
+      const bodyY = groundY - 22 - bob;
+      const chestX = cx + fx * 8.5;
+      const chestY = bodyY + fy * 4.2 - 1.5;
+      const rumpX = cx - fx * 8.5;
+      const rumpY = bodyY - fy * 4.2 + 1.0;
+
+      // Bushy tail extending behind rump
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        rumpX,
+        rumpY,
+        rumpX - fx * 9.5,
+        rumpY + 8 - fy * 2.5,
+        3.6,
+        1.8,
+        furDark,
+        null,
+        0.85,
+        0.04
+      );
+
+      // 4 Quadruped Legs (hind pair + fore pair)
+      const perpX = -fy * 3.8;
+      const perpY = fx * 2.0;
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        rumpX - perpX,
+        rumpY + 2,
+        rumpX - perpX - stride * 0.6,
+        groundY - 2,
+        3.2,
+        1.8,
+        furDark,
+        null,
+        0.82,
+        0.04
+      );
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        rumpX + perpX,
+        rumpY + 2,
+        rumpX + perpX + stride * 0.6,
+        groundY - 2,
+        3.2,
+        1.8,
+        furBase,
+        null,
+        0.82,
+        0.04
+      );
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        chestX - perpX,
+        chestY + 2,
+        chestX - perpX + stride * 0.7,
+        groundY - 1,
+        3.4,
+        1.9,
+        furDark,
+        null,
+        0.82,
+        0.04
+      );
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        chestX + perpX,
+        chestY + 2,
+        chestX + perpX - stride * 0.7,
+        groundY - 1,
+        3.4,
+        1.9,
+        furBase,
+        null,
+        0.82,
+        0.04
+      );
+
+      // Ribcage & spine barrel connecting rump to muscular chest/ruff
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        rumpX,
+        rumpY,
+        chestX,
+        chestY,
+        7.2,
+        8.8,
+        furBase,
+        furHighlight,
+        0.78,
+        0.05
+      );
+
+      // Thick neck & shoulder mane
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        chestX + fx * 2.2,
+        chestY - 3.5,
+        8.2,
+        7.4,
+        furHighlight,
+        furDark,
+        0.8,
+        0.05
+      );
+
+      // Wolf Head, Pointed Ears & Snout
+      const headX = chestX + fx * 7.2;
+      const headY = chestY - 7.5 + fy * 2.2;
+      drawShadedEllipse(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        headX,
+        headY,
+        6.2,
+        5.6,
+        furBase,
+        furDark,
+        0.76,
+        0.06
+      );
+      // Pointed ears
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        headX - 3.2,
+        headY - 3,
+        headX - 4.2,
+        headY - 8.5,
+        2.2,
+        0.9,
+        furDark,
+        null,
+        0.8,
+        0.04
+      );
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        headX + 3.2,
+        headY - 3,
+        headX + 4.2,
+        headY - 8.5,
+        2.2,
+        0.9,
+        furDark,
+        null,
+        0.8,
+        0.04
+      );
+      // Elongated lupine snout
+      const snoutX = headX + fx * 5.2;
+      const snoutY = headY + 1.8 + fy * 2.0;
+      drawTaperedLimb(
+        albedoRGBA,
+        normalMaterialRGBA,
+        sheetWidth,
+        sheetHeight,
+        headX,
+        headY + 1,
+        snoutX,
+        snoutY,
+        3.8,
+        2.1,
+        furHighlight,
+        furDark,
+        0.72,
+        0.08
+      );
+
+      // Glowing amber predator eyes when facing camera or side
+      if (fy > -0.35) {
+        const eyeColor: RGBAColor = { r: 255, g: 196, b: 36 };
+        setPixelWithNormal(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          headX + fx * 2 - 2,
+          headY - 1,
+          eyeColor,
+          1.3,
+          0,
+          0,
+          0.05,
+          0.95
+        );
+        setPixelWithNormal(
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          sheetHeight,
+          headX + fx * 2 + 2,
+          headY - 1,
+          eyeColor,
+          1.3,
+          0,
+          0,
+          0.05,
+          0.95
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Composites preloaded 8-directional Flare RPG character/monster sprite sheets
+ * with modular equipment layers and Slavic details when available.
+ */
+function tryBakeFromLoadedCharacterSheets(
+  recipe: CharacterVisualRecipe,
+  layers: ResolvedCharacterLayers,
+  albedoRGBA: Uint8ClampedArray,
+  normalMaterialRGBA: Uint8ClampedArray,
+  sheetWidth: number,
+  sheetHeight: number
+): boolean {
+  if (characterSheetMap.size === 0) return false;
+
+  const tag = resolveCharacterArchetypeTag(recipe);
+  const getSheet = (name: string): CharacterSpriteSheetBuffer | undefined =>
+    characterSheetMap.get(name);
+
+  // 1. Dedicated Monster & NPC Archetype Sheets
+  let singleArchetypeSheet: CharacterSpriteSheetBuffer | undefined;
+  let singleTint: RGBAColor | null = null;
+  let singleTintStrength = 0;
+  let singleRoughness = 0.65;
+  let singleMetallic = 0.18;
+
+  if (tag === 'skeleton') {
+    singleArchetypeSheet = getSheet('enemy_skeleton');
+    const isWarden = (recipe.id || '').toLowerCase().includes('vault_warden');
+    singleTint = isWarden ? { r: 235, g: 195, b: 120 } : null;
+    singleTintStrength = isWarden ? 0.28 : 0;
+    singleRoughness = 0.45;
+    singleMetallic = 0.42;
+  } else if (tag === 'utopiec') {
+    singleArchetypeSheet = getSheet('enemy_zombie');
+    singleTint = { r: 74, g: 168, b: 146 };
+    singleTintStrength = 0.48;
+    singleRoughness = 0.28;
+    singleMetallic = 0.35;
+  } else if (tag === 'goblin') {
+    singleArchetypeSheet = getSheet('enemy_goblin');
+    singleRoughness = 0.58;
+    singleMetallic = 0.22;
+  } else if (tag === 'wraith') {
+    singleArchetypeSheet = getSheet('enemy_zombie');
+    singleTint = { r: 164, g: 148, b: 214 };
+    singleTintStrength = 0.45;
+    singleRoughness = 0.38;
+    singleMetallic = 0.48;
+  } else if (tag === 'poludnica') {
+    singleArchetypeSheet = getSheet('npc_peasant_woman');
+    singleTint = { r: 248, g: 242, b: 220 };
+    singleTintStrength = 0.55;
+    singleRoughness = 0.55;
+    singleMetallic = 0.25;
+  } else if (tag === 'peasant_woman') {
+    singleArchetypeSheet = getSheet('npc_peasant_woman');
+    singleRoughness = 0.72;
+    singleMetallic = 0.08;
+  } else if (tag === 'peasant_man') {
+    singleArchetypeSheet = getSheet('npc_peasant_man');
+    singleRoughness = 0.72;
+    singleMetallic = 0.08;
+  } else if (tag === 'trader') {
+    singleArchetypeSheet = getSheet('npc_trader');
+    singleRoughness = 0.65;
+    singleMetallic = 0.14;
+  } else if (tag === 'noble') {
+    singleArchetypeSheet = getSheet('npc_noble');
+    singleRoughness = 0.55;
+    singleMetallic = 0.24;
+    if (recipe.equipment.cloak === 'cloak_crimson_mantle' || (recipe.id || '').includes('kurier')) {
+      singleTint = { r: 196, g: 58, b: 58 };
+      singleTintStrength = 0.36;
+    } else if ((recipe.id || '').includes('istota')) {
+      singleTint = { r: 108, g: 92, b: 178 };
+      singleTintStrength = 0.52;
+    }
+  } else if (tag === 'knight') {
+    singleArchetypeSheet = getSheet('npc_knight');
+    singleRoughness = 0.48;
+    singleMetallic = 0.34;
+    if (layers.torsoItem.primaryColor) {
+      singleTint = layers.torsoItem.primaryColor;
+      singleTintStrength = 0.16;
+    }
+  }
+
+  if (singleArchetypeSheet) {
+    for (let dir = 0; dir < 8; dir++) {
+      for (let frame = 0; frame < 4; frame++) {
+        blitCharacterSheetCell(
+          singleArchetypeSheet,
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          dir,
+          frame,
+          singleTint,
+          singleTintStrength,
+          singleRoughness,
+          singleMetallic
+        );
+      }
+    }
+    synthesizeSheetNormalVectors(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight);
+    return true;
+  }
+
+  // 2. Modular Humanoid / Leszy / Bies Compositor
+  const torsoId = layers.torsoItem.id;
+  let armorSheetName = 'armor_brigandine';
+  let armorTintStrength = 0.22;
+
+  if (tag === 'leszy') {
+    armorSheetName = 'armor_robes';
+    armorTintStrength = 0.52;
+  } else if (tag === 'bies') {
+    armorSheetName = 'body_male';
+    armorTintStrength = 0.58;
+  } else if (torsoId === 'torso_aethel_plate') {
+    armorSheetName = 'armor_plate';
+    armorTintStrength = 0.14;
+  } else if (torsoId === 'torso_slavic_lamellar') {
+    armorSheetName = 'armor_chain';
+    armorTintStrength = 0.22;
+  } else if (torsoId === 'torso_archmage_robes') {
+    armorSheetName = 'armor_robes';
+    armorTintStrength = 0.24;
+  } else if (torsoId === 'torso_linen_tunic' || torsoId === 'torso_slavic_giezlo') {
+    armorSheetName = 'armor_tunic';
+    armorTintStrength = torsoId === 'torso_slavic_giezlo' ? 0.36 : 0.2;
+  } else {
+    armorSheetName = 'armor_brigandine';
+    armorTintStrength = 0.2;
+  }
+
+  const armorSheet = getSheet(armorSheetName) ?? getSheet('body_male');
+  if (!armorSheet) return false;
+
+  const armorTint: RGBAColor =
+    tag === 'leszy'
+      ? { r: 84, g: 108, b: 62 }
+      : tag === 'bies'
+        ? { r: 124, g: 42, b: 38 }
+        : layers.torsoItem.primaryColor;
+
+  // Resolve Head / Helmet Sheet
+  let headSheet: CharacterSpriteSheetBuffer | undefined;
+  let headTint: RGBAColor | null = null;
+  let headTintStrength = 0;
+  let headRoughness = 0.65;
+  let headMetallic = 0.12;
+
+  if (layers.headItem) {
+    const hid = layers.headItem.id;
+    headRoughness = layers.headItem.roughness;
+    headMetallic = layers.headItem.metallic;
+    if (hid === 'helm_dread_plate') {
+      headSheet = getSheet('head_helm');
+      headTint = layers.headItem.primaryColor;
+      headTintStrength = 0.18;
+    } else if (hid === 'helm_szyszak') {
+      headSheet = getSheet('head_coif');
+      headTint = layers.headItem.primaryColor;
+      headTintStrength = 0.28;
+    } else if (hid === 'helm_shadow_hood' || hid === 'helm_ranger_cowl') {
+      headSheet = getSheet('head_hood');
+      headTint = layers.headItem.primaryColor;
+      headTintStrength = 0.32;
+    } else if (hid === 'helm_klobuk') {
+      headSheet = getSheet('head_mage_hood');
+      headTint = layers.headItem.primaryColor;
+      headTintStrength = 0.35;
+    } else {
+      headSheet = getSheet('head_hair');
+      headTint = recipe.hairColor;
+      headTintStrength = 0.38;
+    }
+  } else if (recipe.hairStyle === 'none' || recipe.hairStyle === 'tonsure') {
+    headSheet = getSheet('head_bald');
+    headTint = recipe.skinTone;
+    headTintStrength = 0.18;
+  } else {
+    headSheet = getSheet('head_hair');
+    headTint = recipe.hairColor;
+    headTintStrength = 0.42;
+  }
+
+  // Resolve Main-Hand Weapon Sheet
+  let weaponSheet: CharacterSpriteSheetBuffer | undefined;
+  let weaponTint: RGBAColor | null = null;
+  let weaponTintStrength = 0;
+  let weaponRoughness = 0.22;
+  let weaponMetallic = 0.88;
+
+  if (tag === 'leszy') {
+    weaponSheet = getSheet('weapon_staff');
+  } else if (tag === 'bies') {
+    weaponSheet = getSheet('weapon_axe');
+  } else if (layers.mainHandItem) {
+    const vs = layers.mainHandItem.visualStyle;
+    weaponRoughness = layers.mainHandItem.roughness;
+    weaponMetallic = layers.mainHandItem.metallic;
+    weaponTint = layers.mainHandItem.primaryColor;
+    weaponTintStrength = 0.18;
+    if (vs === 'bow') {
+      weaponSheet = getSheet('weapon_bow');
+    } else if (vs === 'battleaxe') {
+      weaponSheet = getSheet('weapon_axe');
+    } else if (vs === 'runestaff') {
+      weaponSheet = getSheet('weapon_staff');
+    } else {
+      weaponSheet = getSheet('weapon_longsword');
+    }
+  }
+
+  // Resolve Off-Hand Shield Sheet
+  let offhandSheet: CharacterSpriteSheetBuffer | undefined;
+  let offhandTint: RGBAColor | null = null;
+  let offhandTintStrength = 0;
+  let offhandRoughness = 0.45;
+  let offhandMetallic = 0.55;
+
+  if (layers.offHandItem && layers.offHandItem.visualStyle === 'kiteshield') {
+    offhandRoughness = layers.offHandItem.roughness;
+    offhandMetallic = layers.offHandItem.metallic;
+    offhandTint = layers.offHandItem.primaryColor;
+    if (layers.offHandItem.id === 'offhand_slavic_shield') {
+      offhandSheet = getSheet('offhand_buckler');
+      offhandTintStrength = 0.32;
+    } else {
+      offhandSheet = getSheet('offhand_kite_shield') ?? getSheet('offhand_shield');
+      offhandTintStrength = 0.22;
+    }
+  }
+
+  for (let dir = 0; dir < 8; dir++) {
+    const flareDir = (dir + 3) % 8;
+    const angle = (dir / 8) * Math.PI * 2;
+    const facingX = Math.sin(angle);
+    const facingY = -Math.cos(angle);
+
+    for (let frame = 0; frame < 4; frame++) {
+      const ox = frame * 64;
+      const oy = dir * 96;
+      const cx = ox + 32;
+      const groundY = oy + 82;
+      const stridePhase = (frame / 4) * Math.PI * 2;
+      const legSwing = frame === 0 ? 0 : Math.sin(stridePhase) * 4.0;
+      const bobY = frame === 0 ? 0 : Math.abs(Math.cos(stridePhase)) * 1.8;
+
+      const drawArmor = (): void => {
+        blitCharacterSheetCell(
+          armorSheet,
+          albedoRGBA,
+          normalMaterialRGBA,
+          sheetWidth,
+          dir,
+          frame,
+          armorTint,
+          armorTintStrength,
+          layers.torsoItem.roughness,
+          layers.torsoItem.metallic
+        );
+      };
+
+      const drawHead = (): void => {
+        if (headSheet) {
+          blitCharacterSheetCell(
+            headSheet,
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            dir,
+            frame,
+            headTint,
+            headTintStrength,
+            headRoughness,
+            headMetallic
+          );
+        }
+        // Procedural Slavic / Mythic headgear overlays (antlers, ram horns, elder beard)
+        const headY = groundY - 56 - bobY;
+        if (tag === 'leszy' || layers.headItem?.id === 'helm_druid_antlers') {
+          drawDetailedHelm(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx,
+            headY,
+            facingX,
+            facingY,
+            EQUIPMENT_CATALOG.helm_druid_antlers
+          );
+        } else if (tag === 'bies') {
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx - 4,
+            headY - 3,
+            cx - 12,
+            headY - 12,
+            2.6,
+            1.0,
+            { r: 38, g: 32, b: 28 },
+            null,
+            0.55,
+            0.25
+          );
+          drawTaperedLimb(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            cx + 4,
+            headY - 3,
+            cx + 12,
+            headY - 12,
+            2.6,
+            1.0,
+            { r: 38, g: 32, b: 28 },
+            null,
+            0.55,
+            0.25
+          );
+        }
+      };
+
+      const drawWeapon = (): void => {
+        if (weaponSheet) {
+          blitCharacterSheetCell(
+            weaponSheet,
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            dir,
+            frame,
+            weaponTint,
+            weaponTintStrength,
+            weaponRoughness,
+            weaponMetallic
+          );
+        }
+      };
+
+      const drawOffhand = (): void => {
+        if (offhandSheet) {
+          blitCharacterSheetCell(
+            offhandSheet,
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            dir,
+            frame,
+            offhandTint,
+            offhandTintStrength,
+            offhandRoughness,
+            offhandMetallic
+          );
+        } else if (layers.offHandItem?.visualStyle === 'torch') {
+          const offHandX = cx - 10 - facingX * 1.5;
+          const offHandY = groundY - 35 - bobY - legSwing * 0.25;
+          drawDetailedTorch(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            offHandX,
+            offHandY,
+            frame,
+            layers.offHandItem.primaryColor
+          );
+        } else if (layers.offHandItem?.visualStyle === 'tome') {
+          const offHandX = cx - 10 - facingX * 1.5;
+          const offHandY = groundY - 35 - bobY - legSwing * 0.25;
+          drawDetailedGrimoire(
+            albedoRGBA,
+            normalMaterialRGBA,
+            sheetWidth,
+            sheetHeight,
+            offHandX,
+            offHandY,
+            layers.offHandItem.primaryColor,
+            layers.offHandItem.trimColor
+          );
+        }
+      };
+
+      // Follow Flare's hero_layers.txt per-direction draw order:
+      if (flareDir === 0 || flareDir === 1 || flareDir === 7) {
+        drawWeapon();
+        drawArmor();
+        drawOffhand();
+        drawHead();
+      } else if (flareDir === 2 || flareDir === 3 || flareDir === 4) {
+        drawArmor();
+        drawOffhand();
+        drawHead();
+        drawWeapon();
+      } else if (flareDir === 5) {
+        drawArmor();
+        drawWeapon();
+        drawHead();
+        drawOffhand();
+      } else {
+        drawWeapon();
+        drawArmor();
+        drawHead();
+        drawOffhand();
+      }
+    }
+  }
+
+  synthesizeSheetNormalVectors(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight);
+  return true;
+}
+
 /**
  * Bakes a complete 8-directional x 4-animation-frame character sprite sheet
  * into both an Albedo RGBA buffer and a Normal+Material RGBA buffer with articulated heroic anatomy.
@@ -1303,6 +2316,11 @@ function applyCharacterSilhouettePolish(
 }
 
 export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharacterBuffers {
+  for (const baker of customCharacterBakers) {
+    if (baker.matches(recipe)) {
+      return baker.bake(recipe);
+    }
+  }
   const hash = computeCharacterRecipeHash(recipe);
   const cached = bufferCache.get(hash);
   if (cached) return cached;
@@ -1317,6 +2335,49 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
 
   const albedoRGBA = new Uint8ClampedArray(sheetWidth * sheetHeight * 4);
   const normalMaterialRGBA = new Uint8ClampedArray(sheetWidth * sheetHeight * 4);
+
+  const archetypeTag = resolveCharacterArchetypeTag(recipe);
+  if (archetypeTag === 'wilk') {
+    bakeQuadrupedWolfSheet(recipe, albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight);
+    const wolfResult: BakedCharacterBuffers = {
+      recipeHash: hash,
+      frameWidth,
+      frameHeight,
+      directions,
+      framesPerDirection,
+      sheetWidth,
+      sheetHeight,
+      albedoRGBA,
+      normalMaterialRGBA
+    };
+    bufferCache.set(hash, wolfResult);
+    return wolfResult;
+  }
+
+  if (
+    tryBakeFromLoadedCharacterSheets(
+      recipe,
+      layers,
+      albedoRGBA,
+      normalMaterialRGBA,
+      sheetWidth,
+      sheetHeight
+    )
+  ) {
+    const spriteResult: BakedCharacterBuffers = {
+      recipeHash: hash,
+      frameWidth,
+      frameHeight,
+      directions,
+      framesPerDirection,
+      sheetWidth,
+      sheetHeight,
+      albedoRGBA,
+      normalMaterialRGBA
+    };
+    bufferCache.set(hash, spriteResult);
+    return spriteResult;
+  }
 
   for (let dir = 0; dir < directions; dir++) {
     const angle = (dir / 8) * Math.PI * 2;

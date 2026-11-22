@@ -16,12 +16,29 @@ import {
   computeCharacterRecipeHash,
   generateRandomCharacterRecipe
 } from '../assets/characterBakery';
-import { preloadGlionoxForestAssets } from '../assets/glionoxAtlas';
+import {
+  getOgaGroundMicroTuftPbr,
+  preloadGlionoxForestAssets
+} from '../assets/glionoxAtlas';
 import {
   generatePropPbrBuffers,
   generateTilePbrBuffers,
   SynthesizedPbrBufferPair
 } from '../assets/proceduralForge';
+import {
+  clearTerrainTransitionCache,
+  computeReachableTilesBfs,
+  computeTileTransitions,
+  generateTerrainTransitionPbr,
+  getMicroFoliagePlacement,
+  getWorldGroundColorMod,
+  getWorldTileVariant,
+  MicroFoliagePlacement,
+  NeighborTileInfo,
+  TerrainEdgeSlot,
+  TerrainTransitionKind,
+  TerrainTransitionOverlay
+} from '../assets/terrainBlending';
 import {
   DepthBox3D,
   shouldApplyWallCutaway,
@@ -56,6 +73,7 @@ import { getMerchantSpecialty } from '../rpg/dialogueSystem';
 import {
   ActorEntity,
   CrpgGameState,
+  direction8ToVector,
   MERCHANT_ACTOR_IDS,
   resolveTravelSignpostDestination
 } from '../rpg/gameLoop';
@@ -82,6 +100,40 @@ export type InspectorToolMode =
   | 'spawn_enemy';
 
 export type EditorPropOrientation = '1x1' | '2x1' | '1x2';
+
+export interface PropVisualTransform {
+  scaleX: number;
+  scaleY: number;
+  centerOnFootprint: boolean;
+  offsetY: number;
+  aoScale: number;
+}
+
+export type PropVisualTransformResolver = (
+  prop: Pick<WorldPropEntity, 'kind' | 'sizeX' | 'sizeY' | 'heightZ'>
+) => PropVisualTransform;
+
+const IDENTITY_PROP_VISUAL_TRANSFORM: PropVisualTransform = {
+  scaleX: 1,
+  scaleY: 1,
+  centerOnFootprint: false,
+  offsetY: 0,
+  aoScale: 1
+};
+
+let customPropVisualTransformResolver: PropVisualTransformResolver | null = null;
+
+export function registerPropVisualTransform(resolver: PropVisualTransformResolver | null): void {
+  customPropVisualTransformResolver = resolver;
+}
+
+export function resolvePropVisualTransform(
+  prop: Pick<WorldPropEntity, 'kind' | 'sizeX' | 'sizeY' | 'heightZ'>
+): PropVisualTransform {
+  return customPropVisualTransformResolver
+    ? customPropVisualTransformResolver(prop)
+    : IDENTITY_PROP_VISUAL_TRANSFORM;
+}
 
 interface DualPbrTexturePair {
   albedo: Texture;
@@ -262,11 +314,13 @@ export class IsoSceneView {
   public editorPropOrientation: EditorPropOrientation = '1x1';
   public editorEnemyDifficulty: EnemyDifficultyTier = 'normal';
   public zoom = 1.0;
+  public organicTerrainBlending = true;
+  public showGridInExploration = false;
   public cameraOffsetX = 0;
   public cameraOffsetY = 140;
   public edgePanEnabled = true;
-  public edgePanMarginPx = 96;
-  public edgePanSpeed = 520;
+  public edgePanMarginPx = 24;
+  public edgePanSpeed = 580;
   public activeEdgeDirection: EdgePanDirection | null = null;
   public forcedEdgeDirection: EdgePanDirection | null = null;
   public targetZoom = 1.0;
@@ -275,6 +329,7 @@ export class IsoSceneView {
   private isManualCameraPanning = false;
   private currentAppliedCursor = '';
   public hoveredWorldTile: { x: number; y: number; z: number } | null = null;
+  public isHighlightAltHeld = false;
   public lastBakeDurationMs = 1.2;
   public fps = 60;
 
@@ -286,11 +341,28 @@ export class IsoSceneView {
   private readonly debugOverlayContainer = new Container();
 
   private readonly tileTextureCache = new Map<string, DualPbrTexturePair>();
+  private readonly transitionTextureCache = new Map<string, DualPbrTexturePair>();
+  private readonly microFoliageTextureCache = new Map<number, DualPbrTexturePair>();
   private readonly propTextureCache = new Map<string, DualPbrTexturePair>();
   private readonly characterTextureCache = new Map<string, CharacterDualFrameTextures>();
   private readonly displayPool = new FrameDisplayPool();
   private readonly scratchPbrLit = { r: 0, g: 0, b: 0, specular: 0 };
   private readonly scratchSurface = { nx: 0, ny: 0, roughness: 0, metallic: 0 };
+  private readonly scratchGroundMod = { r: 1, g: 1, b: 1 };
+  private readonly scratchMicroFoliage: MicroFoliagePlacement = {
+    variant: 0,
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1,
+    alpha: 1
+  };
+  private readonly scratchNeighbor: NeighborTileInfo = { terrain: 'forest_grass', z: 0 };
+  private cachedTransitionsKey = '';
+  private cachedTransitionsByTile: TerrainTransitionOverlay[][] = [];
+  private readonly scratchCombatPoly: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+  private readonly combatEnemyTileSet = new Set<number>();
+  private readonly cachedCombatReachSet = new Set<number>();
+  private cachedCombatReachKey = '';
   private cachedHoverPathKey = '';
   private cachedHoverPath: PathStepNode[] = [];
   private readonly particles: FloatingParticle[] = [];
@@ -346,8 +418,8 @@ export class IsoSceneView {
 
   public async mount(containerEl: HTMLElement): Promise<void> {
     await preloadGlionoxForestAssets();
-    this.tileTextureCache.clear();
-    this.propTextureCache.clear();
+    this.clearCachedTextures();
+    clearTerrainTransitionCache();
 
     try {
       await this.app.init({
@@ -406,7 +478,7 @@ export class IsoSceneView {
           this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 10.0);
           const zoomRatio = this.zoom / prevZoom;
           const cx = viewportW * 0.5;
-          const cy = viewportH * 0.46;
+          const cy = viewportH * 0.53;
           this.cameraOffsetX = cx - (cx - this.cameraOffsetX) * zoomRatio;
           this.cameraOffsetY = cy - (cy - this.cameraOffsetY) * zoomRatio;
         }
@@ -421,6 +493,7 @@ export class IsoSceneView {
         const prevDialogue = this.game.activeDialogue;
         const prevCombatActive = this.game.combatState.active;
         const prevPendingCombatConfirm = this.game.pendingCombatConfirmation;
+        const prevStealthActive = this.game.isStealthActive;
 
         // 1. Update game simulation first so render uses fresh actor positions
         this.game.update(dt);
@@ -437,7 +510,8 @@ export class IsoSceneView {
           this.game.player.combat?.ap !== prevPlayerAp ||
           this.game.activeDialogue !== prevDialogue ||
           this.game.combatState.active !== prevCombatActive ||
-          this.game.pendingCombatConfirmation !== prevPendingCombatConfirm
+          this.game.pendingCombatConfirmation !== prevPendingCombatConfirm ||
+          this.game.isStealthActive !== prevStealthActive
         ) {
           this.onUiStateChange?.();
         }
@@ -463,7 +537,7 @@ export class IsoSceneView {
           );
           const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
           const targetCamX = viewportW * 0.5 - pScr.x * this.zoom;
-          const targetCamY = viewportH * 0.46 - pScr.y * this.zoom;
+          const targetCamY = viewportH * 0.53 - pScr.y * this.zoom;
 
           const dist = Math.hypot(targetCamX - this.cameraOffsetX, targetCamY - this.cameraOffsetY);
           if (dist > 0.1) {
@@ -535,6 +609,7 @@ export class IsoSceneView {
         map.tiles[c.y][c.x].walkable =
           this.editorTerrainType === 'abyss_water' ? false : this.editorTerrainWalkable;
       }
+      this.game.bumpMapRevision();
       this.game.recomputeFov();
       this.game.addLog(
         `[Edytor] Pomalowano teren (${centerX}, ${centerY}) pędzlem ${this.editorBrushSize}×${this.editorBrushSize}: ${this.editorTerrainType}.`
@@ -542,15 +617,34 @@ export class IsoSceneView {
       return;
     }
 
+    const syncEntitiesElevationAtCoords = (): void => {
+      for (const c of affectedCoords) {
+        const tz = map.tiles[c.y][c.x].z;
+        if (tz > map.maxElevation) {
+          map.maxElevation = tz;
+        }
+        for (const prop of map.props) {
+          if (prop.x === c.x && prop.y === c.y) {
+            prop.z = tz;
+          }
+        }
+        for (const npc of this.game.npcs) {
+          if (npc.tileX === c.x && npc.tileY === c.y) {
+            npc.z = tz;
+          }
+        }
+        if (this.game.player.tileX === c.x && this.game.player.tileY === c.y) {
+          this.game.player.z = tz;
+        }
+      }
+      this.game.bumpMapRevision();
+    };
+
     if (this.activeTool === 'raise_elevation') {
       for (const c of affectedCoords) {
         map.tiles[c.y][c.x].z = Math.min(4, map.tiles[c.y][c.x].z + 1);
       }
-      for (const prop of map.props) {
-        if (prop.x === centerX && prop.y === centerY) {
-          prop.z = map.tiles[centerY][centerX].z;
-        }
-      }
+      syncEntitiesElevationAtCoords();
       this.game.addLog(
         `[Edytor] Podniesiono wysokość kafla (${centerX}, ${centerY}) do Z=${map.tiles[centerY][centerX].z}.`
       );
@@ -561,11 +655,7 @@ export class IsoSceneView {
       for (const c of affectedCoords) {
         map.tiles[c.y][c.x].z = Math.max(0, map.tiles[c.y][c.x].z - 1);
       }
-      for (const prop of map.props) {
-        if (prop.x === centerX && prop.y === centerY) {
-          prop.z = map.tiles[centerY][centerX].z;
-        }
-      }
+      syncEntitiesElevationAtCoords();
       this.game.addLog(
         `[Edytor] Obniżono wysokość kafla (${centerX}, ${centerY}) do Z=${map.tiles[centerY][centerX].z}.`
       );
@@ -577,6 +667,7 @@ export class IsoSceneView {
       for (const c of affectedCoords) {
         map.tiles[c.y][c.x].z = targetZ;
       }
+      syncEntitiesElevationAtCoords();
       this.game.addLog(
         `[Edytor] Wyrównano wysokość (${centerX}, ${centerY}) do Z=${targetZ}.`
       );
@@ -594,6 +685,8 @@ export class IsoSceneView {
           const lIdx = map.lights.findIndex((l) => l.id === existing.linkedLightId);
           if (lIdx >= 0) map.lights.splice(lIdx, 1);
         }
+        this.game.rebuildPropGrid();
+        this.game.bumpMapRevision();
         this.game.recomputeFov();
         this.game.addLog(`[Edytor] Usunięto obiekt „${existing.name}” z (${centerX}, ${centerY}).`);
         return;
@@ -641,7 +734,13 @@ export class IsoSceneView {
         }
       }
 
-      const passableKinds: ReadonlyArray<PropKind> = ['wildflower_patch', 'ground_loot', 'exit_path'];
+      const passableKinds: ReadonlyArray<PropKind> = [
+        'wildflower_patch',
+        'ground_loot',
+        'exit_path',
+        'watermill_wheel',
+        'perched_crow'
+      ];
       const sightBlockingKinds: ReadonlyArray<PropKind> = [
         'wall_block',
         'pillar',
@@ -659,12 +758,15 @@ export class IsoSceneView {
         'torch_sconce',
         'arcane_crystal',
         'chest',
+        'sarcophagus',
         'campfire',
         'ground_loot',
         'exit_path',
         'market_stall',
         'slavic_shrine',
         'slavic_well',
+        'watermill_wheel',
+        'perched_crow',
         'travel_signpost',
         'watchtower',
         'dungeon_barrel',
@@ -680,8 +782,8 @@ export class IsoSceneView {
         const isArcane = kind === 'arcane_crystal';
         map.lights.push({
           id: linkedLightId,
-          x: centerX + 0.5,
-          y: centerY + 0.5,
+          x: centerX,
+          y: centerY,
           z: z + 1.4,
           color: isArcane ? { r: 72, g: 224, b: 255 } : { r: 255, g: 164, b: 64 },
           intensity: 1.5,
@@ -708,6 +810,7 @@ export class IsoSceneView {
         isOpen: false,
         lootItems:
           kind === 'chest' ||
+          kind === 'sarcophagus' ||
           kind === 'market_stall' ||
           kind === 'ground_loot' ||
           kind === 'dungeon_barrel' ||
@@ -717,6 +820,8 @@ export class IsoSceneView {
         linkedLightId
       });
 
+      this.game.rebuildPropGrid();
+      this.game.bumpMapRevision();
       this.game.recomputeFov();
       this.game.addLog(
         `[Edytor] Postawiono obiekt „${kind}” (wariant #${this.editorPropVariant}, ${sizeX}×${sizeY}) na (${centerX}, ${centerY}).`
@@ -887,6 +992,8 @@ export class IsoSceneView {
       this.game.map.tiles = parsed.tiles;
       this.game.map.props = parsed.props;
       this.game.map.lights = Array.isArray(parsed.lights) ? parsed.lights : [];
+      this.game.rebuildPropGrid();
+      this.game.bumpMapRevision();
       this.game.recomputeFov();
       this.game.addLog(`[Edytor] Wczytano mapę „${this.game.map.name}” (${parsed.width}×${parsed.height}) z pliku JSON.`);
       this.onUiStateChange?.();
@@ -909,6 +1016,7 @@ export class IsoSceneView {
         map.tiles[y][x].walkable = isWalkable;
       }
     }
+    this.game.bumpMapRevision();
     this.game.recomputeFov();
     this.game.addLog(`[Edytor] Wypełniono całą mapę (${map.width}×${map.height}) terenem: ${terrain}.`);
     this.onUiStateChange?.();
@@ -929,6 +1037,8 @@ export class IsoSceneView {
       n.z = clampedZ;
     }
     this.game.player.z = clampedZ;
+    map.maxElevation = Math.max(map.maxElevation, clampedZ);
+    this.game.bumpMapRevision();
     this.game.addLog(`[Edytor] Wyrównano wysokość całej mapy do poziomu Z=${clampedZ}.`);
     this.onUiStateChange?.();
   }
@@ -937,6 +1047,8 @@ export class IsoSceneView {
     this.game.map.props.length = 0;
     this.game.map.lights.length = 0;
     this.game.npcs.length = 0;
+    this.game.rebuildPropGrid();
+    this.game.bumpMapRevision();
     this.game.recomputeFov();
     this.game.addLog('[Edytor] Wyczyszczono wszystkie obiekty, światła i NPC z mapy (czysta makieta).');
     this.onUiStateChange?.();
@@ -967,7 +1079,7 @@ export class IsoSceneView {
       (typeof window !== 'undefined' ? window.innerHeight : 0) ||
       720;
     this.cameraOffsetX = screenW * 0.5 - pScr.x * this.zoom;
-    this.cameraOffsetY = screenH * 0.46 - pScr.y * this.zoom;
+    this.cameraOffsetY = screenH * 0.53 - pScr.y * this.zoom;
     this.isManualCameraPanning = false;
     this.cameraVelX = 0;
     this.cameraVelY = 0;
@@ -1080,7 +1192,11 @@ export class IsoSceneView {
     return entry;
   }
 
-  private getTileTexturePair(terrain: TileTerrainType, z: number, variant = 0): DualPbrTexturePair {
+  private getTileTexturePair(
+    terrain: TileTerrainType,
+    z: number,
+    variant = 0
+  ): DualPbrTexturePair {
     const key = `${terrain}_z${z}_v${variant}`;
     const existing = this.tileTextureCache.get(key);
     if (existing) return existing;
@@ -1093,6 +1209,45 @@ export class IsoSceneView {
       anchorY: synth.anchorY
     };
     this.tileTextureCache.set(key, pair);
+    return pair;
+  }
+
+  private getTransitionTexturePair(
+    terrain: TileTerrainType,
+    slot: TerrainEdgeSlot,
+    kind: TerrainTransitionKind,
+    variant = 0
+  ): DualPbrTexturePair {
+    const key = `${terrain}_${slot}_${kind}_v${variant}`;
+    const existing = this.transitionTextureCache.get(key);
+    if (existing) return existing;
+
+    const synth = generateTerrainTransitionPbr(terrain, slot, kind, variant);
+    const pair: DualPbrTexturePair = {
+      albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
+      normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
+      anchorX: synth.anchorX,
+      anchorY: synth.anchorY
+    };
+    this.transitionTextureCache.set(key, pair);
+    return pair;
+  }
+
+  private getMicroFoliageTexturePair(variant: number): DualPbrTexturePair | null {
+    const vNorm = ((variant % 8) + 8) % 8;
+    const existing = this.microFoliageTextureCache.get(vNorm);
+    if (existing) return existing;
+
+    const synth = getOgaGroundMicroTuftPbr(vNorm);
+    if (!synth) return null;
+
+    const pair: DualPbrTexturePair = {
+      albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
+      normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
+      anchorX: synth.anchorX,
+      anchorY: synth.anchorY
+    };
+    this.microFoliageTextureCache.set(vNorm, pair);
     return pair;
   }
 
@@ -1118,21 +1273,37 @@ export class IsoSceneView {
     return pair;
   }
 
-  public destroy(): void {
-    this.inputAbortController?.abort();
-    this.inputAbortController = null;
-
+  private clearCachedTextures(): void {
     for (const pair of this.tileTextureCache.values()) {
       pair.albedo.destroy(true);
       pair.normalMat.destroy(true);
     }
     this.tileTextureCache.clear();
 
+    for (const pair of this.transitionTextureCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.transitionTextureCache.clear();
+
+    for (const pair of this.microFoliageTextureCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.microFoliageTextureCache.clear();
+
     for (const pair of this.propTextureCache.values()) {
       pair.albedo.destroy(true);
       pair.normalMat.destroy(true);
     }
     this.propTextureCache.clear();
+  }
+
+  public destroy(): void {
+    this.inputAbortController?.abort();
+    this.inputAbortController = null;
+
+    this.clearCachedTextures();
 
     for (const charTex of this.characterTextureCache.values()) {
       for (const row of charTex.albedoFrames) {
@@ -1167,12 +1338,19 @@ export class IsoSceneView {
         this.keysDown.clear();
         return;
       }
+      if (e.key === 'Alt') {
+        e.preventDefault();
+        this.isHighlightAltHeld = true;
+        return;
+      }
       const k = e.key.toLowerCase();
       this.keysDown.add(k);
       if (k === 'q') {
         this.rotateCamera(-1);
       } else if (k === 'e') {
         this.rotateCamera(1);
+      } else if (k === 'home' || k === 'f') {
+        this.centerCameraOnPlayer();
       } else if (k === 'r' && this.activeTool === 'place_prop') {
         this.editorPropOrientation =
           this.editorPropOrientation === '1x1'
@@ -1185,6 +1363,9 @@ export class IsoSceneView {
     }, { signal });
 
     window.addEventListener('keyup', (e) => {
+      if (e.key === 'Alt') {
+        this.isHighlightAltHeld = false;
+      }
       this.keysDown.delete(e.key.toLowerCase());
     }, { signal });
 
@@ -1273,7 +1454,7 @@ export class IsoSceneView {
       const overUi = Boolean(
         document.querySelector('.character-backdrop, .credits-modal-backdrop') ||
         target?.closest(
-          '.top-bar, .top-bar button, .hero-card, .chronicle-log, .combat-unified-dock, .combat-tactical-bar, .combat-live-log, .combat-confirm-backdrop, .combat-report-backdrop, .item-details-backdrop, .character-backdrop, .character-drawer, .credits-modal-backdrop, .credits-modal-window, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
+          '.top-bar, .top-bar button, .hero-card, .chronicle-log.expanded, .chronicle-log .chronicle-toggle-btn, .chronicle-log .combat-tab-btn, .chronicle-log .combat-report-tag-btn, .combat-top-banner, .combat-unified-dock, .combat-tactical-bar, .combat-live-log, .combat-confirm-backdrop, .combat-report-backdrop, .item-details-backdrop, .character-backdrop, .character-drawer, .credits-modal-backdrop, .credits-modal-window, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
         )
       );
       this.updateEdgePanPointerState(e.clientX, e.clientY, true, overUi);
@@ -1323,6 +1504,7 @@ export class IsoSceneView {
       this.isPointerInsideViewport = false;
       this.forcedEdgeDirection = null;
       this.keysDown.clear();
+      this.isHighlightAltHeld = false;
     }, { signal });
   }
 
@@ -1844,17 +2026,6 @@ export class IsoSceneView {
     const useNormalTex = this.bufferMode === 'normal_map';
     const screenLights = this.buildScreenSpaceLights();
 
-    updateAtmosphericFilterUniforms(
-      this.postFilter,
-      this.game.ambientLightIntensity,
-      this.elapsedSeconds,
-      this.bufferMode === 'final_pbr',
-      this.cameraOffsetX + shakeX,
-      this.cameraOffsetY + shakeY,
-      this.zoom,
-      screenLights
-    );
-
     const viewW =
       (this.app.renderer ? this.app.screen.width : 0) ||
       (typeof window !== 'undefined' ? window.innerWidth : 0) ||
@@ -1863,13 +2034,111 @@ export class IsoSceneView {
       (this.app.renderer ? this.app.screen.height : 0) ||
       (typeof window !== 'undefined' ? window.innerHeight : 0) ||
       720;
+
+    updateAtmosphericFilterUniforms(
+      this.postFilter,
+      this.game.ambientLightIntensity,
+      this.elapsedSeconds,
+      this.bufferMode === 'final_pbr',
+      this.cameraOffsetX + shakeX,
+      this.cameraOffsetY + shakeY,
+      this.zoom,
+      screenLights,
+      viewW * 0.5,
+      viewH * 0.5
+    );
+
+    // When the WebGL per-pixel atmospheric post-filter is active, floor tiles MUST use a uniform
+    // ambient tint so point lights and world dappling are evaluated smoothly per-pixel in GLSL
+    // instead of creating flat-shaded diamond steps across the ground.
+    const usePerPixelFloorLighting = this.postFilter !== null && this.bufferMode === 'final_pbr';
+    const emptyLights: ReadonlyArray<ScreenSpacePointLight> = [];
+    const uniformFloorAmbientTint = usePerPixelFloorLighting
+      ? this.computeRgbTintForScreenPoint(0, 0, 0, -0.25, 0.6, 0.15, 1.0, emptyLights)
+      : 0xffffff;
     const cullPad = 380;
     const minLocalX = (-this.cameraOffsetX - cullPad) / Math.max(0.25, this.zoom);
     const maxLocalX = (viewW - this.cameraOffsetX + cullPad) / Math.max(0.25, this.zoom);
     const minLocalY = (-this.cameraOffsetY - cullPad) / Math.max(0.25, this.zoom);
     const maxLocalY = (viewH - this.cameraOffsetY + cullPad) / Math.max(0.25, this.zoom);
 
-    // 1. Render Isometric Floor Tiles in Painter Order (rx + ry from 0 to rotW + rotH)
+    // 1. Render Seamless Isometric Floor Tiles + Organic Terrain Transitions in Painter Order
+    const showTacticalGrid =
+      this.bufferMode !== 'walkability_fov' &&
+      (this.game.combatState.active || this.showGridInExploration);
+    const isPlayerCombatTurn =
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id;
+    const combatApPerStep =
+      this.game.player.combat && this.game.player.combat.crippledLegsTurns > 0 ? 2 : 1;
+    const combatMaxReachSteps = isPlayerCombatTurn
+      ? Math.floor((this.game.player.combat?.ap ?? 0) / combatApPerStep)
+      : 0;
+
+    if (showTacticalGrid) {
+      this.combatEnemyTileSet.clear();
+      let enemyPosSig = '';
+      for (const npc of this.game.npcs) {
+        if (npc.combat?.isHostile && npc.combat.isAlive) {
+          this.combatEnemyTileSet.add(npc.tileY * mapW + npc.tileX);
+          enemyPosSig += `${npc.tileX},${npc.tileY};`;
+        }
+      }
+
+      if (isPlayerCombatTurn && combatMaxReachSteps > 0) {
+        const reachKey = `${this.game.map.id}:${this.game.mapRevision}:${this.game.map.props.length}:${this.game.player.tileX},${this.game.player.tileY}:${combatMaxReachSteps}:${enemyPosSig}`;
+        if (reachKey !== this.cachedCombatReachKey) {
+          this.cachedCombatReachKey = reachKey;
+          computeReachableTilesBfs(
+            mapW,
+            mapH,
+            this.game.player.tileX,
+            this.game.player.tileY,
+            combatMaxReachSteps,
+            (tx, ty) => this.game.isTileWalkable(tx, ty, this.game.player.id),
+            (tx, ty) => this.game.map.tiles[ty][tx].z,
+            1,
+            this.cachedCombatReachSet
+          );
+        }
+      } else {
+        this.cachedCombatReachSet.clear();
+        this.cachedCombatReachKey = '';
+      }
+    }
+
+    if (this.organicTerrainBlending && this.bufferMode !== 'depth_dag') {
+      const transitionsKey = `${this.game.map.id}:${this.game.mapRevision}:${this.rotation}:${rotW}x${rotH}`;
+      if (transitionsKey !== this.cachedTransitionsKey) {
+        this.cachedTransitionsKey = transitionsKey;
+        const totalRotated = rotW * rotH;
+        const cache = new Array<TerrainTransitionOverlay[]>(totalRotated);
+        const getRotatedNeighborInfo = (nrx: number, nry: number): NeighborTileInfo | null => {
+          if (nrx < 0 || nrx >= rotW || nry < 0 || nry >= rotH) return null;
+          const nw = toWorldGrid(nrx, nry, mapW, mapH, this.rotation);
+          const nCell = this.game.map.tiles[nw.y]?.[nw.x];
+          if (!nCell) return null;
+          this.scratchNeighbor.terrain = nCell.terrain;
+          this.scratchNeighbor.z = nCell.z;
+          return this.scratchNeighbor;
+        };
+        for (let cry = 0; cry < rotH; cry++) {
+          for (let crx = 0; crx < rotW; crx++) {
+            const cw = toWorldGrid(crx, cry, mapW, mapH, this.rotation);
+            const cCell = this.game.map.tiles[cw.y][cw.x];
+            cache[cry * rotW + crx] = computeTileTransitions(
+              crx,
+              cry,
+              cCell.terrain,
+              cCell.z,
+              getRotatedNeighborInfo
+            );
+          }
+        }
+        this.cachedTransitionsByTile = cache;
+      }
+    }
+
     for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
       for (let rx = 0; rx < rotW; rx++) {
         const ry = sum - rx;
@@ -1888,77 +2157,113 @@ export class IsoSceneView {
           continue;
         }
 
-        const tileVariant = ((cell.x * 7 + cell.y * 13) & 3);
+        const variantCount =
+          cell.terrain === 'forest_grass' ||
+          cell.terrain === 'dirt_path' ||
+          cell.terrain === 'forest_soil' ||
+          cell.terrain === 'abyss_water'
+            ? 8
+            : 4;
+        const tileVariant = getWorldTileVariant(cell.x, cell.y, variantCount);
         const texPair = this.getTileTexturePair(cell.terrain, cell.z, tileVariant);
         const sprite = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
         sprite.anchor.set(texPair.anchorX, texPair.anchorY);
         sprite.position.set(scr.x, scr.y);
+        // Subtle 1.5% overdraw prevents any hairline subpixel grid seams across zoom levels
+        sprite.scale.set(1.015, 1.015);
 
         const fovFactor = this.game.fogOfWarEnabled
           ? this.game.fov.getLightFactor(cell.x, cell.y)
           : 1.0;
-        sprite.tint = this.computeRgbTintForScreenPoint(
-          scr.x,
-          scr.y,
-          0,
-          -0.25,
-          0.6,
-          0.15,
-          fovFactor,
-          screenLights
-        );
 
+        let tileTint: number;
+        if (usePerPixelFloorLighting) {
+          tileTint =
+            fovFactor >= 0.999
+              ? uniformFloorAmbientTint
+              : this.computeRgbTintForScreenPoint(
+                  0,
+                  0,
+                  0,
+                  -0.25,
+                  0.6,
+                  0.15,
+                  fovFactor,
+                  emptyLights
+                );
+        } else {
+          const baseTint = this.computeRgbTintForScreenPoint(
+            scr.x,
+            scr.y,
+            0,
+            -0.25,
+            0.6,
+            0.15,
+            fovFactor,
+            screenLights
+          );
+          tileTint = baseTint;
+          if (this.bufferMode === 'final_pbr') {
+            const mod = getWorldGroundColorMod(cell.x, cell.y, this.scratchGroundMod);
+            const rMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 16) & 0xff) * mod.r)));
+            const gMod = Math.min(255, Math.max(0, Math.round(((baseTint >> 8) & 0xff) * mod.g)));
+            const bMod = Math.min(255, Math.max(0, Math.round((baseTint & 0xff) * mod.b)));
+            tileTint = (rMod << 16) | (gMod << 8) | bMod;
+          }
+        }
+
+        sprite.tint = tileTint;
         this.floorLayer.addChild(sprite);
 
-        // Soft organic edge blending for dirt_path / mossy_cobble bordering grass/soil
-        if (
-          this.bufferMode === 'final_pbr' &&
-          (cell.terrain === 'dirt_path' || cell.terrain === 'mossy_cobble')
-        ) {
-          const blendEdges = [
-            { drx: 0, dry: -1, x1: 0, y1: -TILE_HEIGHT * 0.5, x2: TILE_WIDTH * 0.5, y2: 0 },
-            { drx: 1, dry: 0, x1: TILE_WIDTH * 0.5, y1: 0, x2: 0, y2: TILE_HEIGHT * 0.5 },
-            { drx: 0, dry: 1, x1: 0, y1: TILE_HEIGHT * 0.5, x2: -TILE_WIDTH * 0.5, y2: 0 },
-            { drx: -1, dry: 0, x1: -TILE_WIDTH * 0.5, y1: 0, x2: 0, y2: -TILE_HEIGHT * 0.5 }
-          ];
-          let blendGfx: Graphics | null = null;
-          for (const edge of blendEdges) {
-            const nrx = rx + edge.drx;
-            const nry = ry + edge.dry;
-            if (nrx < 0 || nrx >= rotW || nry < 0 || nry >= rotH) continue;
-            const nWorld = toWorldGrid(nrx, nry, mapW, mapH, this.rotation);
-            const neighbor = this.game.map.tiles[nWorld.y]?.[nWorld.x];
-            if (
-              neighbor &&
-              neighbor.z === cell.z &&
-              (neighbor.terrain === 'forest_grass' || neighbor.terrain === 'forest_soil')
-            ) {
-              if (!blendGfx) blendGfx = this.displayPool.graphics();
-              const grassCol = neighbor.terrain === 'forest_grass' ? 0x456330 : 0x334729;
-              const mx = scr.x + (edge.x1 + edge.x2) * 0.5;
-              const my = scr.y + (edge.y1 + edge.y2) * 0.5;
-              blendGfx.ellipse(mx, my, 18, 9).fill({ color: grassCol, alpha: 0.42 });
-              blendGfx
-                .ellipse(
-                  scr.x + edge.x1 * 0.72 + edge.x2 * 0.28,
-                  scr.y + edge.y1 * 0.72 + edge.y2 * 0.28,
-                  11,
-                  5.5
-                )
-                .fill({ color: grassCol, alpha: 0.34 });
-              blendGfx
-                .ellipse(
-                  scr.x + edge.x1 * 0.28 + edge.x2 * 0.72,
-                  scr.y + edge.y1 * 0.28 + edge.y2 * 0.72,
-                  11,
-                  5.5
-                )
-                .fill({ color: grassCol, alpha: 0.34 });
+        // 1B. Organic Terrain Edge & Corner Transition Blending (cached per mapRevision & camera rotation)
+        if (this.organicTerrainBlending && this.bufferMode !== 'depth_dag') {
+          const transitions = this.cachedTransitionsByTile[ry * rotW + rx];
+          if (transitions && transitions.length > 0) {
+            const transVariant = getWorldTileVariant(cell.x, cell.y, 4);
+            for (let ti = 0; ti < transitions.length; ti++) {
+              const tr = transitions[ti];
+              const trTex = this.getTransitionTexturePair(
+                tr.terrain,
+                tr.slot,
+                tr.kind,
+                transVariant
+              );
+              const trSprite = this.displayPool.sprite(
+                useNormalTex ? trTex.normalMat : trTex.albedo
+              );
+              trSprite.anchor.set(trTex.anchorX, trTex.anchorY);
+              trSprite.position.set(scr.x, scr.y);
+              trSprite.scale.set(1.015, 1.015);
+              trSprite.tint = tileTint;
+              this.floorLayer.addChild(trSprite);
             }
           }
-          if (blendGfx) {
-            blendGfx.tint = sprite.tint;
-            this.floorLayer.addChild(blendGfx);
+        }
+
+        // 1C. Subtle Ground-Level Grass Tufts & Field Pebbles on open natural tiles
+        if (
+          this.organicTerrainBlending &&
+          this.bufferMode === 'final_pbr' &&
+          cell.walkable &&
+          !this.game.getPropAtTile(cell.x, cell.y)
+        ) {
+          const mf = getMicroFoliagePlacement(
+            cell.x,
+            cell.y,
+            cell.terrain,
+            this.scratchMicroFoliage
+          );
+          if (mf) {
+            const mfTex = this.getMicroFoliageTexturePair(mf.variant);
+            if (mfTex) {
+              const mfSprite = this.displayPool.sprite(mfTex.albedo);
+              mfSprite.anchor.set(mfTex.anchorX, mfTex.anchorY);
+              mfSprite.position.set(scr.x + mf.offsetX, scr.y + mf.offsetY);
+              mfSprite.scale.set(mf.scale, mf.scale);
+              mfSprite.alpha = mf.alpha;
+              mfSprite.tint = tileTint;
+              this.floorLayer.addChild(mfSprite);
+            }
           }
         }
 
@@ -1978,6 +2283,46 @@ export class IsoSceneView {
               .ellipse(scr.x - caustOffX * 0.5, scr.y - caustOffY * 0.5, caustW * 0.55, caustH * 0.45)
               .fill({ color: 0x00b4d8, alpha: shimmerAlpha * 0.35 });
             this.floorLayer.addChild(causticGfx);
+          }
+        }
+
+        // 1D. Tactical Isometric Ground Grid — rendered EXCLUSIVELY during active combat (or explicit debug toggle)
+        if (showTacticalGrid) {
+          const vis = this.game.fov.getVisibility(cell.x, cell.y);
+          if (!this.game.fogOfWarEnabled || vis !== 'unexplored') {
+            const cellIdx = cell.y * mapW + cell.x;
+            const walkOk = this.game.isTileWalkable(cell.x, cell.y, this.game.player.id);
+            const isPlayerTile =
+              cell.x === this.game.player.tileX && cell.y === this.game.player.tileY;
+            const hasHostileEnemy = this.combatEnemyTileSet.has(cellIdx);
+
+            if (walkOk || isPlayerTile || hasHostileEnemy) {
+              const poly = this.scratchCombatPoly;
+              poly[0] = scr.x;
+              poly[1] = scr.y - TILE_HEIGHT * 0.5;
+              poly[2] = scr.x + TILE_WIDTH * 0.5;
+              poly[3] = scr.y;
+              poly[4] = scr.x;
+              poly[5] = scr.y + TILE_HEIGHT * 0.5;
+              poly[6] = scr.x - TILE_WIDTH * 0.5;
+              poly[7] = scr.y;
+
+              if (hasHostileEnemy) {
+                this.cursorAndPathGraphics
+                  .poly(poly)
+                  .fill({ color: 0xff453a, alpha: 0.08 })
+                  .stroke({ color: 0xff453a, width: 1.35, alpha: 0.48 });
+              } else if (isPlayerCombatTurn && walkOk && this.cachedCombatReachSet.has(cellIdx)) {
+                this.cursorAndPathGraphics
+                  .poly(poly)
+                  .fill({ color: 0x4deeea, alpha: 0.055 })
+                  .stroke({ color: 0x4deeea, width: 1.35, alpha: 0.48 });
+              } else {
+                this.cursorAndPathGraphics
+                  .poly(poly)
+                  .stroke({ color: 0xdccaa4, width: 1.05, alpha: 0.30 });
+              }
+            }
           }
         }
 
@@ -2008,6 +2353,48 @@ export class IsoSceneView {
       }
     }
 
+    // 1D. Stealth Mode: Enemy Vision Cones & Player Shadow Ring (BG3/DOS2 style)
+    if (this.game.isStealthActive && !this.game.combatState.active) {
+      const pRot = toRotatedContinuous(
+        this.game.player.x,
+        this.game.player.y,
+        mapW,
+        mapH,
+        this.rotation
+      );
+      const pScr = gridToScreen(pRot.rx, pRot.ry, this.game.player.z);
+      this.cursorAndPathGraphics
+        .ellipse(pScr.x, pScr.y, 26, 13)
+        .fill({ color: 0x312e81, alpha: 0.34 })
+        .stroke({ color: 0x818cf8, width: 1.5, alpha: 0.78 });
+
+      const halfAngle = (48 * Math.PI) / 180;
+      const arcSteps = 7;
+      for (const npc of this.game.npcs) {
+        if (!npc.combat?.isHostile || !npc.combat.isAlive) continue;
+        const coneRange = Math.min(5.5, (npc.combat.aggroRadius || 3.5) + 1.5);
+        const fwd = direction8ToVector(npc.direction);
+        const baseAngle = Math.atan2(fwd.y, fwd.x);
+        const originRot = toRotatedContinuous(npc.x, npc.y, mapW, mapH, this.rotation);
+        const originScr = gridToScreen(originRot.rx, originRot.ry, npc.z);
+
+        const polyPts: number[] = [originScr.x, originScr.y];
+        for (let i = 0; i <= arcSteps; i++) {
+          const a = baseAngle - halfAngle + (2 * halfAngle * i) / arcSteps;
+          const wx = npc.x + Math.cos(a) * coneRange;
+          const wy = npc.y + Math.sin(a) * coneRange;
+          const ptRot = toRotatedContinuous(wx, wy, mapW, mapH, this.rotation);
+          const ptScr = gridToScreen(ptRot.rx, ptRot.ry, npc.z);
+          polyPts.push(ptScr.x, ptScr.y);
+        }
+
+        this.cursorAndPathGraphics
+          .poly(polyPts)
+          .fill({ color: 0xef4444, alpha: 0.22 })
+          .stroke({ color: 0xf87171, width: 1.4, alpha: 0.62 });
+      }
+    }
+
     // 2. Render Hovered Tile Highlight & Active Player A* Path Preview
     if (this.hoveredWorldTile) {
       const { x: hx, y: hy, z: hz } = this.hoveredWorldTile;
@@ -2027,10 +2414,13 @@ export class IsoSceneView {
               ? 0x4deeea
               : 0xff453a;
 
-      const showTacticalGrid =
-        this.game.combatState.active || this.activeTool !== 'interact';
+      const useDiamondHover =
+        this.game.combatState.active ||
+        this.activeTool !== 'interact' ||
+        this.showGridInExploration ||
+        this.bufferMode === 'walkability_fov';
 
-      if (showTacticalGrid) {
+      if (useDiamondHover) {
         this.cursorAndPathGraphics
           .poly([
             hScr.x,
@@ -2045,11 +2435,14 @@ export class IsoSceneView {
           .fill({ color: highlightColor, alpha: 0.18 })
           .stroke({ color: highlightColor, width: 2.2, alpha: 0.92 });
       } else {
-        // Exploration mode: subtle organic ground ring instead of a tactical grid diamond
+        // Organic circular/elliptical ground reticle during exploration (no blocky grid diamond)
+        const pulse = 1.0 + Math.sin(this.elapsedSeconds * 5.0) * 0.06;
         this.cursorAndPathGraphics
-          .ellipse(hScr.x, hScr.y, 16, 8)
-          .fill({ color: highlightColor, alpha: 0.12 })
-          .stroke({ color: highlightColor, width: 1.4, alpha: 0.55 });
+          .ellipse(hScr.x, hScr.y, 26 * pulse, 13 * pulse)
+          .fill({ color: highlightColor, alpha: 0.10 })
+          .stroke({ color: highlightColor, width: 1.8, alpha: 0.72 })
+          .ellipse(hScr.x, hScr.y, 11, 5.5)
+          .stroke({ color: highlightColor, width: 1.1, alpha: 0.45 });
       }
 
       // Preview A* path if in interact mode and hovering walkable tile
@@ -2111,6 +2504,40 @@ export class IsoSceneView {
       }
     }
 
+    // 2b. Highlight exit_path travel zones directly on the ground across the entire exit footprint
+    if (this.bufferMode !== 'depth_dag') {
+      const pulse = 0.5 + 0.5 * Math.sin(this.elapsedSeconds * 3.4);
+      for (const prop of this.game.map.props) {
+        if (prop.kind !== 'exit_path') continue;
+        const fp = rotateFootprint(prop.x, prop.y, prop.sizeX, prop.sizeY, mapW, mapH, this.rotation);
+        const pTop = gridToScreen(fp.rx, fp.ry, prop.z);
+        const pRight = gridToScreen(fp.rx + fp.width, fp.ry, prop.z);
+        const pBottom = gridToScreen(fp.rx + fp.width, fp.ry + fp.height, prop.z);
+        const pLeft = gridToScreen(fp.rx, fp.ry + fp.height, prop.z);
+
+        // Luminous amber travel-zone carpet covering the full exit width & depth
+        this.cursorAndPathGraphics
+          .poly([
+            pTop.x, pTop.y,
+            pRight.x, pRight.y,
+            pBottom.x, pBottom.y,
+            pLeft.x, pLeft.y
+          ])
+          .fill({ color: 0xffb300, alpha: 0.22 + 0.14 * pulse })
+          .stroke({ color: 0xffe082, width: 2.6, alpha: 0.72 + 0.24 * pulse });
+
+        // Individual exit tile diamonds + subtle glowing center chevrons
+        for (let dy = 0; dy < fp.height; dy++) {
+          for (let dx = 0; dx < fp.width; dx++) {
+            const c = gridToScreen(fp.rx + dx + 0.5, fp.ry + dy + 0.5, prop.z);
+            this.cursorAndPathGraphics
+              .ellipse(c.x, c.y, 18 + pulse * 4, 9 + pulse * 2)
+              .stroke({ color: 0xfff176, width: 1.6, alpha: 0.55 + 0.3 * pulse });
+          }
+        }
+      }
+    }
+
     // 3. Build 3D Bounding Boxes for Props and Characters & Run Topological DAG Sorter
     type RenderableNode = DepthBox3D & {
       kind: 'prop' | 'actor';
@@ -2152,7 +2579,10 @@ export class IsoSceneView {
         this.rotation
       );
 
-      const scr = gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
+      const vt = resolvePropVisualTransform(prop);
+      const scr = vt.centerOnFootprint
+        ? gridToScreen(fp.rx + fp.width * 0.5, fp.ry + fp.height * 0.5, prop.z)
+        : gridToScreen(fp.rx + 0.5, fp.ry + 0.5, prop.z);
       if (
         scr.x < minLocalX - 500 ||
         scr.x > maxLocalX + 500 ||
@@ -2189,18 +2619,18 @@ export class IsoSceneView {
               prop.kind === 'exit_path';
 
             if (!isFloraOrNonSolid) {
-              const baseRx = Math.max(16, (fp.width + fp.height) * 14);
-              const baseRy = Math.max(8, (fp.width + fp.height) * 7);
+              const baseRx = Math.max(16, (fp.width + fp.height) * 14 * vt.aoScale);
+              const baseRy = Math.max(8, (fp.width + fp.height) * 7 * vt.aoScale);
 
               const aoGfx = this.displayPool.graphics();
               // Dense inner contact AO anchoring prop to ground
               aoGfx
                 .ellipse(scr.x, scr.y, baseRx * 0.72, baseRy * 0.72)
-                .fill({ color: 0x010204, alpha: 0.58 });
+                .fill({ color: 0x010204, alpha: 0.13 });
               // Soft feathered outer ambient occlusion
               aoGfx
                 .ellipse(scr.x, scr.y, baseRx, baseRy)
-                .fill({ color: 0x030508, alpha: 0.28 });
+                .fill({ color: 0x030508, alpha: 0.05 });
 
               // Directional penumbra cast shadow for tall structures
               const isTall =
@@ -2236,7 +2666,7 @@ export class IsoSceneView {
                 }
                 aoGfx
                   .ellipse(scr.x + sdx * 0.65, scr.y + sdy * 0.65, baseRx * 1.08, baseRy * 1.08)
-                  .fill({ color: 0x020406, alpha: 0.36 });
+                  .fill({ color: 0x020406, alpha: 0.14 });
               }
 
               this.sortedObjectLayer.addChild(aoGfx);
@@ -2245,7 +2675,10 @@ export class IsoSceneView {
 
           const sp = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
           sp.anchor.set(texPair.anchorX, texPair.anchorY);
-          sp.position.set(scr.x, scr.y);
+          sp.position.set(scr.x, scr.y + vt.offsetY);
+          if (vt.scaleX !== 1 || vt.scaleY !== 1) {
+            sp.scale.set(vt.scaleX, vt.scaleY);
+          }
 
           // Apply X-Ray Wall Cutaway if wall occludes the player character!
           const selfBox: DepthBox3D = {
@@ -2335,7 +2768,15 @@ export class IsoSceneView {
             prop.kind === 'exit_path' ||
             prop.kind === 'travel_signpost' ||
             (prop.kind === 'market_stall' && !prop.isOpen) ||
-            (prop.kind === 'ground_loot' && !prop.isOpen);
+            (prop.kind === 'ground_loot' && !prop.isOpen) ||
+            (this.isHighlightAltHeld &&
+              (prop.interactive ||
+                prop.kind === 'chest' ||
+                prop.kind === 'slavic_well' ||
+                prop.kind === 'door' ||
+                prop.kind === 'market_stall' ||
+                prop.kind === 'wildflower_patch' ||
+                prop.kind === 'berry_bush'));
 
           if (showInteractiveHint && this.bufferMode !== 'depth_dag') {
             if (prop.kind === 'travel_signpost' && isPropHovered) {
@@ -2376,18 +2817,27 @@ export class IsoSceneView {
                     : 'prop_default';
               const label = this.displayPool.text(prop.name, styleKey, () => ({
                 fontFamily: 'Inter, sans-serif',
-                fontSize: 11,
-                fontWeight: '600',
+                fontSize: prop.kind === 'exit_path' ? 13 : 11,
+                fontWeight: prop.kind === 'exit_path' ? '700' : '600',
                 fill:
                   prop.kind === 'campfire'
                     ? 0xffb74d
                     : prop.kind === 'exit_path'
-                      ? 0xff7043
+                      ? 0xffe082
                       : 0xffe082,
-                stroke: { color: 0x06080c, width: 3.2 }
+                stroke: { color: 0x06080c, width: prop.kind === 'exit_path' ? 4.0 : 3.2 }
               }));
               label.anchor.set(0.5, 1);
-              label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+              if (prop.kind === 'exit_path') {
+                const centerScr = gridToScreen(
+                  fp.rx + fp.width * 0.5,
+                  fp.ry + fp.height * 0.5,
+                  prop.z
+                );
+                label.position.set(centerScr.x, centerScr.y - 84);
+              } else {
+                label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+              }
               this.debugOverlayContainer.addChild(label);
             }
           }
@@ -2407,6 +2857,7 @@ export class IsoSceneView {
       });
     }
 
+    const actorNameLabelBounds: Array<{ left: number; top: number; right: number; bottom: number }> = [];
     const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
     for (const actor of allActors) {
       const isDead = Boolean(actor.combat && !actor.combat.isAlive);
@@ -2528,11 +2979,11 @@ export class IsoSceneView {
               // Layer 1: Dense tight contact shadow directly beneath feet
               shadowGfx
                 .ellipse(actorScrX, actorScrY + 1, 13, 6.5)
-                .fill({ color: 0x010204, alpha: 0.68 });
+                .fill({ color: 0x010204, alpha: 0.38 });
               // Layer 2: Directional penumbra cast shadow away from light
               shadowGfx
                 .ellipse(actorScrX + shadowOffsetX * 0.55, actorScrY + shadowOffsetY * 0.55, 20, 10)
-                .fill({ color: 0x030509, alpha: 0.42 });
+                .fill({ color: 0x030509, alpha: 0.18 });
 
               // Tactical Combat Stance indicator ring
               if (this.game.combatState.active) {
@@ -2633,6 +3084,11 @@ export class IsoSceneView {
           // Floating nameplate for story NPCs, Hostile Enemies, Dead Corpses, and Player
           const isHovered =
             this.hoveredWorldTile?.x === actor.tileX && this.hoveredWorldTile?.y === actor.tileY;
+          const nameAlreadyShownInMarker = Boolean(
+            actor.speechBubbleText &&
+              (actor.speechBubbleTimer ?? 0) > 0 &&
+              actor.speechBubbleText.includes(actor.recipe.name)
+          );
 
           if (isDead) {
             if (isHovered && this.bufferMode !== 'depth_dag') {
@@ -2655,7 +3111,8 @@ export class IsoSceneView {
             }
           } else if (
             isHovered ||
-            actor.dialogueId ||
+            this.isHighlightAltHeld ||
+            (actor.dialogueId && !nameAlreadyShownInMarker) ||
             actor.combat?.isHostile ||
             this.bufferMode === 'depth_dag'
           ) {
@@ -2712,7 +3169,41 @@ export class IsoSceneView {
               })
             );
             nameTag.anchor.set(0.5, 1);
-            nameTag.position.set(scr.x, scr.y - 79);
+            const candidateOffsets = [
+              { x: 0, y: -79 },
+              { x: 0, y: -105 },
+              { x: -28, y: -80 },
+              { x: 28, y: -80 },
+              { x: 0, y: -131 },
+              { x: -38, y: -106 },
+              { x: 38, y: -106 },
+              { x: 0, y: -157 }
+            ];
+            const labelPosition = candidateOffsets
+              .map(({ x, y }) => {
+                const left = scr.x + x - nameTag.width * 0.5 - 5;
+                const top = scr.y + y - nameTag.height - 4;
+                const right = scr.x + x + nameTag.width * 0.5 + 5;
+                const bottom = scr.y + y + 4;
+                const overlaps = actorNameLabelBounds.some(
+                  (placed) =>
+                    left < placed.right &&
+                    right > placed.left &&
+                    top < placed.bottom &&
+                    bottom > placed.top
+                );
+                return { x: scr.x + x, y: scr.y + y, left, top, right, bottom, overlaps };
+              })
+              .find((candidate) => !candidate.overlaps) ?? {
+              x: scr.x,
+              y: scr.y - 79,
+              left: scr.x - nameTag.width * 0.5 - 5,
+              top: scr.y - 79 - nameTag.height - 4,
+              right: scr.x + nameTag.width * 0.5 + 5,
+              bottom: scr.y - 79 + 4
+            };
+            actorNameLabelBounds.push(labelPosition);
+            nameTag.position.set(labelPosition.x, labelPosition.y);
             this.debugOverlayContainer.addChild(nameTag);
 
             // Overhead specialization icon badge visible from afar for every vendor

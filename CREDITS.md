@@ -94,6 +94,16 @@ Zasoby graficzne modułowych lochów, jaskiń i podziemi izometrycznych:
 
 ---
 
+## 3C. Izometryczne Modele Postaci i Bestiariusza 8-Kierunkowe (Flare RPG Fantasycore)
+
+Zasoby prerenderowanych 8-kierunkowych modeli postaci (modułowy bohater, zbroje płytowe, kolczugi, przeszywanice, tuniki, szaty, hełmy, kaptury, miecze, topory, kostury, łuki, tarcze) oraz jednostek NPC i potworów (szkielety, utopce/zombie, gobliny, kmiecie, kupcy, szlachta):
+* **Katalog w projekcie:** `public/assets/characters/` (27 arkuszy 256×768 z mapowaniem kierunkowym i generacją map normalnych PBR)
+* **Autorzy:** Clint Bellanger oraz współtwórcy projektu Flare RPG (Justin Jacobs, Stefan Beller, Thane Brimhall, Blarumyrran)
+* **Źródło:** [https://github.com/flareteam/flare-game](https://github.com/flareteam/flare-game) oraz [https://opengameart.org/users/clint-bellanger](https://opengameart.org/users/clint-bellanger)
+* **Licencja:** Creative Commons Attribution-ShareAlike 3.0 (CC-BY-SA 3.0) / Creative Commons Attribution 3.0 (CC-BY 3.0)
+
+---
+
 ## 4. Portrety Postaci i Grafika Wektorowa (Procedural & Vector Art)
 
 * **Plik:** `src/assets/slavicPortraits.ts`

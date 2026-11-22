@@ -298,6 +298,16 @@ export class InspectorPanel {
             <span>Czułość na Krańce Ekranu (Edge Panning)</span>
           </label>
 
+          <label class="inspector-checkbox">
+            <input type="checkbox" id="toggle-organic-blending" ${this.scene.organicTerrainBlending ? 'checked' : ''} />
+            <span>🌿 Organiczne Blendowanie Terenu</span>
+          </label>
+
+          <label class="inspector-checkbox">
+            <input type="checkbox" id="toggle-exploration-grid" ${this.scene.showGridInExploration ? 'checked' : ''} />
+            <span>🔷 Siatka Taktyczna w Eksploracji</span>
+          </label>
+
           <label class="Inspector-slider-row" style="margin-top: 8px; margin-bottom: 0;">
             <span>Prędkość Krawędzi (Edge Speed): <strong>${this.scene.edgePanSpeed} px/s</strong></span>
             <input type="range" id="edge-speed-slider" min="200" max="900" step="20" value="${this.scene.edgePanSpeed}" />
@@ -520,6 +530,22 @@ export class InspectorPanel {
     if (edgePanCheck) {
       edgePanCheck.addEventListener('change', () => {
         this.scene.edgePanEnabled = edgePanCheck.checked;
+        this.onStateChange();
+      });
+    }
+
+    const organicBlendCheck = this.root.querySelector<HTMLInputElement>('#toggle-organic-blending');
+    if (organicBlendCheck) {
+      organicBlendCheck.addEventListener('change', () => {
+        this.scene.organicTerrainBlending = organicBlendCheck.checked;
+        this.onStateChange();
+      });
+    }
+
+    const explorationGridCheck = this.root.querySelector<HTMLInputElement>('#toggle-exploration-grid');
+    if (explorationGridCheck) {
+      explorationGridCheck.addEventListener('change', () => {
+        this.scene.showGridInExploration = explorationGridCheck.checked;
         this.onStateChange();
       });
     }

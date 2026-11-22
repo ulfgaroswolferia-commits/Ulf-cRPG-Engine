@@ -74,6 +74,46 @@ describe('proceduralForge - High-Detail Isometric Tile & Prop PBR Normal/Albedo 
     }
   });
 
+  it('synthesizes a readable crimson school banner with opaque fabric pixels', () => {
+    const banner = generatePropPbrBuffers('school_banner', false, 1, 1, 0);
+    let crimsonPixels = 0;
+
+    for (let i = 0; i < banner.albedoRGBA.length; i += 4) {
+      const [red, green, blue, alpha] = banner.albedoRGBA.slice(i, i + 4);
+      if (alpha > 128 && red > 70 && red > green * 1.5 && red > blue * 1.3) {
+        crimsonPixels++;
+      }
+    }
+
+    expect(crimsonPixels).toBeGreaterThan(100);
+  });
+
+  it('synthesizes a brown wooden wheel with enough opaque pixels to read at map scale', () => {
+    const wheelKind = 'watermill_wheel' as Parameters<typeof generatePropPbrBuffers>[0];
+    const wheel = generatePropPbrBuffers(wheelKind, false, 1, 1, 0);
+    let woodenPixels = 0;
+
+    for (let i = 0; i < wheel.albedoRGBA.length; i += 4) {
+      const [red, green, blue, alpha] = wheel.albedoRGBA.slice(i, i + 4);
+      if (alpha > 200 && red > green * 1.15 && green > blue * 1.15 && red > 45) woodenPixels++;
+    }
+
+    expect(woodenPixels).toBeGreaterThan(400);
+  });
+
+  it('synthesizes a small, opaque black crow silhouette for the ruins', () => {
+    const crowKind = 'perched_crow' as Parameters<typeof generatePropPbrBuffers>[0];
+    const crow = generatePropPbrBuffers(crowKind, false, 1, 1, 0);
+    let darkPixels = 0;
+
+    for (let i = 0; i < crow.albedoRGBA.length; i += 4) {
+      const [red, green, blue, alpha] = crow.albedoRGBA.slice(i, i + 4);
+      if (alpha > 200 && red < 70 && green < 75 && blue < 85) darkPixels++;
+    }
+
+    expect(darkPixels).toBeGreaterThan(180);
+  });
+
   it('synthesizes Kenney CC0 dungeon props (dungeon_column, dungeon_barrel, dungeon_crate, dungeon_table, dungeon_support, chest)', () => {
     const col = generatePropPbrBuffers('dungeon_column', false, 1, 1, 0);
     const barrel = generatePropPbrBuffers('dungeon_barrel', false, 1, 1, 0);

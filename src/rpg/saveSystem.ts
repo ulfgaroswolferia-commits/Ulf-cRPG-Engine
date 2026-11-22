@@ -400,6 +400,22 @@ export function deserializeGameState(
       game.combatState.activeTurnActorId = data.combatState.activeTurnActorId;
       game.combatState.selectedAttackMode = data.combatState.selectedAttackMode || 'quick';
       game.combatState.selectedTargetId = data.combatState.selectedTargetId;
+
+      if (game.combatState.active) {
+        const hasLivingHostile = game.combatState.participantIds.some((pid) => {
+          const n = game.npcs.find((npc) => npc.id === pid);
+          return Boolean(n && n.combat?.isHostile && n.combat?.isAlive);
+        });
+        if (!hasLivingHostile) {
+          game.combatState.active = false;
+          game.combatState.participantIds = [];
+          game.combatState.activeTurnActorId = null;
+          game.combatState.selectedTargetId = null;
+        } else if (game.combatState.activeTurnActorId !== game.player.id) {
+          // Prevent soft-lock if save occurred mid-enemy sequential turn
+          game.combatState.activeTurnActorId = game.player.id;
+        }
+      }
     }
 
     // 7. Restore Logs, Chronicle & Combat Reports

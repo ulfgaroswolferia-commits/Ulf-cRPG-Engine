@@ -137,6 +137,56 @@ export interface CombatReport {
   entries: string[];
 }
 
+export type CombatBeltCategory = 'heal' | 'remedy' | 'buff' | 'throwable';
+
+export interface CombatQuickBeltSlot {
+  slotIndex: 0 | 1 | 2 | 3;
+  itemId: string;
+  name: string;
+  qty: number;
+  apCost: number;
+  category: CombatBeltCategory;
+  summary: string;
+  canUse: boolean;
+  disabledReason?: string;
+}
+
+const DIR8_VECTORS: Record<Direction8, { x: number; y: number }> = {
+  0: { x: 0, y: 1 },
+  1: { x: -Math.SQRT1_2, y: Math.SQRT1_2 },
+  2: { x: -1, y: 0 },
+  3: { x: -Math.SQRT1_2, y: -Math.SQRT1_2 },
+  4: { x: 0, y: -1 },
+  5: { x: Math.SQRT1_2, y: -Math.SQRT1_2 },
+  6: { x: 1, y: 0 },
+  7: { x: Math.SQRT1_2, y: Math.SQRT1_2 }
+};
+
+export function direction8ToVector(dir: Direction8): { x: number; y: number } {
+  return DIR8_VECTORS[dir] ?? DIR8_VECTORS[0];
+}
+
+/**
+ * Checks whether grid coordinate (tileX, tileY) falls inside an enemy's forward
+ * vision cone (default ±48° arc up to `range` tiles) or immediate 1.35-tile proximity bubble.
+ */
+export function isTileInEnemyVisionCone(
+  enemy: Pick<ActorEntity, 'tileX' | 'tileY' | 'direction'>,
+  tileX: number,
+  tileY: number,
+  range = 5.5
+): boolean {
+  const dx = tileX - enemy.tileX;
+  const dy = tileY - enemy.tileY;
+  const dist = Math.hypot(dx, dy);
+  if (dist > range) return false;
+  if (dist <= 1.35) return true;
+  const fwd = direction8ToVector(enemy.direction);
+  const dot = (dx / dist) * fwd.x + (dy / dist) * fwd.y;
+  // cos(48°) ≈ 0.669
+  return dot >= 0.669;
+}
+
 export function detectLogSeverity(message: string): LogSeverity {
   if (message.startsWith('⚔️ Walka z:') || message.startsWith('📜 Raport z walki:') || message.includes('Walka z:') || message.includes('Raport z walki:')) {
     return 'combat';
@@ -218,7 +268,41 @@ export class CrpgGameState {
   public player!: ActorEntity;
   public readonly npcs: ActorEntity[] = [];
   public onCombatAttackResolved?: (event: CombatAttackEvent) => void;
+  public getCombatQuickBeltSlots?: () => Array<CombatQuickBeltSlot | null>;
+  public onUseCombatQuickBeltSlot?: (slotIndex: number) => boolean;
+  public isStealthActive = false;
+  public isSurpriseAmbushActive = false;
+  public surpriseBonusPending = false;
+  public onStealthDetectionCheck?: (enemy: ActorEntity, distance: number) => boolean;
   private readonly combatAttackListeners = new Set<(event: CombatAttackEvent) => void>();
+
+  public toggleStealth(): boolean {
+    if (this.combatState.active) {
+      this.addLog('Nie możesz wejść w tryb skradania podczas otwartej walki.', 'info');
+      return false;
+    }
+    this.isStealthActive = !this.isStealthActive;
+    if (this.isStealthActive) {
+      this.addLog('Tryb skradania aktywny — unikaj stożków wzroku wrogów, aby zaatakować z zaskoczenia.', 'info');
+    } else {
+      this.addLog('Wstajesz z ukrycia.', 'info');
+    }
+    return this.isStealthActive;
+  }
+
+  public useCombatQuickBeltSlot(slotIndex: number): boolean {
+    if (
+      !this.combatState.active ||
+      this.isSequentialEnemyTurnActive ||
+      this.combatState.activeTurnActorId !== this.player.id
+    ) {
+      return false;
+    }
+    if (this.onUseCombatQuickBeltSlot) {
+      return this.onUseCombatQuickBeltSlot(slotIndex);
+    }
+    return false;
+  }
 
   public isSequentialEnemyTurnActive = false;
   private pendingEnemyCombatTurnIds: string[] = [];
@@ -277,6 +361,11 @@ export class CrpgGameState {
   public fogOfWarEnabled = false;
   public wallCutawayEnabled = true;
   public ambientLightIntensity = 0.46;
+  public mapRevision = 1;
+
+  public bumpMapRevision(): void {
+    this.mapRevision++;
+  }
 
   /**
    * Returns a flat list of all definitionIds currently held in the backpack or equipped,
@@ -528,14 +617,7 @@ export class CrpgGameState {
     this.loadMap(initialMapId);
   }
 
-  public loadMap(mapId: MapId): void {
-    this.map =
-      mapId === 'forest_clearing'
-        ? createForestClearingMap()
-        : mapId === 'slavic_village'
-          ? createSlavicVillageMap()
-          : createSanctumWorldMap();
-    this.fov = new FovGridState(this.map.width, this.map.height);
+  protected resetRuntimeStateForCustomMap(): void {
     this.npcs.length = 0;
     this.activeDialogue = null;
     this.pendingCombatConfirmation = null;
@@ -547,6 +629,21 @@ export class CrpgGameState {
     this.combatState.activeTurnActorId = null;
     this.combatState.selectedTargetId = null;
     this.combatState.floatingTexts = [];
+    this.isStealthActive = false;
+    this.isSurpriseAmbushActive = false;
+    this.surpriseBonusPending = false;
+  }
+
+  public loadMap(mapId: MapId): void {
+    this.map =
+      mapId === 'forest_clearing'
+        ? createForestClearingMap()
+        : mapId === 'slavic_village'
+          ? createSlavicVillageMap()
+          : createSanctumWorldMap();
+    this.fov = new FovGridState(this.map.width, this.map.height);
+    this.bumpMapRevision();
+    this.resetRuntimeStateForCustomMap();
 
     const startX = mapId === 'forest_clearing' ? 15 : mapId === 'slavic_village' ? 22 : 4;
     const startY = mapId === 'forest_clearing' ? 17 : mapId === 'slavic_village' ? 26 : 4;
@@ -2013,10 +2110,18 @@ export class CrpgGameState {
       }
     }
 
+    const initiatedFromStealth = this.isStealthActive;
+    this.isStealthActive = false;
+    this.isSurpriseAmbushActive = initiatedFromStealth;
+    this.surpriseBonusPending = initiatedFromStealth;
+
     for (const p of participants) {
       const snap = this.getActorCombatant(p);
       p.combat!.maxAp = snap.derived.maxAp;
-      p.combat!.ap = snap.derived.maxAp;
+      p.combat!.ap =
+        initiatedFromStealth && p.id !== this.player.id
+          ? Math.max(1, Math.floor(snap.derived.maxAp / 2))
+          : snap.derived.maxAp;
       p.combat!.defending = false;
       p.path = [];
       p.isMoving = false;
@@ -2050,9 +2155,15 @@ export class CrpgGameState {
 
     const diffTag = enemy.combat.difficultyLabel ?? 'WRÓG';
     this.addLog(`⚔️ Walka z: ${instrumental(enemy.recipe.name)} (${diffTag})`, 'combat', reportId);
-    this.addCombatLog(
-      `⚔️ ROZPOCZĘTO WALKĘ TUROWĄ (Runda 1)! Cel: ${enemy.recipe.name} (${diffTag}, ${enemy.combat.hp}/${enemy.combat.maxHp} HP). Twoja tura: masz ${this.player.combat!.ap} AP.`
-    );
+    if (initiatedFromStealth) {
+      this.addCombatLog(
+        `ZASKOCZENIE! Atakujesz z ukrycia (${enemy.recipe.name}) — pierwszy cios ma +25% trafienia i +35% obrażeń, a wrogowie tracą połowę AP w 1. rundzie!`
+      );
+    } else {
+      this.addCombatLog(
+        `⚔️ ROZPOCZĘTO WALKĘ TUROWĄ (Runda 1)! Cel: ${enemy.recipe.name} (${diffTag}, ${enemy.combat.hp}/${enemy.combat.maxHp} HP). Twoja tura: masz ${this.player.combat!.ap} AP.`
+      );
+    }
     this.pushFloatingCombatText(
       this.player.x,
       this.player.y,
@@ -2151,6 +2262,17 @@ export class CrpgGameState {
       this.player.tileY - enemy.tileY
     );
 
+    const usedSurpriseBonus = this.surpriseBonusPending;
+    if (usedSurpriseBonus) {
+      this.surpriseBonusPending = false;
+      playerSnap.derived.activeProficiency = Math.min(99, playerSnap.derived.activeProficiency + 25);
+      playerSnap.derived.minDamage = Math.max(1, Math.round(playerSnap.derived.minDamage * 1.35));
+      playerSnap.derived.maxDamage = Math.max(
+        playerSnap.derived.minDamage,
+        Math.round(playerSnap.derived.maxDamage * 1.35)
+      );
+    }
+
     const outcome = resolveCombatAttack(playerSnap, enemySnap, dist, mode, rng, bonuses);
     this.progression.firstStrikeReady = false;
     if (
@@ -2164,7 +2286,9 @@ export class CrpgGameState {
       this.player.combat!.ap = Math.min(this.player.combat!.maxAp + 2, this.player.combat!.ap + 2);
       this.addCombatLog('⚡ Furia Peruna! Krytyczne trafienie w zwarciu przywraca +2 AP.');
     }
-    const modeLabel = ATTACK_MODE_META[mode].label;
+    const modeLabel = usedSurpriseBonus
+      ? `${ATTACK_MODE_META[mode].label} · Zaskoczenie`
+      : ATTACK_MODE_META[mode].label;
 
     if (!outcome.hit) {
       this.pushFloatingCombatText(
@@ -3178,7 +3302,9 @@ export class CrpgGameState {
     const prop = this.map.props.find((p) => p.id === propId);
     if (!prop || !prop.interactive) return;
 
-    const dist = Math.hypot(prop.x - this.player.tileX, prop.y - this.player.tileY);
+    const nearestX = Math.max(prop.x, Math.min(prop.x + prop.sizeX - 1, this.player.tileX));
+    const nearestY = Math.max(prop.y, Math.min(prop.y + prop.sizeY - 1, this.player.tileY));
+    const dist = Math.hypot(nearestX - this.player.tileX, nearestY - this.player.tileY);
     if (dist <= 1.85) {
       this.togglePropInteraction(prop.id);
       return;
@@ -3395,12 +3521,17 @@ export class CrpgGameState {
 
     if (prop.kind === 'door') {
       prop.isOpen = !prop.isOpen;
+      this.bumpMapRevision();
       this.addLog(`${prop.name}: ${prop.isOpen ? 'otwarto' : 'zamknięto'}.`);
       this.recomputeFov();
       return;
     }
 
-    if (prop.kind === 'chest' || prop.kind === 'ground_loot') {
+    if (
+      prop.kind === 'chest' ||
+      prop.kind === 'ground_loot' ||
+      (prop.kind === 'sarcophagus' && prop.lootItems !== undefined)
+    ) {
       if (!prop.isOpen) {
         const loot = prop.lootItems ?? [];
         const taken: string[] = [];
@@ -3736,9 +3867,14 @@ export class CrpgGameState {
     }
 
     if (choice.unlocksDoorId) {
-      const door = this.map.props.find((p) => p.id === choice.unlocksDoorId);
+      const door = this.map.props.find(
+        (p) =>
+          p.id === choice.unlocksDoorId ||
+          (choice.unlocksDoorId === 'door_vault_west' && p.id === 'door_watchtower')
+      );
       if (door && !door.isOpen) {
         door.isOpen = true;
+        this.bumpMapRevision();
         this.recomputeFov();
       }
     }
@@ -4086,7 +4222,28 @@ export class CrpgGameState {
       ) {
         const dist = Math.hypot(this.player.tileX - npc.tileX, this.player.tileY - npc.tileY);
         const aggroDist = npc.combat.aggroRadius || 3.5;
-        if (dist <= aggroDist) {
+        if (this.isStealthActive) {
+          const coneRange = Math.min(5.5, aggroDist + 1.5);
+          if (isTileInEnemyVisionCone(npc, this.player.tileX, this.player.tileY, coneRange)) {
+            const detected = this.onStealthDetectionCheck
+              ? this.onStealthDetectionCheck(npc, dist)
+              : dist <= 2.2;
+            if (detected) {
+              this.isStealthActive = false;
+              npc.aggroReactionTimer = undefined;
+              this.sayNpcBark(npc.id, 'Kto tam się skrada?! Alarm!', 3.0);
+              this.addLog(
+                `Wykryto Cię! ${npc.recipe.name} dostrzegł Twój ruch w cieniu.`,
+                'critical'
+              );
+              this.startCombatWithEnemy(npc.id);
+              break;
+            } else {
+              npc.aggroCooldownTimer = 3.5;
+              this.addLog(`Przemknąłeś niezauważony obok: ${npc.recipe.name}.`, 'info');
+            }
+          }
+        } else if (dist <= aggroDist) {
           if (npc.aggroReactionTimer === undefined) {
             npc.aggroReactionTimer = 0.65;
             this.sayNpcBark(npc.id, 'Ktoś się zbliża...!', 1.1);

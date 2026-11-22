@@ -286,6 +286,22 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     },
     visualStyle: 'food'
   },
+  item_healing_salve: {
+    id: 'item_healing_salve',
+    name: 'Maść Żywokostowa Uzdrowiciela',
+    slot: 'consumable',
+    description: 'Gęsty balsam z korzenia żywokostu i żywicy sosnowej. Zasklepia głębokie rany i koi ból (+1 Siła, +1 Determinacja).',
+    primaryColor: { r: 94, g: 148, b: 82 },
+    trimColor: { r: 196, g: 214, b: 158 },
+    roughness: 0.42,
+    metallic: 0.12,
+    consumableEffect: {
+      might: 1,
+      resolve: 1,
+      barkText: 'Żywokostowa maść koi rany i przywraca krzepę w boju!'
+    },
+    visualStyle: 'food'
+  },
   item_dzban_miodu: {
     id: 'item_dzban_miodu',
     name: 'Gliniany Dzban Miodu Czwórniaka',

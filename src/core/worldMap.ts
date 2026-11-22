@@ -46,7 +46,11 @@ export type PropKind =
   | 'dungeon_crate' // 1x1 dungeon supply crate
   | 'dungeon_table' // 1x1 dungeon table
   | 'dungeon_support' // 1x1 mine timber support frame
-  | 'dungeon_column'; // 1x1 dungeon stone column
+  | 'dungeon_column' // 1x1 dungeon stone column
+  | 'training_dummy' // 1x1 wooden & straw fencing/combat training dummy
+  | 'school_banner' // 1x1 crimson-and-gold school standard
+  | 'watermill_wheel' // 1x1 wooden wheel mounted beside a watermill
+  | 'perched_crow'; // 1x1 small crow perched on a broken beam or stone
 
 export interface TileCell {
   x: number;
@@ -638,8 +642,8 @@ export function createForestClearingMap(): IsometricWorldMap {
   const hunterLightId = 'light_cabin_hunter';
   lights.push({
     id: hunterLightId,
-    x: 7.5,
-    y: 10.5,
+    x: 7,
+    y: 10,
     z: tiles[10][7].z + 1.6,
     color: { r: 255, g: 186, b: 78 },
     intensity: 1.3,
@@ -687,8 +691,8 @@ export function createForestClearingMap(): IsometricWorldMap {
   const herbalistLightId = 'light_cottage_herbalist';
   lights.push({
     id: herbalistLightId,
-    x: 22.5,
-    y: 19.5,
+    x: 22,
+    y: 19,
     z: tiles[19][22].z + 1.6,
     color: { r: 255, g: 186, b: 78 },
     intensity: 1.3,
@@ -1441,8 +1445,8 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     const lightId = `light_${c.id}`;
     lights.push({
       id: lightId,
-      x: c.x + 0.5,
-      y: c.y + 0.5,
+      x: c.x,
+      y: c.y,
       z: cz + 1.5,
       color: { r: 255, g: 186, b: 78 },
       intensity: 1.25,
@@ -1503,8 +1507,8 @@ export function createSlavicVillageMap(): IsometricWorldMap {
   const kurhanLightId = 'light_ancestral_kurhan';
   lights.push({
     id: kurhanLightId,
-    x: 34.5,
-    y: 7.5,
+    x: 34,
+    y: 7,
     z: tiles[7][34].z + 1.8,
     color: { r: 168, g: 92, b: 255 },
     intensity: 1.6,

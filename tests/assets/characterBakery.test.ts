@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   bakeCharacterBuffers,
+  CharacterSpriteSheetBuffer,
   computeCharacterRecipeHash,
   generateRandomCharacterRecipe,
+  hasLoadedCharacterSpriteSheets,
+  registerCharacterSpriteSheets,
+  resolveCharacterArchetypeTag,
   resolveEffectiveCharacterLayers
 } from '../../src/assets/characterBakery';
 import { EQUIPMENT_CATALOG } from '../../src/rpg/characterData';
@@ -101,5 +105,48 @@ describe('characterBakery - Modular Isometric Character Generation & Texture Bak
     };
     const bakedDruid = bakeCharacterBuffers(druidRecipe);
     expect(bakedDruid.albedoRGBA.length).toBe(64 * 4 * 96 * 8 * 4);
+  });
+
+  it('bakes quadruped wolves and composites registered 8-directional character sprite sheets with PBR normals', () => {
+    const wolfRecipe = {
+      ...generateRandomCharacterRecipe(505, 'enemy_wilk'),
+      name: 'Wilk Puszczański'
+    };
+    expect(resolveCharacterArchetypeTag(wolfRecipe)).toBe('wilk');
+    expect(computeCharacterRecipeHash(wolfRecipe)).toContain('|wilk');
+    const bakedWolf = bakeCharacterBuffers(wolfRecipe);
+    expect(bakedWolf.albedoRGBA.length).toBe(256 * 768 * 4);
+
+    // Create a synthetic 256x768 sprite sheet and verify registerCharacterSpriteSheets compositing
+    const sheetW = 256;
+    const sheetH = 768;
+    const mockRgba = new Uint8ClampedArray(sheetW * sheetH * 4);
+    for (let dir = 0; dir < 8; dir++) {
+      for (let frame = 0; frame < 4; frame++) {
+        const cx = frame * 64 + 32;
+        const cy = dir * 96 + 48;
+        const idx = (cy * sheetW + cx) * 4;
+        mockRgba[idx] = 180;
+        mockRgba[idx + 1] = 160;
+        mockRgba[idx + 2] = 140;
+        mockRgba[idx + 3] = 255;
+      }
+    }
+    const sheets = new Map<string, CharacterSpriteSheetBuffer>([
+      ['body_male', { width: sheetW, height: sheetH, rgba: mockRgba }],
+      ['armor_plate', { width: sheetW, height: sheetH, rgba: mockRgba }],
+      ['enemy_skeleton', { width: sheetW, height: sheetH, rgba: mockRgba }]
+    ]);
+
+    registerCharacterSpriteSheets(sheets);
+    expect(hasLoadedCharacterSpriteSheets()).toBe(true);
+
+    const skelRecipe = generateRandomCharacterRecipe(606, 'enemy_kurhan_skeleton');
+    const bakedSkel = bakeCharacterBuffers(skelRecipe);
+    expect(bakedSkel.albedoRGBA[(48 * sheetW + 32) * 4 + 3]).toBe(255);
+
+    // Clear registered sheets so subsequent procedural fallback tests remain isolated
+    registerCharacterSpriteSheets(new Map());
+    expect(hasLoadedCharacterSpriteSheets()).toBe(false);
   });
 });

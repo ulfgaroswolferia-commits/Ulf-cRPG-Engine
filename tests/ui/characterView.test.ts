@@ -12,7 +12,7 @@ function makeFakeRoot(): HTMLElement {
 }
 
 describe('Character ("Postać") View & Progression HUD', () => {
-  it('renders XP bar, Mana, and Postać [C] button with unspent points badge on hero-card', () => {
+  it('renders XP bar, Mana, and Postać [K] button with unspent points badge on hero-card', () => {
     const game = new CrpgGameState('forest_clearing');
     game.grantPlayerXp(25); // Level 2 (+2 attr pts, +1 skill pt = 3 unspent)
     const scene = new IsoSceneView(game);
@@ -21,13 +21,13 @@ describe('Character ("Postać") View & Progression HUD', () => {
     hud.render();
 
     expect(fakeRoot.innerHTML).toContain('data-action="toggle-character"');
-    expect(fakeRoot.innerHTML).toContain('Postać [C]');
+    expect(fakeRoot.innerHTML).toContain('Postać [K]');
     expect(fakeRoot.innerHTML).toContain('Poz. 2');
     expect(fakeRoot.innerHTML).toContain('Mana');
     expect(fakeRoot.innerHTML).toContain('unspent-points-badge');
   });
 
-  it('opens and closes Postać view via toggleCharacter, C key, and Escape', () => {
+  it('opens and closes Postać view via toggleCharacter, K key, and Escape', () => {
     const game = new CrpgGameState('forest_clearing');
     const scene = new IsoSceneView(game);
     const fakeRoot = makeFakeRoot();
@@ -35,9 +35,9 @@ describe('Character ("Postać") View & Progression HUD', () => {
 
     expect(fakeRoot.innerHTML).not.toContain('character-drawer');
 
-    // Open with 'c'
+    // Open with 'k'
     const handledOpen = hud.handleGlobalKey({
-      key: 'c',
+      key: 'k',
       target: null,
       preventDefault: () => {}
     } as unknown as KeyboardEvent);

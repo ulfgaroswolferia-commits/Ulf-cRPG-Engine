@@ -1,4 +1,5 @@
 import { ELEVATION_STEP_PX, TILE_HEIGHT, TILE_WIDTH } from '../core/isoMath';
+import { registerCharacterSpriteSheets } from './characterBakery';
 import { SynthesizedPbrBufferPair } from './proceduralForge';
 
 export interface LoadedImageBuffer {
@@ -164,6 +165,46 @@ export async function preloadGlionoxForestAssets(): Promise<GlionoxForestRawShee
           if (loaded) dungeonPngMap.set(fn, loaded);
         })
       );
+
+      const characterSheetNames = [
+        'body_male',
+        'armor_tunic',
+        'armor_brigandine',
+        'armor_chain',
+        'armor_plate',
+        'armor_robes',
+        'head_hair',
+        'head_bald',
+        'head_hood',
+        'head_mage_hood',
+        'head_coif',
+        'head_helm',
+        'weapon_longsword',
+        'weapon_axe',
+        'weapon_staff',
+        'weapon_bow',
+        'offhand_buckler',
+        'offhand_kite_shield',
+        'offhand_shield',
+        'enemy_skeleton',
+        'enemy_zombie',
+        'enemy_goblin',
+        'npc_peasant_woman',
+        'npc_peasant_man',
+        'npc_trader',
+        'npc_noble',
+        'npc_knight'
+      ];
+      const loadedCharSheets = new Map<string, LoadedImageBuffer>();
+      await Promise.all(
+        characterSheetNames.map(async (name) => {
+          const loaded = await tryLoadOptionalPng(`./assets/characters/${name}.png`);
+          if (loaded) loadedCharSheets.set(name, loaded);
+        })
+      );
+      if (loadedCharSheets.size > 0) {
+        registerCharacterSpriteSheets(loadedCharSheets);
+      }
 
       loadedSheets = {
         trees,
@@ -853,20 +894,93 @@ export function getGlionoxWildflowerOrGrassPbr(
   return pair;
 }
 
+/**
+ * Extracts a lightweight, shadowless ground micro-detail (grass tuft cols 0..3 or field pebbles cols 4..7)
+ * from `oga_cliffs_foliage.png` row 2 for seamless organic ground dressing.
+ */
+export function getOgaGroundMicroTuftPbr(
+  variantIndex: number
+): SynthesizedPbrBufferPair | null {
+  if (!loadedSheets?.ogaCliffsFoliage) return null;
+  const col = ((variantIndex % 8) + 8) % 8;
+  const key = `oga_micro_tuft_${col}`;
+  const cached = glionoxPropCache.get(key);
+  if (cached) return cached;
+
+  const pair = extractAndScaleSpritePbr(
+    loadedSheets.ogaCliffsFoliage,
+    col * 128,
+    384,
+    128,
+    128,
+    0.72,
+    98 / 128,
+    0,
+    0,
+    0.82,
+    0.03
+  );
+  glionoxPropCache.set(key, pair);
+  return pair;
+}
+
 const glionoxTileCache = new Map<string, SynthesizedPbrBufferPair>();
 
 /**
- * Synthesizes an isometric 2:1 tile (`forest_grass`, `forest_soil`, `dirt_path`, or `abyss_water`)
- * using OpenGameArt's "Updated Grassland Tileset Centralized/Stylized" (`oga_terrain_tiles.png`, 128x64 diamonds)
+ * Synthesizes a seamless isometric 2:1 tile (`forest_grass`, `forest_soil`, `dirt_path`, or `abyss_water`)
+ * using OpenGameArt's "Updated Grassland Tileset Stylized" (`oga_terrain_tiles.png`, 8 variants per row)
  * combined with Glionox's 3D overhanging grass lip & rocky cliff wall (`forest_tileset.png`).
+ *
+ * Notice: No dark tile borders are baked into the diamond edges so adjacent tiles merge seamlessly
+ * without a visible square/diamond grid during exploration.
  */
+const ogaRowMeanCache = new Map<number, { r: number; g: number; b: number }>();
+
+function getOgaRowMeanRgb(
+  ogaTiles: LoadedImageBuffer,
+  ogaRow: number
+): { r: number; g: number; b: number } {
+  const cached = ogaRowMeanCache.get(ogaRow);
+  if (cached) return cached;
+
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+  const cols = Math.min(8, Math.floor(ogaTiles.width / 128));
+  for (let col = 0; col < cols; col++) {
+    for (let sy = 8; sy < 56; sy += 2) {
+      for (let sx = 16; sx < 112; sx += 2) {
+        const dx = Math.abs(sx - 64) / 64;
+        const dy = Math.abs(sy - 32) / 32;
+        if (dx + dy > 0.85) continue;
+        const idx = ((ogaRow * 64 + sy) * ogaTiles.width + (col * 128 + sx)) * 4;
+        if (ogaTiles.rgba[idx + 3] > 180) {
+          sumR += ogaTiles.rgba[idx];
+          sumG += ogaTiles.rgba[idx + 1];
+          sumB += ogaTiles.rgba[idx + 2];
+          count++;
+        }
+      }
+    }
+  }
+  const mean =
+    count > 0
+      ? { r: sumR / count, g: sumG / count, b: sumB / count }
+      : { r: 80, g: 102, b: 56 };
+  ogaRowMeanCache.set(ogaRow, mean);
+  return mean;
+}
+
 export function generateGlionoxForestTilePbr(
   terrain: 'forest_grass' | 'forest_soil' | 'dirt_path' | 'abyss_water',
   elevationSteps: number,
   variant = 0
 ): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const key = `oga_glionox_tile_${terrain}_z${elevationSteps}_v${variant}`;
+  const maxVariants = 8;
+  const vNorm = ((variant % maxVariants) + maxVariants) % maxVariants;
+  const key = `oga_glionox_tile_${terrain}_z${elevationSteps}_v${vNorm}`;
   const cached = glionoxTileCache.get(key);
   if (cached) return cached;
 
@@ -900,38 +1014,53 @@ export function generateGlionoxForestTilePbr(
     };
   };
 
-  // Select OGA 128x64 isometric diamond tile row & column
-  const ogaCol = (((elevationSteps * 3 + 1 + variant * 2) % 8) + 8) % 8;
-  const ogaRow =
-    terrain === 'forest_grass'
-      ? elevationSteps % 2 === 0
-        ? 0 // wildflower meadow grass
-        : 1 // deep lush grassland
-      : terrain === 'dirt_path'
-        ? 2 // stylized warm dirt path
-        : terrain === 'forest_soil'
-          ? 3 // dark forest soil
-          : 5; // rippled deep water (abyss_water)
+  // Select OGA 128x64 isometric diamond tile row & column (consistent single row per terrain so
+  // adjacent tiles never create a checkerboard between bright meadow and dark forest grass)
+  let ogaRow: number;
+  const ogaCol: number = vNorm;
+  if (terrain === 'forest_grass') {
+    ogaRow = 1; // deep lush grassland (all 8 consistent variants)
+  } else if (terrain === 'dirt_path') {
+    ogaRow = 2; // stylized warm dirt path (all 8 variants)
+  } else if (terrain === 'forest_soil') {
+    ogaRow = 3; // dark forest soil (all 8 variants)
+  } else {
+    ogaRow = 5; // rippled deep water (all 8 variants)
+  }
 
-  // 1. Top Isometric Diamond Face
+  const rowMean = ogaTiles ? getOgaRowMeanRgb(ogaTiles, ogaRow) : null;
+
+  // 1. Top Isometric Diamond Face (1px overdraw + smooth perimeter harmonization for zero grid seams)
   for (let y = 0; y < TILE_HEIGHT; y++) {
     for (let x = 0; x < width; x++) {
       const dx = Math.abs(x - halfW) / halfW;
       const dy = Math.abs(y - halfH) / halfH;
-      if (dx + dy <= 1.0) {
-        const edgeDist = 1.0 - (dx + dy);
+      const diamondDist = dx + dy;
+      if (diamondDist <= 1.032) {
         let r = 110;
         let g = 132;
         let b = 64;
 
         if (ogaTiles) {
-          const ox = ogaCol * 128 + x;
-          const oy = ogaRow * 64 + y;
+          const pull = diamondDist > 0.95 ? 0.94 / diamondDist : 1.0;
+          const sx = Math.max(0, Math.min(127, Math.round(halfW + (x - halfW) * pull)));
+          const sy = Math.max(0, Math.min(63, Math.round(halfH + (y - halfH) * pull)));
+          const ox = ogaCol * 128 + sx;
+          const oy = ogaRow * 64 + sy;
           const oIdx = (oy * ogaTiles.width + ox) * 4;
           if (ogaTiles.rgba[oIdx + 3] > 32) {
             r = ogaTiles.rgba[oIdx];
             g = ogaTiles.rgba[oIdx + 1];
             b = ogaTiles.rgba[oIdx + 2];
+          }
+          // Harmonize outer diamond rim toward the row's shared mean color so adjacent variants
+          // merge seamlessly without visible tile boundaries or clipped corner blotches
+          if (rowMean && diamondDist > 0.62) {
+            const edgeT = Math.min(1, (diamondDist - 0.62) / 0.36);
+            const smoothEdge = edgeT * edgeT * (3 - 2 * edgeT) * 0.65;
+            r = Math.round(r * (1 - smoothEdge) + rowMean.r * smoothEdge);
+            g = Math.round(g * (1 - smoothEdge) + rowMean.g * smoothEdge);
+            b = Math.round(b * (1 - smoothEdge) + rowMean.b * smoothEdge);
           }
         } else {
           const detailSample = sampleTileset(48, 144, 64, 32, x, y);

@@ -213,9 +213,13 @@ export function generateTilePbrBuffers(
     if (glionoxTile) return glionoxTile;
   }
 
-  const key = `${terrain}_z${elevationSteps}`;
+  const vNorm = ((variant % 4) + 4) % 4;
+  const key = `${terrain}_z${elevationSteps}_v${vNorm}`;
   const cached = tileCache.get(key);
   if (cached) return cached;
+
+  const variantSeedX = vNorm * 19.3;
+  const variantSeedY = vNorm * 31.7;
 
   const skirtSteps = Math.max(1, elevationSteps + 1);
   const skirtPx = skirtSteps * ELEVATION_STEP_PX;
@@ -268,29 +272,27 @@ export function generateTilePbrBuffers(
   const isNatural =
     terrain === 'forest_grass' || terrain === 'dirt_path' || terrain === 'forest_soil';
 
-  // 1. Render Top Diamond Face with Voronoi Cellular Relief & fBm Micro-Detail
+  // 1. Render Top Diamond Face with Voronoi Cellular Relief & fBm Micro-Detail (seamless 1px overdraw, no dark grid borders)
   for (let y = 0; y < TILE_HEIGHT; y++) {
     for (let x = 0; x < width; x++) {
       const dx = Math.abs(x - halfW) / halfW;
       const dy = Math.abs(y - halfH) / halfH;
-      if (dx + dy <= 1.0) {
+      if (dx + dy <= 1.032) {
         const u = ((x - halfW) / halfW + (y - halfH) / halfH) * 0.5 + 0.5;
         const v = ((y - halfH) / halfH - (x - halfW) / halfW) * 0.5 + 0.5;
 
-        const detailNoise = fbm(x * 0.12, y * 0.12, 4);
-        const fineNoise = valueNoise(x * 0.45, y * 0.45);
-        let nx = (detailNoise - fbm((x + 1) * 0.12, y * 0.12, 3)) * 2.8;
-        let ny = (detailNoise - fbm(x * 0.12, (y + 1) * 0.12, 3)) * 2.8 - 0.22;
+        const detailNoise = fbm((x + variantSeedX) * 0.12, (y + variantSeedY) * 0.12, 4);
+        const fineNoise = valueNoise((x + variantSeedX) * 0.45, (y + variantSeedY) * 0.45);
+        let nx = (detailNoise - fbm((x + variantSeedX + 1) * 0.12, (y + variantSeedY) * 0.12, 3)) * 2.8;
+        let ny = (detailNoise - fbm((x + variantSeedX) * 0.12, (y + variantSeedY + 1) * 0.12, 3)) * 2.8 - 0.22;
         let shade = 0.82 + (detailNoise - 0.5) * 0.38 + (fineNoise - 0.5) * 0.14;
         let pixelColor = { ...baseColor };
-
-        const edgeDist = 1.0 - (dx + dy);
 
         let pixelRoughness = roughness;
         let pixelMetallic = metallic;
 
         if (terrain === 'forest_grass' || terrain === 'forest_soil') {
-          const patch = fbm(u * 4.5, v * 4.5, 3);
+          const patch = fbm((u + vNorm * 0.7) * 4.5, (v + vNorm * 0.4) * 4.5, 3);
           if (patch > 0.56) {
             pixelColor =
               terrain === 'forest_grass'
@@ -301,34 +303,24 @@ export function generateTilePbrBuffers(
           }
           // Seamless organic grass/soil without diamond grid borders
         } else if (terrain === 'dirt_path') {
-          const vor = voronoiStone(u * 7.5, v * 7.5);
-          // Embedded trail cobblestones & gravel
+          const vor = voronoiStone((u + vNorm * 0.6) * 7.5, (v + vNorm * 0.3) * 7.5);
+          // Embedded trail cobblestones & gravel (no artificial green diamond border)
           if (vor.f1 < 0.28 && detailNoise > 0.46) {
             pixelColor = { r: 124, g: 108, b: 88 };
             shade = 0.95 + (0.28 - vor.f1) * 0.6;
             nx += (vor.f1 - 0.14) * 1.4;
             pixelRoughness = 0.45;
             pixelMetallic = 0.18;
-          } else if (edgeDist < 0.14) {
-            // Grassy border blending into the trail edges
-            pixelColor = { r: 56, g: 88, b: 44 };
           }
         } else if (terrain === 'abyss_water') {
           const wave =
-            Math.sin(u * 18 + detailNoise * 5) * 0.5 +
-            Math.cos(v * 18 - detailNoise * 5) * 0.5;
+            Math.sin((u + vNorm * 0.25) * 18 + detailNoise * 5) * 0.5 +
+            Math.cos((v + vNorm * 0.25) * 18 - detailNoise * 5) * 0.5;
           shade = 0.88 + wave * 0.22;
           nx = wave * 0.45;
           ny = -0.35 + wave * 0.35;
           pixelRoughness = 0.05;
           pixelMetallic = 0.88;
-          if (edgeDist < 0.09) {
-            // Shoreline foam & shallow tint
-            pixelColor = { r: 68, g: 142, b: 168 };
-            shade = 1.15;
-            pixelRoughness = 0.25;
-            pixelMetallic = 0.45;
-          }
         } else if (terrain === 'stairs_stone') {
           const stepIdx = Math.floor(y / 8);
           const stepLocal = y % 8;
@@ -337,7 +329,7 @@ export function generateTilePbrBuffers(
         } else {
           // Sculpted Voronoi Flagstones / Cobblestones for dungeon_stone, mossy_cobble, sanctum_marble, arcane_inlay
           const scale = terrain === 'mossy_cobble' ? 6.2 : 4.2;
-          const vor = voronoiStone(u * scale, v * scale);
+          const vor = voronoiStone((u + vNorm * 0.5) * scale, (v + vNorm * 0.5) * scale);
           const slabTint = (vor.cellId - 0.5) * 18;
           pixelColor = {
             r: Math.min(255, Math.max(0, baseColor.r + slabTint)),
@@ -378,10 +370,6 @@ export function generateTilePbrBuffers(
               pixelRoughness = 0.12;
               pixelMetallic = 0.82;
             }
-          }
-
-          if (edgeDist < 0.05) {
-            shade *= 0.65;
           }
         }
 
@@ -1241,6 +1229,134 @@ export function generatePropPbrBuffers(
         }
       }
     }
+  } else if (kind === 'watermill_wheel') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 24, 12);
+    const wheelCenterY = baseAnchorPxY - 48;
+
+    // Oak axle and eight spokes, with enough width to stay readable at normal zoom.
+    renderIsoPrism(
+      baseAnchorPxX,
+      wheelCenterY,
+      46,
+      5,
+      7,
+      { r: 112, g: 72, b: 38 },
+      { r: 78, g: 48, b: 28 },
+      0.72,
+      0.08
+    );
+
+    for (let y = -40; y <= 40; y++) {
+      for (let x = -40; x <= 40; x++) {
+        const radius = Math.hypot(x, y);
+        if (radius < 32 || radius > 39) continue;
+        const grain = Math.sin(Math.atan2(y, x) * 16) * 0.08 + Math.sin(x * 0.42 + y * 0.17) * 0.035;
+        const rimColor = radius > 37 ? { r: 78, g: 48, b: 27 } : { r: 142, g: 96, b: 52 };
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          baseAnchorPxX + x,
+          wheelCenterY + y,
+          rimColor,
+          0.88 + grain,
+          x / 39,
+          y / 39,
+          0.76,
+          0.04
+        );
+      }
+    }
+
+    for (let spoke = 0; spoke < 8; spoke++) {
+      const angle = (spoke / 8) * Math.PI * 2;
+      const endX = Math.cos(angle) * 33;
+      const endY = Math.sin(angle) * 33;
+      const steps = Math.ceil(Math.hypot(endX, endY));
+      for (let step = 7; step <= steps; step++) {
+        const t = step / steps;
+        const px = baseAnchorPxX + Math.cos(angle) * 33 * t;
+        const py = wheelCenterY + Math.sin(angle) * 33 * t;
+        for (let thickness = -2; thickness <= 2; thickness++) {
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            px + Math.sin(angle) * thickness,
+            py - Math.cos(angle) * thickness,
+            thickness === -2 ? { r: 166, g: 116, b: 62 } : { r: 118, g: 76, b: 40 },
+            0.9,
+            Math.cos(angle),
+            -0.35,
+            0.8,
+            0.02
+          );
+        }
+      }
+    }
+
+    for (let y = -10; y <= 10; y++) {
+      for (let x = -10; x <= 10; x++) {
+        const radius = Math.hypot(x, y);
+        if (radius > 10) continue;
+        const hubColor = radius < 4 ? { r: 76, g: 82, b: 86 } : { r: 166, g: 112, b: 58 };
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          baseAnchorPxX + x,
+          wheelCenterY + y,
+          hubColor,
+          0.9,
+          x / 10,
+          y / 10,
+          0.6,
+          radius < 4 ? 0.62 : 0.04
+        );
+      }
+    }
+  } else if (kind === 'perched_crow') {
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 18, 9);
+    const bodyCenterOffsetY = -28;
+    const bodyColor = { r: 34, g: 39, b: 48 };
+    const featherColor = { r: 50, g: 59, b: 73 };
+    for (let y = -35; y <= -20; y++) {
+      for (let x = -12; x <= 14; x++) {
+        const body = ((x - 1) / 12) ** 2 + ((y - bodyCenterOffsetY) / 7) ** 2;
+        if (body <= 1) {
+          writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, body < 0.58 ? featherColor : bodyColor, 0.82, 0.12, -0.42, 0.72, 0.08);
+        }
+      }
+    }
+
+    // Beaked head, folded wing, tail, and legs make the silhouette read as a perched bird.
+    for (let y = -38; y <= -29; y++) {
+      for (let x = -17; x <= -8; x++) {
+        if (((x + 12) / 5) ** 2 + ((y + 34) / 4.5) ** 2 <= 1) {
+          writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, bodyColor, 0.88, -0.25, -0.4, 0.7, 0.06);
+        }
+      }
+    }
+    for (let x = -23; x <= -16; x++) {
+      const widthAtX = Math.max(0, Math.floor((x + 23) * 0.45));
+      for (let y = -35 - widthAtX; y <= -35 + widthAtX; y++) {
+        writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, baseAnchorPxY + y, { r: 186, g: 132, b: 52 }, 0.9, -0.4, -0.2, 0.5, 0.08);
+      }
+    }
+    for (let x = -3; x <= 10; x++) {
+      const y = bodyCenterOffsetY + 3 + Math.round((x + 3) * 0.3);
+      writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, y, featherColor, 0.84, 0, -0.3, 0.78, 0.04);
+      writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, y + 1, featherColor, 0.84, 0, -0.3, 0.78, 0.04);
+    }
+    for (const x of [-2, 5]) {
+      for (let y = baseAnchorPxY - 21; y <= baseAnchorPxY - 13; y++) {
+        writePbrPixel(albedoRGBA, normalMaterialRGBA, width, height, baseAnchorPxX + x, y, { r: 92, g: 62, b: 40 }, 0.84, 0, -0.4, 0.82, 0.02);
+      }
+    }
+    renderIsoPrism(baseAnchorPxX, baseAnchorPxY - 12, 24, 4, 4, { r: 112, g: 76, b: 44 }, { r: 78, g: 50, b: 30 }, 0.78, 0.06);
   } else if (kind === 'arcane_crystal') {
     renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 28, 14);
     const cColor = isOpen ? { r: 72, g: 232, b: 255 } : { r: 62, g: 84, b: 102 };
@@ -1496,6 +1612,256 @@ export function generatePropPbrBuffers(
           0.78,
           0.05
         );
+      }
+    }
+  } else if (kind === 'school_banner') {
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY + 1,
+      4,
+      3,
+      86,
+      { r: 146, g: 103, b: 57 },
+      { r: 91, g: 61, b: 35 },
+      0.76,
+      0.04
+    );
+    renderIsoPrism(
+      baseAnchorPxX + 17,
+      baseAnchorPxY - 84,
+      22,
+      3,
+      4,
+      { r: 184, g: 137, b: 70 },
+      { r: 117, g: 80, b: 42 },
+      0.68,
+      0.14
+    );
+
+    for (let fy = 0; fy <= 46; fy++) {
+      const wave = Math.round(Math.sin(fy * 0.17) * 2);
+      for (let fx = 0; fx <= 34; fx++) {
+        const fringeGap = fy > 41 && fx % 8 >= 5;
+        if (fringeGap) continue;
+
+        const px = baseAnchorPxX + 4 + fx + wave;
+        const py = baseAnchorPxY - 82 + fy;
+        const centerX = fx - 17;
+        const centerY = fy - 22;
+        const crossedSwords =
+          Math.abs(centerY) < 13 &&
+          (Math.abs(centerX - centerY * 0.48) < 1.6 ||
+            Math.abs(centerX + centerY * 0.48) < 1.6);
+        const centerMark = Math.abs(centerX) + Math.abs(centerY) <= 3;
+        const border = fx <= 1 || fx >= 33 || fy <= 1 || fy >= 44;
+        const gold = crossedSwords || centerMark || border;
+        const color = gold
+          ? { r: 218, g: 174, b: 83 }
+          : fx > 27
+            ? { r: 117, g: 25, b: 34 }
+            : { r: 158, g: 35, b: 43 };
+
+        writePbrPixel(
+          albedoRGBA,
+          normalMaterialRGBA,
+          width,
+          height,
+          px,
+          py,
+          color,
+          0.94 + Math.sin(fy * 0.11 + fx * 0.2) * 0.08,
+          wave / 3,
+          0.08,
+          0.9,
+          gold ? 0.18 : 0.03
+        );
+      }
+    }
+  } else if (kind === 'training_dummy') {
+    const v = ((variant % 3) + 3) % 3;
+    renderSoftGroundAO(baseAnchorPxX, baseAnchorPxY, 26, 13);
+
+    // Cross-timber base stand
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY + 1,
+      24,
+      12,
+      5,
+      { r: 122, g: 86, b: 48 },
+      { r: 86, g: 58, b: 32 },
+      0.78,
+      0.06
+    );
+    renderIsoPrism(
+      baseAnchorPxX,
+      baseAnchorPxY - 2,
+      10,
+      5,
+      6,
+      { r: 108, g: 76, b: 42 },
+      { r: 78, g: 52, b: 28 },
+      0.78,
+      0.06
+    );
+
+    if (v === 1) {
+      // Variant 1: Spear-thrusting pell post (słup do pchnięć włócznią)
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 6,
+        11,
+        6,
+        58,
+        { r: 146, g: 104, b: 60 },
+        { r: 106, g: 74, b: 42 },
+        0.76,
+        0.05
+      );
+      // Rope wrapping bands & target ring
+      for (let dy = -48; dy <= -20; dy++) {
+        for (let dx = -7; dx <= 7; dx++) {
+          const px = baseAnchorPxX + dx;
+          const py = baseAnchorPxY + dy;
+          const isTarget = Math.hypot(dx, dy + 35) <= 6.2;
+          const isBullseye = Math.hypot(dx, dy + 35) <= 2.6;
+          const isRope = (dy % 3 === 0 || Math.abs(dy + 34) <= 10) && Math.abs(dx) <= 6;
+          if (!isTarget && !isRope) continue;
+          const col = isBullseye
+            ? { r: 186, g: 46, b: 38 }
+            : isTarget
+              ? { r: 224, g: 204, b: 156 }
+              : { r: 184, g: 152, b: 96 };
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            px,
+            py,
+            col,
+            0.95 - Math.abs(dx) * 0.04,
+            dx / 8,
+            -0.25,
+            0.84,
+            0.04
+          );
+        }
+      }
+    } else {
+      // Variants 0 & 2: Classic straw & timber fencing dummy (kukła treningowa)
+      // Central wooden spine post
+      renderIsoPrism(
+        baseAnchorPxX,
+        baseAnchorPxY - 5,
+        7,
+        4,
+        54,
+        { r: 126, g: 88, b: 48 },
+        { r: 88, g: 60, b: 32 },
+        0.78,
+        0.05
+      );
+      // Horizontal wooden crossbar arms
+      for (let ax = -22; ax <= 22; ax++) {
+        for (let ay = -42; ay <= -37; ay++) {
+          const isTop = ay <= -40;
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + ax,
+            baseAnchorPxY + ay,
+            isTop ? { r: 152, g: 112, b: 64 } : { r: 108, g: 76, b: 42 },
+            0.95 - Math.abs(ax) * 0.008,
+            0,
+            isTop ? -0.6 : 0.2,
+            0.78,
+            0.05
+          );
+        }
+      }
+      // Stuffed straw / burlap torso barrel
+      for (let ty = -46; ty <= -18; ty++) {
+        const halfW = ty < -40 || ty > -22 ? 8 : 10;
+        for (let tx = -halfW; tx <= halfW; tx++) {
+          const edge = Math.abs(tx) / halfW;
+          const isRopeBelt = ty === -31 || ty === -30 || ty === -22 || ty === -43;
+          const strawGrain = ((tx * 7 + ty * 13) & 3) * 0.04;
+          const col = isRopeBelt
+            ? { r: 118, g: 82, b: 46 }
+            : { r: 204, g: 174, b: 112 };
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + tx,
+            baseAnchorPxY + ty,
+            col,
+            1.02 - edge * 0.32 + strawGrain,
+            (tx / halfW) * 0.75,
+            -0.2,
+            0.86,
+            0.03
+          );
+        }
+      }
+      // Straw sack head
+      for (let hy = -61; hy <= -47; hy++) {
+        for (let hx = -7; hx <= 7; hx++) {
+          const d = Math.hypot(hx / 7, (hy + 54) / 7);
+          if (d > 1.0) continue;
+          const isHelm = v === 2 && hy <= -54;
+          const col = isHelm
+            ? { r: 122, g: 130, b: 142 }
+            : { r: 212, g: 184, b: 126 };
+          writePbrPixel(
+            albedoRGBA,
+            normalMaterialRGBA,
+            width,
+            height,
+            baseAnchorPxX + hx,
+            baseAnchorPxY + hy,
+            col,
+            1.04 - d * 0.34,
+            hx / 7,
+            (hy + 54) / 7,
+            isHelm ? 0.36 : 0.85,
+            isHelm ? 0.72 : 0.03
+          );
+        }
+      }
+      // Variant 2: Round wooden training shield mounted on right arm
+      if (v === 2) {
+        const shX = baseAnchorPxX + 16;
+        const shY = baseAnchorPxY - 37;
+        for (let sy = -10; sy <= 10; sy++) {
+          for (let sx = -9; sx <= 9; sx++) {
+            const d = Math.hypot(sx / 9, sy / 10);
+            if (d > 1.0) continue;
+            const isRim = d > 0.78;
+            const isBoss = d < 0.28;
+            const col = isRim || isBoss
+              ? { r: 138, g: 146, b: 158 }
+              : { r: 156, g: 76, b: 48 };
+            writePbrPixel(
+              albedoRGBA,
+              normalMaterialRGBA,
+              width,
+              height,
+              shX + sx,
+              shY + sy,
+              col,
+              1.05 - d * 0.3,
+              sx / 9,
+              sy / 10,
+              isRim || isBoss ? 0.35 : 0.72,
+              isRim || isBoss ? 0.75 : 0.1
+            );
+          }
+        }
       }
     }
   } else if (kind === 'travel_signpost') {
@@ -2016,40 +2382,88 @@ export function generatePropPbrBuffers(
         0.05
       );
     } else if (kind === 'exit_path') {
-      renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 56, 26);
-      // Frontier wooden gateposts + crossbeam signpost
+      renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 68, 32);
+      // Stone plinths for both gateposts
       renderIsoPrism(
-        baseAnchorPxX - 18,
-        baseAnchorPxY,
+        baseAnchorPxX - 24,
+        baseAnchorPxY + 2,
+        22,
+        11,
         14,
-        7,
-        58,
-        { r: 138, g: 98, b: 54 },
-        { r: 98, g: 68, b: 38 },
-        0.65,
-        0.2
+        { r: 126, g: 130, b: 138 },
+        { r: 88, g: 92, b: 98 },
+        0.72,
+        0.12
       );
       renderIsoPrism(
-        baseAnchorPxX + stepDx + 14,
-        baseAnchorPxY + stepDy,
+        baseAnchorPxX + stepDx + 20,
+        baseAnchorPxY + stepDy + 2,
+        22,
+        11,
         14,
-        7,
-        58,
-        { r: 138, g: 98, b: 54 },
-        { r: 98, g: 68, b: 38 },
-        0.65,
-        0.2
+        { r: 126, g: 130, b: 138 },
+        { r: 88, g: 92, b: 98 },
+        0.72,
+        0.12
+      );
+      // Heavy timber gateposts spanning the entire 2-tile exit
+      renderIsoPrism(
+        baseAnchorPxX - 24,
+        baseAnchorPxY - 10,
+        16,
+        8,
+        74,
+        { r: 148, g: 104, b: 56 },
+        { r: 102, g: 70, b: 38 },
+        0.68,
+        0.15
       );
       renderIsoPrism(
-        baseAnchorPxX + stepDx * 0.5,
-        baseAnchorPxY + stepDy * 0.5 - 42,
-        42,
+        baseAnchorPxX + stepDx + 20,
+        baseAnchorPxY + stepDy - 10,
+        16,
+        8,
+        74,
+        { r: 148, g: 104, b: 56 },
+        { r: 102, g: 70, b: 38 },
+        0.68,
+        0.15
+      );
+      // Heavy timber arch crossbeam + rooflet cap spanning the gate
+      renderIsoPrism(
+        baseAnchorPxX + stepDx * 0.5 - 2,
+        baseAnchorPxY + stepDy * 0.5 - 66,
+        72,
+        18,
         14,
-        10,
-        { r: 164, g: 118, b: 64 },
-        { r: 118, g: 82, b: 44 },
-        0.58,
-        0.25
+        { r: 168, g: 120, b: 64 },
+        { r: 118, g: 82, b: 42 },
+        0.62,
+        0.18
+      );
+      // Shingled protective ridge on top of gate crossbeam
+      renderIsoPrism(
+        baseAnchorPxX + stepDx * 0.5 - 2,
+        baseAnchorPxY + stepDy * 0.5 - 78,
+        76,
+        20,
+        9,
+        { r: 132, g: 92, b: 52 },
+        { r: 92, g: 64, b: 36 },
+        0.74,
+        0.1
+      );
+      // Hanging golden-rimmed road emblem plaque under the arch
+      renderIsoPrism(
+        baseAnchorPxX + stepDx * 0.5 - 2,
+        baseAnchorPxY + stepDy * 0.5 - 52,
+        28,
+        8,
+        12,
+        { r: 214, g: 172, b: 84 },
+        { r: 158, g: 116, b: 48 },
+        0.48,
+        0.35
       );
     } else {
       renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 58, 28);
