@@ -241,10 +241,10 @@ function drawShadedEllipse(
   metallic: number,
   outlineDarken = true
 ): void {
-  const minX = Math.max(0, Math.floor(cx - rx));
-  const maxX = Math.min(sheetW - 1, Math.ceil(cx + rx));
-  const minY = Math.max(0, Math.floor(cy - ry));
-  const maxY = Math.min(sheetH - 1, Math.ceil(cy + ry));
+  const minX = Math.max(0, Math.floor(cx - rx - 1));
+  const maxX = Math.min(sheetW - 1, Math.ceil(cx + rx + 1));
+  const minY = Math.max(0, Math.floor(cy - ry - 1));
+  const maxY = Math.min(sheetH - 1, Math.ceil(cy + ry + 1));
   const invRx = 1 / Math.max(1, rx);
   const invRy = 1 / Math.max(1, ry);
   const roughByte = Math.min(255, Math.max(0, Math.round(roughness * 255)));
@@ -257,32 +257,51 @@ function drawShadedEllipse(
     for (let x = minX; x <= maxX; x++) {
       const dx = (x - cx) * invRx;
       const distSq = dx * dx + dySq;
-      if (distSq <= 1.0) {
+      if (distSq <= 1.04) {
+        const dist = Math.sqrt(distSq);
+        const cov = dist <= 0.86 ? 1.0 : Math.max(0, Math.min(1, (1.02 - dist) / 0.16));
+        if (cov <= 0.02) continue;
+
         const isOuterEdge = outlineDarken && distSq > 0.84;
         const isBorder = trimColor !== null && distSq > 0.68 && distSq <= 0.84;
         const activeColor = isBorder && trimColor ? trimColor : color;
-        const nz = Math.sqrt(Math.max(0.05, 1.0 - distSq));
+        const nz = Math.sqrt(Math.max(0.05, 1.0 - Math.min(0.99, distSq)));
         // Strong metallic specular rim & zenith shading
         const specHighlight =
-          metallic > 0.5 && dx < -0.15 && dy < -0.15 ? (1.0 - distSq) * 0.42 : 0;
-        const baseShade = 0.68 + 0.38 * nz - 0.16 * dy - 0.1 * dx + specHighlight;
-        const shade = isOuterEdge ? baseShade * 0.42 : baseShade;
+          metallic > 0.45 && dx < -0.1 && dy < -0.1
+            ? Math.max(0, 1.0 - distSq) * (0.42 + metallic * 0.18)
+            : 0;
+        const baseShade = 0.68 + 0.4 * nz - 0.18 * dy - 0.1 * dx + specHighlight;
+        // Subtle soft shading on internal overlaps; crisp outer silhouette is applied per-frame
+        const shade = isOuterEdge ? baseShade * 0.82 : baseShade;
 
         const idx = (rowOffset + x) * 4;
-        const r = Math.round(activeColor.r * shade);
-        const g = Math.round(activeColor.g * shade);
-        const b = Math.round(activeColor.b * shade);
-        albedo[idx] = r < 0 ? 0 : r > 255 ? 255 : r;
-        albedo[idx + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
-        albedo[idx + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
-        albedo[idx + 3] = 255;
+        const r = Math.min(255, Math.max(0, Math.round(activeColor.r * shade)));
+        const g = Math.min(255, Math.max(0, Math.round(activeColor.g * shade)));
+        const b = Math.min(255, Math.max(0, Math.round(activeColor.b * shade)));
 
-        const nxByte = Math.round((dx * 0.85 * 0.5 + 0.5) * 255);
-        const nyByte = Math.round((dy * 0.85 * 0.5 + 0.5) * 255);
-        normalMat[idx] = nxByte < 0 ? 0 : nxByte > 255 ? 255 : nxByte;
-        normalMat[idx + 1] = nyByte < 0 ? 0 : nyByte > 255 ? 255 : nyByte;
-        normalMat[idx + 2] = roughByte;
-        normalMat[idx + 3] = metalByte;
+        const prevA = albedo[idx + 3] / 255;
+        if (cov >= 0.99 || prevA < 0.05) {
+          albedo[idx] = r;
+          albedo[idx + 1] = g;
+          albedo[idx + 2] = b;
+          albedo[idx + 3] = Math.round(cov * 255);
+        } else {
+          const invCov = 1 - cov;
+          albedo[idx] = Math.round(r * cov + albedo[idx] * invCov);
+          albedo[idx + 1] = Math.round(g * cov + albedo[idx + 1] * invCov);
+          albedo[idx + 2] = Math.round(b * cov + albedo[idx + 2] * invCov);
+          albedo[idx + 3] = Math.min(255, Math.round((cov + prevA * invCov) * 255));
+        }
+
+        if (cov >= 0.35) {
+          const nxByte = Math.round((dx * 0.85 * 0.5 + 0.5) * 255);
+          const nyByte = Math.round((dy * 0.85 * 0.5 + 0.5) * 255);
+          normalMat[idx] = nxByte < 0 ? 0 : nxByte > 255 ? 255 : nxByte;
+          normalMat[idx + 1] = nyByte < 0 ? 0 : nyByte > 255 ? 255 : nyByte;
+          normalMat[idx + 2] = roughByte;
+          normalMat[idx + 3] = metalByte;
+        }
       }
     }
   }
@@ -1243,6 +1262,46 @@ const bufferCache = new Map<string, BakedCharacterBuffers>();
  * Bakes a complete 8-directional x 4-animation-frame character sprite sheet
  * into both an Albedo RGBA buffer and a Normal+Material RGBA buffer with articulated heroic anatomy.
  */
+/** Applies a unified outer silhouette contour & top-left rim light per frame without internal joint seams. */
+function applyCharacterSilhouettePolish(
+  albedo: Uint8ClampedArray,
+  ox: number,
+  oy: number,
+  frameW: number,
+  frameH: number,
+  sheetW: number
+): void {
+  const alphaAt = (lx: number, ly: number): number => {
+    if (lx < 0 || lx >= frameW || ly < 0 || ly >= frameH) return 0;
+    return albedo[((oy + ly) * sheetW + (ox + lx)) * 4 + 3];
+  };
+
+  for (let ly = 0; ly < frameH; ly++) {
+    for (let lx = 0; lx < frameW; lx++) {
+      const idx = ((oy + ly) * sheetW + (ox + lx)) * 4;
+      const a = albedo[idx + 3];
+      if (a < 140) continue;
+
+      const topVoid = alphaAt(lx, ly - 1) < 40;
+      const leftVoid = alphaAt(lx - 1, ly) < 40;
+      const rightVoid = alphaAt(lx + 1, ly) < 40;
+      const bottomVoid = alphaAt(lx, ly + 1) < 40;
+
+      if (bottomVoid || rightVoid) {
+        // Crisp dark outer silhouette contour
+        albedo[idx] = Math.round(albedo[idx] * 0.56);
+        albedo[idx + 1] = Math.round(albedo[idx + 1] * 0.56);
+        albedo[idx + 2] = Math.round(albedo[idx + 2] * 0.58);
+      } else if (topVoid || leftVoid) {
+        // Subtle top-left rim light & clean edge definition
+        albedo[idx] = Math.min(255, Math.round(albedo[idx] * 0.88 + 14));
+        albedo[idx + 1] = Math.min(255, Math.round(albedo[idx + 1] * 0.88 + 13));
+        albedo[idx + 2] = Math.min(255, Math.round(albedo[idx + 2] * 0.88 + 11));
+      }
+    }
+  }
+}
+
 export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharacterBuffers {
   const hash = computeCharacterRecipeHash(recipe);
   const cached = bufferCache.get(hash);
@@ -2087,6 +2146,7 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
           );
         }
       }
+      applyCharacterSilhouettePolish(albedoRGBA, ox, oy, frameWidth, frameHeight, sheetWidth);
     }
   }
 

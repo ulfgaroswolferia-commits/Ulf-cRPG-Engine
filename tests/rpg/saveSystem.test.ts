@@ -292,4 +292,54 @@ describe('cRPG Save & Auto-Persist System (F5 / Refresh Protection & Discreet Sa
     expect(restoredGame.combatReports[reportId].outcome).toBe('victory');
     expect(restoredGame.chronicleEntries[0].combatReportId).toBe(reportId);
   });
+
+  it('persists and restores character progression, unlocked skills, and mana across save and load', () => {
+    const game = new CrpgGameState('forest_clearing');
+    game.grantPlayerXp(100); // Level 3 (5 XP), +4 attr pts, +2 skill pts
+    game.allocatePlayerAttribute('might');
+    game.unlockPlayerSkill('witez_hart');
+    game.unlockPlayerSkill('zerca_zapas');
+    game.progression.claimedDialogueXpIds.push('npc_gniewko:c_gniewko_respect');
+    game.player.combat!.mana = 42;
+
+    const serialized = serializeGameState(game);
+    expect(serialized.version).toBe(2);
+    expect(serialized.progression?.level).toBe(3);
+    expect(serialized.progression?.unlockedSkills['witez_hart']).toBe(1);
+
+    const restored = new CrpgGameState('forest_clearing');
+    const ok = deserializeGameState(serialized, restored);
+    expect(ok).toBe(true);
+    expect(restored.progression.level).toBe(3);
+    expect(restored.progression.xp).toBe(5);
+    expect(restored.progression.attributePoints).toBe(3);
+    expect(restored.progression.skillPoints).toBe(0);
+    expect(restored.progression.spentAttributePoints.might).toBe(1);
+    expect(restored.progression.unlockedSkills['witez_hart']).toBe(1);
+    expect(restored.progression.unlockedSkills['zerca_zapas']).toBe(1);
+    expect(restored.progression.claimedDialogueXpIds).toContain('npc_gniewko:c_gniewko_respect');
+    expect(restored.player.combat?.mana).toBe(42);
+    // Passive skill modifiers from witez_hart (+15 HP) & zerca_zapas (+15 Mana) re-applied
+    expect(restored.statSheet.getModifiers().some((m) => m.sourceId === 'skill:witez_hart')).toBe(true);
+  });
+
+  it('loads legacy version 1 saves without progression field gracefully', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const legacyPayload = serializeGameState(game);
+    legacyPayload.version = 1;
+    delete legacyPayload.progression;
+    if (legacyPayload.player.combat) {
+      delete legacyPayload.player.combat.mana;
+      delete legacyPayload.player.combat.maxMana;
+    }
+
+    const restored = new CrpgGameState('forest_clearing');
+    restored.grantPlayerXp(50); // ensure load overwrites with clean default
+    const ok = deserializeGameState(legacyPayload, restored);
+    expect(ok).toBe(true);
+    expect(restored.progression.level).toBe(1);
+    expect(restored.progression.xp).toBe(0);
+    expect(restored.player.combat?.maxMana).toBeGreaterThan(0);
+    expect(restored.player.combat?.mana).toBe(restored.player.combat?.maxMana);
+  });
 });

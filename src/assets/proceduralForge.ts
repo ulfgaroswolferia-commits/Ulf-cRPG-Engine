@@ -200,7 +200,8 @@ const tileCache = new Map<string, SynthesizedPbrBufferPair>();
  */
 export function generateTilePbrBuffers(
   terrain: TileTerrainType,
-  elevationSteps = 1
+  elevationSteps = 1,
+  variant = 0
 ): SynthesizedPbrBufferPair {
   if (
     terrain === 'forest_grass' ||
@@ -208,7 +209,7 @@ export function generateTilePbrBuffers(
     terrain === 'dirt_path' ||
     terrain === 'abyss_water'
   ) {
-    const glionoxTile = generateGlionoxForestTilePbr(terrain, elevationSteps);
+    const glionoxTile = generateGlionoxForestTilePbr(terrain, elevationSteps, variant);
     if (glionoxTile) return glionoxTile;
   }
 
@@ -298,7 +299,7 @@ export function generateTilePbrBuffers(
           } else if (patch < 0.38) {
             pixelColor = { r: 58, g: 52, b: 36 }; // Earthy soil showing through
           }
-          if (edgeDist < 0.04) shade *= 0.9;
+          // Seamless organic grass/soil without diamond grid borders
         } else if (terrain === 'dirt_path') {
           const vor = voronoiStone(u * 7.5, v * 7.5);
           // Embedded trail cobblestones & gravel

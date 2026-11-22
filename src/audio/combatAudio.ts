@@ -18,7 +18,42 @@ export type CombatSoundKind =
   | 'critical_boom'
   | 'miss_whoosh'
   | 'death_gasp'
-  | 'shield_block';
+  | 'shield_block'
+  | 'witch_cackle'
+  | 'wraith_moan'
+  | 'ghost_breath';
+
+export type AmbienceMood =
+  | 'none'
+  | 'dawn'
+  | 'forest'
+  | 'creepy_forest'
+  | 'night_storm'
+  | 'town'
+  | 'tavern';
+
+export const COMBAT_SAMPLE_MAP: Record<CombatSoundKind, readonly string[]> = {
+  slash_blade: ['/audio/sfx/swing1.wav', '/audio/sfx/swing2.wav', '/audio/sfx/blade1.wav', '/audio/sfx/blade2.wav'],
+  blunt_hit: ['/audio/sfx/blunt1.flac', '/audio/sfx/blunt2.flac'],
+  flesh_impact: ['/audio/sfx/flesh1.flac', '/audio/sfx/flesh2.flac'],
+  armor_clang: ['/audio/sfx/metal1.wav', '/audio/sfx/metal2.wav'],
+  critical_boom: ['/audio/sfx/crit1.flac', '/audio/sfx/crit2.flac'],
+  miss_whoosh: ['/audio/sfx/swing1.wav', '/audio/sfx/swing2.wav', '/audio/sfx/swing3.wav'],
+  death_gasp: ['/audio/sfx/death1.wav', '/audio/sfx/death2.wav'],
+  shield_block: ['/audio/sfx/shield1.wav', '/audio/sfx/shield2.wav'],
+  witch_cackle: ['/audio/sfx/witch_cackle.ogg'],
+  wraith_moan: ['/audio/sfx/wraith_moan.mp3'],
+  ghost_breath: ['/audio/sfx/ghost_breath.flac']
+};
+
+export const AMBIENCE_SAMPLE_MAP: Record<Exclude<AmbienceMood, 'none'>, readonly string[]> = {
+  dawn: ['/audio/ambience/dawn_wind.ogg'],
+  forest: ['/audio/ambience/forest_ambience.mp3'],
+  creepy_forest: ['/audio/ambience/creepy_forest.ogg'],
+  night_storm: ['/audio/ambience/night_storm.ogg'],
+  town: ['/audio/ambience/village_crowd.ogg'],
+  tavern: ['/audio/ambience/tavern_ambience.ogg']
+};
 
 export class CombatAudioEngine {
   private static instance: CombatAudioEngine | null = null;
@@ -26,6 +61,12 @@ export class CombatAudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private isMuted = false;
+  private sampleBuffers = new Map<string, AudioBuffer>();
+  private loadingStarted = false;
+  private currentAmbienceMood: AmbienceMood = 'none';
+  private ambienceSource: AudioBufferSourceNode | null = null;
+  private ambienceGain: GainNode | null = null;
+  private ambiencePendingLoads = new Set<string>();
 
   public static getInstance(): CombatAudioEngine {
     if (!CombatAudioEngine.instance) {
@@ -53,10 +94,29 @@ export class CombatAudioEngine {
           this.isMuted = true;
         }
       } catch {}
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.22, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.34, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+      this.preloadSamples();
     } catch {
       this.ctx = null;
+    }
+  }
+
+  private preloadSamples(): void {
+    if (this.loadingStarted || !this.ctx || typeof fetch !== 'function') return;
+    this.loadingStarted = true;
+    const uniqueUrls = new Set<string>();
+    for (const urls of Object.values(COMBAT_SAMPLE_MAP)) {
+      for (const u of urls) uniqueUrls.add(u);
+    }
+    for (const url of uniqueUrls) {
+      fetch(url)
+        .then((res) => (res.ok ? res.arrayBuffer() : null))
+        .then((buf) => (buf && this.ctx ? this.ctx.decodeAudioData(buf) : null))
+        .then((decoded) => {
+          if (decoded) this.sampleBuffers.set(url, decoded);
+        })
+        .catch(() => {});
     }
   }
 
@@ -67,11 +127,108 @@ export class CombatAudioEngine {
   }
 
   public dispose(): void {
+    this.stopAmbience();
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;
       this.masterGain = null;
     }
+  }
+
+  /**
+   * Starts or crossfades a looping ambient soundscape registered in AMBIENCE_SAMPLE_MAP.
+   * Lazy-loads and caches the decoded AudioBuffer on first use.
+   */
+  public playAmbience(mood: AmbienceMood, volume = 0.24): void {
+    if (mood === 'none') {
+      this.stopAmbience();
+      return;
+    }
+    if (this.currentAmbienceMood === mood && this.ambienceSource) {
+      this.ensureContextRunning();
+      return;
+    }
+    this.currentAmbienceMood = mood;
+    if (!this.ctx || !this.masterGain) return;
+    this.ensureContextRunning();
+
+    const candidates = AMBIENCE_SAMPLE_MAP[mood];
+    const url = candidates[0];
+    if (!url) return;
+
+    const cached = this.sampleBuffers.get(url);
+    if (cached) {
+      this.startAmbienceBuffer(cached, volume);
+      return;
+    }
+
+    if (this.ambiencePendingLoads.has(url) || typeof fetch !== 'function') return;
+    this.ambiencePendingLoads.add(url);
+    fetch(url)
+      .then((res) => (res.ok ? res.arrayBuffer() : null))
+      .then((buf) => (buf && this.ctx ? this.ctx.decodeAudioData(buf) : null))
+      .then((decoded) => {
+        this.ambiencePendingLoads.delete(url);
+        if (!decoded) return;
+        this.sampleBuffers.set(url, decoded);
+        if (this.currentAmbienceMood === mood) {
+          this.startAmbienceBuffer(decoded, volume);
+        }
+      })
+      .catch(() => {
+        this.ambiencePendingLoads.delete(url);
+      });
+  }
+
+  public stopAmbience(): void {
+    this.currentAmbienceMood = 'none';
+    if (this.ambienceSource) {
+      try {
+        this.ambienceSource.stop();
+        this.ambienceSource.disconnect();
+      } catch {}
+      this.ambienceSource = null;
+    }
+    if (this.ambienceGain) {
+      try {
+        this.ambienceGain.disconnect();
+      } catch {}
+      this.ambienceGain = null;
+    }
+  }
+
+  private startAmbienceBuffer(buffer: AudioBuffer, volume: number): void {
+    if (!this.ctx || !this.masterGain) return;
+    if (this.ambienceSource) {
+      try {
+        this.ambienceSource.stop();
+        this.ambienceSource.disconnect();
+      } catch {}
+      this.ambienceSource = null;
+    }
+    if (this.ambienceGain) {
+      try {
+        this.ambienceGain.disconnect();
+      } catch {}
+      this.ambienceGain = null;
+    }
+
+    try {
+      const t = this.ctx.currentTime;
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.linearRampToValueAtTime(Math.max(0.02, Math.min(1.0, volume)), t + 1.2);
+      gain.connect(this.masterGain);
+
+      const src = this.ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      src.connect(gain);
+      src.start(t);
+
+      this.ambienceSource = src;
+      this.ambienceGain = gain;
+    } catch {}
   }
 
   public setMuted(muted: boolean): void {
@@ -82,7 +239,7 @@ export class CombatAudioEngine {
       }
     } catch {}
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(muted ? 0 : 0.22, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(muted ? 0 : 0.34, this.ctx.currentTime);
     }
   }
 
@@ -93,6 +250,29 @@ export class CombatAudioEngine {
   public playSound(kind: CombatSoundKind, pitchMod = 1.0): void {
     if (this.isMuted || !this.ctx || !this.masterGain) return;
     this.ensureContextRunning();
+
+    const candidates = COMBAT_SAMPLE_MAP[kind] ?? [];
+    const loaded = candidates.filter((u) => this.sampleBuffers.has(u));
+    if (loaded.length > 0) {
+      try {
+        const url = loaded[Math.floor(Math.random() * loaded.length)];
+        const buffer = this.sampleBuffers.get(url);
+        if (buffer) {
+          const src = this.ctx.createBufferSource();
+          src.buffer = buffer;
+          const jitter = 0.95 + Math.random() * 0.1;
+          src.playbackRate.setValueAtTime(Math.max(0.65, Math.min(1.5, pitchMod * jitter)), this.ctx.currentTime);
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(kind === 'critical_boom' ? 1.0 : 0.85, this.ctx.currentTime);
+          src.connect(gain);
+          gain.connect(this.masterGain);
+          src.start();
+          return;
+        }
+      } catch {
+        // Fall through to procedural fallback
+      }
+    }
 
     try {
       const t = this.ctx.currentTime;
@@ -120,6 +300,11 @@ export class CombatAudioEngine {
           break;
         case 'shield_block':
           this.synthesizeShieldBlock(t, pitchMod);
+          break;
+        case 'witch_cackle':
+        case 'wraith_moan':
+        case 'ghost_breath':
+          this.synthesizeDeath(t, pitchMod * 0.85);
           break;
       }
     } catch {

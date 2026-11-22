@@ -140,7 +140,8 @@ export function getSlavicPortrait(actorId: string): string {
       break;
 
     case 'npc_radogost':
-      // Żerca Radogost: ancient pagan priest, long flowing snow-white beard, deep mystical eyes, oak leaves, rune amulet
+    case 'npc_guslarz':
+      // Żerca Radogost / Guślarz Boruta: elder sage with beard, mystical eyes, oak leaves, rune amulet
       dataUrl = buildPortraitSvg(
         '#182e24',
         '#08120c',

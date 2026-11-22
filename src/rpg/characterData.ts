@@ -44,6 +44,9 @@ export interface EquipmentItemDef {
     resolve?: number;
     perception?: number;
     lore?: number;
+    healHp?: number;
+    restoreAp?: number;
+    clearDebuffs?: boolean;
     barkText: string;
   };
   visualStyle:
@@ -132,15 +135,16 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
     id: 'item_roasted_sausage',
     name: 'Upieczona Kiełbasa z Ogniska',
     slot: 'consumable',
-    description: 'Skwiercząca, złocista kiełbasa pachnąca dymem olchowym i jałowcem. Kliknij, aby zjeść (+2 Siła, +2 Determinacja).',
+    description: 'Skwiercząca, złocista kiełbasa pachnąca dymem olchowym i jałowcem. Kliknij, aby zjeść (+90 HP, +1 Siła, +1 Determinacja).',
     primaryColor: { r: 156, g: 76, b: 32 },
     trimColor: { r: 255, g: 184, b: 68 },
     roughness: 0.35,
     metallic: 0.15,
     consumableEffect: {
-      might: 2,
-      resolve: 2,
-      barkText: 'Wyśmienita! Ciepła kiełbasa z ogniska dodaje sił.'
+      healHp: 90,
+      might: 1,
+      resolve: 1,
+      barkText: 'Wyśmienita! Ciepła kiełbasa z ogniska błyskawicznie stawia na nogi (+90 HP).'
     },
     visualStyle: 'food'
   },
@@ -295,6 +299,76 @@ export const EQUIPMENT_CATALOG: Record<string, EquipmentItemDef> = {
       might: 2,
       resolve: 1,
       barkText: 'Łyk miodu pitnego rozgrzewa krew i dodaje żeru do walki!'
+    },
+    visualStyle: 'food'
+  },
+  elixir_vitality: {
+    id: 'elixir_vitality',
+    name: 'Eliksir Życia z Dziurawca',
+    slot: 'consumable',
+    description: 'Złocisty wywar zielarski przywracający siły witalne (+80 HP, +1 Determinacja).',
+    primaryColor: { r: 212, g: 58, b: 64 },
+    trimColor: { r: 245, g: 196, b: 81 },
+    roughness: 0.25,
+    metallic: 0.35,
+    priceSiekance: 45,
+    consumableEffect: {
+      healHp: 80,
+      resolve: 1,
+      barkText: 'Eliksir z dziurawca błyskawicznie zasklepia rany!'
+    },
+    visualStyle: 'food'
+  },
+  elixir_swarog: {
+    id: 'elixir_swarog',
+    name: 'Eliksir Żaru Swaroga',
+    slot: 'consumable',
+    description: 'Ognista nalewka guślarska pobudzająca krążenie w boju (+55 HP, +2 AP w walce, +1 Siła).',
+    primaryColor: { r: 245, g: 124, b: 36 },
+    trimColor: { r: 255, g: 224, b: 102 },
+    roughness: 0.2,
+    metallic: 0.45,
+    priceSiekance: 65,
+    consumableEffect: {
+      healHp: 55,
+      restoreAp: 2,
+      might: 1,
+      barkText: 'Ogień Swaroga płonie w moich żyłach!'
+    },
+    visualStyle: 'food'
+  },
+  elixir_weles: {
+    id: 'elixir_weles',
+    name: 'Eliksir Cienia Welesa',
+    slot: 'consumable',
+    description: 'Silny eliksir z księżycowego ziela i korzenia pokrzyku (+120 HP, +1 Wiedza, +1 Percepcja).',
+    primaryColor: { r: 78, g: 148, b: 224 },
+    trimColor: { r: 176, g: 228, b: 255 },
+    roughness: 0.2,
+    metallic: 0.5,
+    priceSiekance: 95,
+    consumableEffect: {
+      healHp: 120,
+      lore: 1,
+      perception: 1,
+      barkText: 'Chłód Welesa wyostrza zmysły i regeneruje ciało!'
+    },
+    visualStyle: 'food'
+  },
+  elixir_antidote: {
+    id: 'elixir_antidote',
+    name: 'Wywar Oczyszczający Guślarza',
+    slot: 'consumable',
+    description: 'Gorzki odwar z piołunu i szałwii usuwający ogłuszenie oraz okaleczenie nóg (+50 HP).',
+    primaryColor: { r: 76, g: 186, b: 112 },
+    trimColor: { r: 196, g: 238, b: 164 },
+    roughness: 0.3,
+    metallic: 0.25,
+    priceSiekance: 40,
+    consumableEffect: {
+      healHp: 50,
+      clearDebuffs: true,
+      barkText: 'Gorzki wywar oczyszcza umysł i przywraca sprawność nóg!'
     },
     visualStyle: 'food'
   },

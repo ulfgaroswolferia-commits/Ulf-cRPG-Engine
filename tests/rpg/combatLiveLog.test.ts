@@ -34,7 +34,7 @@ describe('Live Combat Log - Dedicated In-Battle Journal Component', () => {
 
     // In active combat, combat-live-log MUST replace chronicle-log in bottom HUD
     expect(fakeRoot.innerHTML).toContain('combat-live-log');
-    expect(fakeRoot.innerHTML).toContain('Dziennik Walki');
+    expect(fakeRoot.innerHTML).toContain('⚔️ Walka');
     expect(fakeRoot.innerHTML).toContain('combat-entry-hit');
     expect(fakeRoot.innerHTML).toContain('combat-entry-crit');
     expect(fakeRoot.innerHTML).toContain('combat-entry-miss');

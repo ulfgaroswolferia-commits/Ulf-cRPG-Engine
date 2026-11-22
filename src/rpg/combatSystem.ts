@@ -142,8 +142,21 @@ export const ATTACK_MODE_META: Record<CombatAttackMode, AttackModeMetadata> = {
   }
 };
 
+export interface ProgressionCombatBonuses {
+  ironGripRank?: number;
+  shieldWallRank?: number;
+  catStepRank?: number;
+  steadyHandRank?: number;
+  keenEyeRank?: number;
+  shadowOfForestRank?: number;
+  runicEmpowerRank?: number;
+  ancestorsWillRank?: number;
+  firstStrikeBonusCritPct?: number;
+}
+
 export interface DerivedCombatStats {
   maxHp: number;
+  maxMana: number;
   maxAp: number;
   sequence: number;
   evasionPct: number;
@@ -163,6 +176,8 @@ export interface ActorCombatComponent {
   aggroRadius: number;
   hp: number;
   maxHp: number;
+  mana?: number;
+  maxMana?: number;
   ap: number;
   maxAp: number;
   proficiencies: WeaponProficiencySet;
@@ -343,13 +358,15 @@ export function computeDerivedCombatStats(
   defending = false,
   dazed = false,
   customArmorBonus = 0,
-  customDamageBonus = 0
+  customDamageBonus = 0,
+  progressionBonuses?: ProgressionCombatBonuses
 ): DerivedCombatStats {
   const weaponProfile = getWeaponCombatProfile(mainHandId, offHandId);
   const offDef = offHandId ? EQUIPMENT_CATALOG[offHandId] : undefined;
   const hasShield = offDef?.visualStyle === 'kiteshield';
 
   const maxHp = Math.round(statSheet.getStatValue(StatType.HealthMax));
+  const maxMana = Math.round(statSheet.getStatValue(StatType.ManaMax));
   const str = statSheet.getStatValue(StatType.Strength);
   const agi = statSheet.getStatValue(StatType.Agility);
   const res = statSheet.getStatValue(StatType.Resolve);
@@ -359,25 +376,46 @@ export function computeDerivedCombatStats(
   const armor = statSheet.getStatValue(StatType.ArmorRating) + customArmorBonus;
   const basePhysDmg = statSheet.getStatValue(StatType.PhysicalDamage) + customDamageBonus;
 
+  const shadowApBonus = (progressionBonuses?.shadowOfForestRank ?? 0) > 0 ? 1 : 0;
   // Fallout SPECIAL Action Points: 5 + floor(Agility / 2)
-  const maxAp = Math.max(4, 5 + Math.floor(agi / 2) - (dazed ? 3 : 0));
-  const sequence = Math.round(2 * per + agi);
+  const maxAp = Math.max(4, 5 + Math.floor(agi / 2) + shadowApBonus - (dazed ? 3 : 0));
+  const catStepRank = progressionBonuses?.catStepRank ?? 0;
+  const sequence = Math.round(2 * per + agi + catStepRank * 4);
 
   const evasionPct = Math.min(
     65,
-    Math.round(agi * 1.8 + (hasShield ? 8 : 0) + (defending ? 20 : 0))
+    Math.round(agi * 1.8 + (hasShield ? 8 : 0) + (defending ? 20 : 0) + catStepRank * 5)
   );
 
+  const shieldWallRank = (hasShield || defending) ? (progressionBonuses?.shieldWallRank ?? 0) : 0;
+  const ancestorsWillRank = progressionBonuses?.ancestorsWillRank ?? 0;
+
   // Fallout DT (Damage Threshold) + DR% (Damage Resistance)
-  const damageThreshold = Math.max(0, Math.floor(armor / 5.5) + (defending ? 2 : 0));
+  const damageThreshold = Math.max(
+    0,
+    Math.floor(armor / 5.5) + (defending ? 2 : 0) + shieldWallRank
+  );
   const damageResistancePct = Math.min(
     75,
-    Math.max(0, Math.round(armor * 1.25 + res * 0.6 + (defending ? 15 : 0)))
+    Math.max(
+      0,
+      Math.round(
+        armor * 1.25 +
+          res * 0.6 +
+          (defending ? 15 : 0) +
+          shieldWallRank * 5 +
+          ancestorsWillRank * 4
+      )
+    )
   );
 
   // Staffs channel Arcane Lore into damage in addition to base weapon power
+  const runicRank = progressionBonuses?.runicEmpowerRank ?? 0;
+  const effectiveStaffLore = lore + runicRank;
   const staffLoreBonus =
-    weaponProfile.category === 'runic_staffs' ? Math.max(0, (lore - 8) * 1.6) : 0;
+    weaponProfile.category === 'runic_staffs'
+      ? Math.max(0, (effectiveStaffLore - 8) * 1.6) + runicRank * 3
+      : 0;
   const twoHandedStrBonus =
     weaponProfile.category === 'axes_blunt' ? Math.max(0, (str - 10) * 1.4) : 0;
 
@@ -394,6 +432,7 @@ export function computeDerivedCombatStats(
 
   return {
     maxHp,
+    maxMana,
     maxAp,
     sequence,
     evasionPct,
@@ -411,7 +450,8 @@ export function computeAttackPreview(
   attacker: CombatantSnapshot,
   defender: CombatantSnapshot,
   distanceTiles: number,
-  mode: CombatAttackMode
+  mode: CombatAttackMode,
+  progressionBonuses?: ProgressionCombatBonuses
 ): AttackPreviewReport {
   const modeMeta = ATTACK_MODE_META[mode];
   const wp = attacker.derived.weaponProfile;
@@ -419,19 +459,29 @@ export function computeAttackPreview(
   const hasEnoughAp = attacker.combat.ap >= apCost;
   const inRange = distanceTiles <= wp.maxRange + 0.45;
 
-  const distPenalty = distanceTiles > 1.5 ? Math.round((distanceTiles - 1) * 4) : 0;
+  const keenEyeRank = progressionBonuses?.keenEyeRank ?? 0;
+  const rawDistPenalty = distanceTiles > 1.5 ? Math.round((distanceTiles - 1) * 4) : 0;
+  const distPenalty = keenEyeRank > 0 ? Math.floor(rawDistPenalty * 0.5) : rawDistPenalty;
+
+  const isMelee = wp.maxRange <= 1.5;
+  const ironGripBonus = isMelee ? (progressionBonuses?.ironGripRank ?? 0) * 6 : 0;
+  const keenEyeHitBonus = keenEyeRank * 8;
+
   const rawHit =
     attacker.derived.activeProficiency +
     (attacker.perception - 10) * 3.5 +
     wp.accuracyBonus +
-    modeMeta.hitMod -
+    modeMeta.hitMod +
+    ironGripBonus +
+    keenEyeHitBonus -
     defender.derived.evasionPct -
     distPenalty;
 
   const hitChancePct = Math.max(5, Math.min(95, Math.round(rawHit)));
+  const firstStrikeCrit = progressionBonuses?.firstStrikeBonusCritPct ?? 0;
   const critChancePct = Math.max(
     5,
-    Math.min(95, Math.round(attacker.derived.critChancePct + modeMeta.critMod))
+    Math.min(95, Math.round(attacker.derived.critChancePct + modeMeta.critMod + firstStrikeCrit))
   );
 
   const effectivePenRatio = Math.min(0.9, wp.armorPenetrationRatio + modeMeta.armorPenBonus);
@@ -473,9 +523,10 @@ export function resolveCombatAttack(
   defender: CombatantSnapshot,
   distanceTiles: number,
   mode: CombatAttackMode,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  progressionBonuses?: ProgressionCombatBonuses
 ): CombatAttackOutcome {
-  const preview = computeAttackPreview(attacker, defender, distanceTiles, mode);
+  const preview = computeAttackPreview(attacker, defender, distanceTiles, mode, progressionBonuses);
   const modeMeta = ATTACK_MODE_META[mode];
 
   attacker.combat.ap = Math.max(0, attacker.combat.ap - preview.apCost);
@@ -507,7 +558,8 @@ export function resolveCombatAttack(
 
   const dmgSpan = Math.max(0, attacker.derived.maxDamage - attacker.derived.minDamage);
   const baseRoll = attacker.derived.minDamage + rng() * dmgSpan;
-  const critMultiplier = critical ? (mode === 'aimed_head' ? 1.85 : 1.55) : 1.0;
+  const steadyHandBonus = (progressionBonuses?.steadyHandRank ?? 0) * 0.1;
+  const critMultiplier = critical ? (mode === 'aimed_head' ? 1.85 : 1.55) + steadyHandBonus : 1.0;
   const rawDamage = Math.max(2, Math.round(baseRoll * modeMeta.damageMult * critMultiplier));
 
   // Critical hits bypass an additional 50% of remaining DT/DR (Fallout armor-piercing crit)

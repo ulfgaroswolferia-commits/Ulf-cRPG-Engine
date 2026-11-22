@@ -87,16 +87,27 @@ export interface WorldPropEntity {
   linkedLightId?: string;
 }
 
+export type MapLocationType = 'town' | 'wilderness' | 'dungeon';
+
 export interface IsometricWorldMap {
   id: MapId;
   name: string;
   subtitle: string;
+  locationType?: MapLocationType;
   width: number;
   height: number;
   maxElevation: number;
   tiles: TileCell[][];
   props: WorldPropEntity[];
   lights: PointLightSource[];
+}
+
+export function isDungeonLocation(
+  map: Pick<IsometricWorldMap, 'id' | 'name' | 'locationType'>
+): boolean {
+  if (map.locationType === 'dungeon') return true;
+  if (map.locationType === 'town') return false;
+  return /\b(dung|dng|dungeon)\b|dungeon|krypt|jaskini|loch/i.test(`${map.id} ${map.name}`);
 }
 
 /**
@@ -918,6 +929,7 @@ export function createForestClearingMap(): IsometricWorldMap {
     id: 'forest_clearing',
     name: 'Polana Wilczego Ognia',
     subtitle: 'Otoczona puszczą polana obozowa (32×32) — Pieczenie na ognisku & Pokaz silnika',
+    locationType: 'wilderness',
     width,
     height,
     maxElevation: 3,
@@ -1972,6 +1984,7 @@ export function createSlavicVillageMap(): IsometricWorldMap {
     name: 'Osada Żerców — Targowisko pod Światowidem',
     subtitle:
       'Powiększona osada słowiańska (44×44) — 20 chat i budynków gospodarczych, Kurhan Kniazia, Przystań i Młyn, Baszty oraz Święty Gaj Światowida',
+    locationType: 'town',
     width,
     height,
     maxElevation: 3,
@@ -2609,6 +2622,7 @@ export function createSanctumWorldMap(): IsometricWorldMap {
     id: 'sanctum_dungeon',
     name: 'Lochy i Jaskinie Aethelgardu',
     subtitle: 'Wielostrefowy labirynt podziemi (36×36) — Górne Jaskinie, Katakumby i Tron Czempiona',
+    locationType: 'dungeon',
     width,
     height,
     maxElevation: 3,

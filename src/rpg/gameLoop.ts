@@ -7,11 +7,13 @@ import {
   createForestClearingMap,
   createSanctumWorldMap,
   createSlavicVillageMap,
+  isDungeonLocation,
   IsometricWorldMap,
   MapId,
   WorldPropEntity
 } from '../core/worldMap';
 import {
+  CharacterAttributes,
   CharacterVisualRecipe,
   EQUIPMENT_CATALOG
 } from './characterData';
@@ -25,6 +27,7 @@ import {
   computeDerivedCombatStats,
   createDefaultProficiencies,
   PROFICIENCY_META,
+  ProgressionCombatBonuses,
   resolveCombatAttack,
   TurnBasedCombatSession
 } from './combatSystem';
@@ -48,11 +51,26 @@ import {
   InventoryContainer,
   StatType
 } from './inventorySystem';
+import {
+  allocateAttributePoint,
+  CharacterProgressionState,
+  createInitialProgressionState,
+  getSkillRank,
+  grantXpToProgression,
+  respecProgressionState,
+  SKILL_TREE_BY_ID,
+  SkillUnlockCheck,
+  syncSkillModifiersOnStatSheet,
+  unlockSkillNode,
+  XpGrantResult
+} from './progressionSystem';
 
 export const MERCHANT_ACTOR_IDS: ReadonlyArray<string> = [
   'npc_dobromir',
   'npc_bogusz',
-  'npc_gniewosz'
+  'npc_gniewosz',
+  'npc_wislawa',
+  'npc_guslarz'
 ];
 
 export interface ActorEntity {
@@ -92,6 +110,7 @@ export interface ActorEntity {
   deathAnimTimer?: number;
   isLooted?: boolean;
   aggroCooldownTimer?: number;
+  aggroReactionTimer?: number;
 }
 
 export interface CombatAttackEvent {
@@ -153,6 +172,46 @@ export function detectLogSeverity(message: string): LogSeverity {
   return 'info';
 }
 
+/** Resolves destination map, display label, and arrival bark for a travel signpost prop. */
+export function resolveTravelSignpostDestination(
+  propId: string,
+  currentMapId: MapId
+): { mapId: MapId; label: string; bark: string } {
+  if (propId.includes('dungeon') || propId.includes('sanctum')) {
+    return {
+      mapId: 'sanctum_dungeon',
+      label: 'Lochy i Jaskinie Aethelgardu',
+      bark: 'Zstąpiłem w głąb ponurych lochów i jaskiń Aethelgardu!'
+    };
+  }
+  if (propId.includes('clearing') || propId.includes('forest')) {
+    return {
+      mapId: 'forest_clearing',
+      label: 'Polana Wilczego Ognia',
+      bark: 'Powróciłem na Polanę Wilczego Ognia.'
+    };
+  }
+  if (propId.includes('village')) {
+    return {
+      mapId: 'slavic_village',
+      label: 'Słowiańska Osada i Targowisko',
+      bark: 'Dotarłem do słowiańskiej osady i targowiska!'
+    };
+  }
+  const mapId: MapId = currentMapId === 'forest_clearing' ? 'slavic_village' : 'forest_clearing';
+  return mapId === 'slavic_village'
+    ? {
+        mapId,
+        label: 'Słowiańska Osada i Targowisko',
+        bark: 'Dotarłem do słowiańskiej osady i targowiska!'
+      }
+    : {
+        mapId,
+        label: 'Polana Wilczego Ognia',
+        bark: 'Powróciłem na Polanę Wilczego Ognia.'
+      };
+}
+
 export class CrpgGameState {
   public map!: IsometricWorldMap;
   public fov!: FovGridState;
@@ -186,6 +245,7 @@ export class CrpgGameState {
   public readonly statSheet: CharacterStatSheet;
   public readonly backpack: InventoryContainer;
   public readonly equipmentManager: EquipmentManager;
+  public progression: CharacterProgressionState = createInitialProgressionState();
   public readonly combatState: TurnBasedCombatSession = {
     active: false,
     round: 1,
@@ -203,6 +263,11 @@ export class CrpgGameState {
   public lastLogSeverity: LogSeverity = 'info';
   public lastLogTimestamp: number = 0;
   public activeDialogue: { actorId: string; node: DialogueNode } | null = null;
+  public pendingCombatConfirmation: {
+    npcId: string;
+    npcName: string;
+    difficultyLabel: string;
+  } | null = null;
   public siekance: number = 45;
   public lastDuplicateSaleResult: {
     soldCount: number;
@@ -304,12 +369,23 @@ export class CrpgGameState {
         this.player.recipe.equipment.mainHand,
         this.player.recipe.equipment.offHand,
         this.player.combat.defending,
-        this.player.combat.dazedHeadTurns > 0
+        this.player.combat.dazedHeadTurns > 0,
+        this.player.combat.customArmorBonus ?? 0,
+        this.player.combat.customDamageBonus ?? 0,
+        this.getPlayerProgressionBonuses()
       );
       const prevMaxHp = this.player.combat.maxHp;
       this.player.combat.maxHp = derived.maxHp;
       if (this.player.combat.hp > derived.maxHp || this.player.combat.hp === prevMaxHp) {
         this.player.combat.hp = derived.maxHp;
+      }
+      const prevMaxMana = this.player.combat.maxMana ?? derived.maxMana;
+      const curMana = this.player.combat.mana ?? derived.maxMana;
+      this.player.combat.maxMana = derived.maxMana;
+      if (curMana > derived.maxMana || curMana === prevMaxMana) {
+        this.player.combat.mana = derived.maxMana;
+      } else {
+        this.player.combat.mana = curMana;
       }
       this.player.combat.maxAp = derived.maxAp;
       if (!this.combatState.active) {
@@ -359,6 +435,8 @@ export class CrpgGameState {
       perception: 15
     };
 
+    this.progression = createInitialProgressionState();
+    syncSkillModifiersOnStatSheet(this.progression, this.statSheet);
     this.statSheet.setBaseAttributes(baseAttrs);
 
     this.player.recipe = {
@@ -393,6 +471,8 @@ export class CrpgGameState {
       this.player.combat.aggroRadius = 0;
       this.player.combat.hp = 215;
       this.player.combat.maxHp = 215;
+      this.player.combat.mana = 90;
+      this.player.combat.maxMana = 90;
       this.player.combat.ap = 11;
       this.player.combat.maxAp = 11;
       this.player.combat.proficiencies = createDefaultProficiencies();
@@ -427,6 +507,7 @@ export class CrpgGameState {
     this.siekance = 45;
     this.lastDuplicateSaleResult = null;
     this.activeDialogue = null;
+    this.pendingCombatConfirmation = null;
     this.logs.length = 0;
     this.chronicleEntries.length = 0;
     this.combatLogs.length = 0;
@@ -457,6 +538,7 @@ export class CrpgGameState {
     this.fov = new FovGridState(this.map.width, this.map.height);
     this.npcs.length = 0;
     this.activeDialogue = null;
+    this.pendingCombatConfirmation = null;
     this.combatState.active = false;
     this.isSequentialEnemyTurnActive = false;
     this.pendingEnemyCombatTurnIds = [];
@@ -616,7 +698,7 @@ export class CrpgGameState {
     // 4. Herbalist Wisława at the herbalist marketplace stall
     const wislawaRecipe = generateRandomCharacterRecipe(642, 'npc_wislawa');
     wislawaRecipe.name = 'Zielarka Wisława';
-    wislawaRecipe.title = 'Uzdrowicielka i Plecionkarka';
+    wislawaRecipe.title = 'Zielarka • Eliksiry i Zioła';
     wislawaRecipe.hairStyle = 'wreath_braids';
     wislawaRecipe.hairColor = { r: 178, g: 132, b: 68 };
     wislawaRecipe.equipment = {
@@ -640,7 +722,8 @@ export class CrpgGameState {
       animFrame: 0,
       animTimer: 0,
       path: [],
-      dialogueId: 'npc_wislawa'
+      dialogueId: 'npc_wislawa',
+      isMerchant: true
     });
 
     // 5. Peasant Sambor guarding the village granary
@@ -845,6 +928,37 @@ export class CrpgGameState {
       animTimer: 0,
       path: [],
       dialogueId: 'npc_bogusz',
+      isMerchant: true
+    });
+
+    // 2c. Alchemist & Guślarz Boruta near the clearing campfire (tile 18, 17)
+    const guslarzRecipe = generateRandomCharacterRecipe(755, 'npc_guslarz');
+    guslarzRecipe.name = 'Guślarz Boruta';
+    guslarzRecipe.title = 'Guślarz • Eliksiry i Wywary';
+    guslarzRecipe.hairStyle = 'elder_beard';
+    guslarzRecipe.hairColor = { r: 205, g: 210, b: 218 };
+    guslarzRecipe.equipment = {
+      head: 'helm_druid_antlers',
+      torso: 'torso_archmage_robes',
+      cloak: 'cloak_crimson_mantle',
+      legs: 'legs_lapcie',
+      mainHand: 'weapon_astral_staff',
+      offHand: 'offhand_grimoire'
+    };
+    this.npcs.push({
+      id: 'npc_guslarz',
+      recipe: guslarzRecipe,
+      x: 18.5,
+      y: 17.5,
+      z: this.map.tiles[17][18].z,
+      tileX: 18,
+      tileY: 17,
+      direction: 5,
+      isMoving: false,
+      animFrame: 0,
+      animTimer: 0,
+      path: [],
+      dialogueId: 'npc_guslarz',
       isMerchant: true
     });
 
@@ -1700,6 +1814,90 @@ export class CrpgGameState {
     });
   }
 
+  public getPlayerProgressionBonuses(includeFirstStrike = false): ProgressionCombatBonuses {
+    const shadowRank = getSkillRank(this.progression, 'zwiadowca_cien');
+    return {
+      ironGripRank: getSkillRank(this.progression, 'witez_chwyt'),
+      shieldWallRank: getSkillRank(this.progression, 'witez_mur'),
+      catStepRank: getSkillRank(this.progression, 'zwiadowca_krok'),
+      steadyHandRank: getSkillRank(this.progression, 'zwiadowca_reka'),
+      keenEyeRank: getSkillRank(this.progression, 'zwiadowca_oko'),
+      shadowOfForestRank: shadowRank,
+      runicEmpowerRank: getSkillRank(this.progression, 'zerca_wzmocnienie'),
+      ancestorsWillRank: getSkillRank(this.progression, 'zerca_wola'),
+      firstStrikeBonusCritPct:
+        includeFirstStrike && shadowRank > 0 && this.progression.firstStrikeReady ? 35 : 0
+    };
+  }
+
+  public grantPlayerXp(amount: number): XpGrantResult {
+    const res = grantXpToProgression(this.progression, amount);
+    if (res.leveledUp && this.player?.combat) {
+      this.player.combat.hp = this.player.combat.maxHp;
+      this.player.combat.mana = this.player.combat.maxMana ?? Math.round(this.statSheet.getStatValue(StatType.ManaMax));
+      this.addLog(
+        `⭐ AWANS! Osiągnięto Poziom ${res.newLevel} (+${res.levelsGained * 2} pkt atrybutów, +${res.levelsGained} pkt umiejętności)!`,
+        'combat'
+      );
+      this.pushFloatingCombatText(
+        this.player.x,
+        this.player.y,
+        this.player.z + 2.3,
+        `⭐ POZIOM ${res.newLevel}!`,
+        0xf5c451
+      );
+    }
+    return res;
+  }
+
+  public allocatePlayerAttribute(stat: keyof CharacterAttributes): boolean {
+    const ok = allocateAttributePoint(this.progression, this.statSheet, stat);
+    if (ok && this.player?.combat) {
+      const derived = this.getActorCombatant(this.player).derived;
+      this.player.combat.maxHp = derived.maxHp;
+      this.player.combat.maxMana = derived.maxMana;
+      this.player.combat.maxAp = derived.maxAp;
+    }
+    return ok;
+  }
+
+  public unlockPlayerSkill(skillId: string): SkillUnlockCheck {
+    const res = unlockSkillNode(this.progression, this.statSheet, skillId);
+    if (res.ok && this.player?.combat) {
+      const derived = this.getActorCombatant(this.player).derived;
+      this.player.combat.maxHp = derived.maxHp;
+      this.player.combat.maxMana = derived.maxMana;
+      this.player.combat.maxAp = derived.maxAp;
+    }
+    return res;
+  }
+
+  public respecPlayerProgression(): { ok: boolean; cost: number; reason?: string } {
+    const res = respecProgressionState(
+      this.progression,
+      this.statSheet,
+      this.siekance,
+      this.combatState.active
+    );
+    if (res.ok) {
+      this.siekance -= res.cost;
+      if (this.player?.combat) {
+        const derived = this.getActorCombatant(this.player).derived;
+        this.player.combat.maxHp = derived.maxHp;
+        this.player.combat.hp = Math.min(this.player.combat.hp, derived.maxHp);
+        this.player.combat.maxMana = derived.maxMana;
+        this.player.combat.mana = Math.min(
+          this.player.combat.mana ?? derived.maxMana,
+          derived.maxMana
+        );
+        this.player.combat.maxAp = derived.maxAp;
+        this.player.combat.ap = Math.min(this.player.combat.ap, derived.maxAp);
+      }
+      this.addLog(`🔄 Zresetowano rozwój postaci za ${res.cost} siekańców.`);
+    }
+    return res;
+  }
+
   public getActorCombatant(actor: ActorEntity): CombatantSnapshot {
     if (!actor.combat) {
       actor.combat = {
@@ -1729,7 +1927,8 @@ export class CrpgGameState {
         actor.combat.defending,
         actor.combat.dazedHeadTurns > 0,
         actor.combat.customArmorBonus ?? 0,
-        actor.combat.customDamageBonus ?? 0
+        actor.combat.customDamageBonus ?? 0,
+        this.getPlayerProgressionBonuses()
       );
       return {
         actorId: actor.id,
@@ -1798,16 +1997,19 @@ export class CrpgGameState {
     this.player.pendingAttackTargetId = null;
 
     const participants: ActorEntity[] = [this.player, enemy];
-    // Include any other hostile living enemies within 6.5 tiles of the target or player
-    for (const other of this.npcs) {
-      if (
-        other.id !== enemy.id &&
-        other.combat?.isHostile &&
-        other.combat.isAlive &&
-        (Math.hypot(other.tileX - this.player.tileX, other.tileY - this.player.tileY) <= 6.5 ||
-          Math.hypot(other.tileX - enemy.tileX, other.tileY - enemy.tileY) <= 5.5)
-      ) {
-        participants.push(other);
+    // Other nearby hostile enemies auto-join combat ONLY in dungeon locations (dung/dng);
+    // on town/clearing maps only the deliberately attacked enemy engages.
+    if (isDungeonLocation(this.map)) {
+      for (const other of this.npcs) {
+        if (
+          other.id !== enemy.id &&
+          other.combat?.isHostile &&
+          other.combat.isAlive &&
+          (Math.hypot(other.tileX - this.player.tileX, other.tileY - this.player.tileY) <= 6.5 ||
+            Math.hypot(other.tileX - enemy.tileX, other.tileY - enemy.tileY) <= 5.5)
+        ) {
+          participants.push(other);
+        }
       }
     }
 
@@ -1826,6 +2028,9 @@ export class CrpgGameState {
     this.combatState.activeTurnActorId = this.player.id;
     this.combatState.selectedTargetId = enemy.id;
     this.combatLogs.length = 0;
+    this.progression.activeCooldowns = {};
+    this.progression.firstStrikeReady = true;
+    this.progression.furyApRefundedThisTurn = false;
 
     const reportId = 'rep_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     this.activeCombatReportId = reportId;
@@ -1919,7 +2124,8 @@ export class CrpgGameState {
     const playerSnap = this.getActorCombatant(this.player);
     const enemySnap = this.getActorCombatant(enemy);
     const dist = Math.hypot(enemy.tileX - this.player.tileX, enemy.tileY - this.player.tileY);
-    const preview = computeAttackPreview(playerSnap, enemySnap, dist, mode);
+    const bonuses = this.getPlayerProgressionBonuses(true);
+    const preview = computeAttackPreview(playerSnap, enemySnap, dist, mode, bonuses);
 
     if (!preview.inRange) {
       this.addLog(
@@ -1945,7 +2151,19 @@ export class CrpgGameState {
       this.player.tileY - enemy.tileY
     );
 
-    const outcome = resolveCombatAttack(playerSnap, enemySnap, dist, mode, rng);
+    const outcome = resolveCombatAttack(playerSnap, enemySnap, dist, mode, rng, bonuses);
+    this.progression.firstStrikeReady = false;
+    if (
+      outcome.hit &&
+      outcome.critical &&
+      playerSnap.derived.weaponProfile.maxRange <= 1.5 &&
+      getSkillRank(this.progression, 'witez_furia') > 0 &&
+      !this.progression.furyApRefundedThisTurn
+    ) {
+      this.progression.furyApRefundedThisTurn = true;
+      this.player.combat!.ap = Math.min(this.player.combat!.maxAp + 2, this.player.combat!.ap + 2);
+      this.addCombatLog('⚡ Furia Peruna! Krytyczne trafienie w zwarciu przywraca +2 AP.');
+    }
     const modeLabel = ATTACK_MODE_META[mode].label;
 
     if (!outcome.hit) {
@@ -2032,6 +2250,287 @@ export class CrpgGameState {
     return outcome;
   }
 
+  public performPlayerCombatSkill(
+    skillId: string,
+    targetId?: string,
+    rng: () => number = Math.random
+  ): { ok: boolean; reason?: string } {
+    const def = SKILL_TREE_BY_ID[skillId];
+    if (!def || def.kind !== 'active' || !def.activeAbility) {
+      return { ok: false, reason: 'Nieznana zdolność aktywna.' };
+    }
+    if (getSkillRank(this.progression, skillId) <= 0) {
+      return { ok: false, reason: 'Zdolność nie została jeszcze odblokowana.' };
+    }
+    if (!this.player?.combat) {
+      return { ok: false, reason: 'Brak danych bojowych gracza.' };
+    }
+
+    const pc = this.player.combat;
+    const ability = def.activeAbility;
+    const reportBlocker = (msg: string): void => {
+      if (this.combatState.active) {
+        this.addCombatLog(msg);
+      } else {
+        this.addLog(msg);
+      }
+    };
+
+    const cd = this.progression.activeCooldowns[skillId] ?? 0;
+    if (cd > 0) {
+      reportBlocker(`⏳ ${def.name} odnawia się jeszcze przez ${cd} t.`);
+      return { ok: false, reason: `Odnowienie: ${cd} t.` };
+    }
+    if (pc.ap < ability.apCost) {
+      reportBlocker(`⚠️ Za mało AP (${pc.ap}/${ability.apCost}) dla ${def.name}.`);
+      return { ok: false, reason: 'Za mało AP.' };
+    }
+    const curMana = pc.mana ?? pc.maxMana ?? 0;
+    if (curMana < ability.manaCost) {
+      reportBlocker(`⚠️ Za mało Many (${curMana}/${ability.manaCost}) dla ${def.name}.`);
+      return { ok: false, reason: 'Za mało Many.' };
+    }
+
+    // Self-target skill (e.g. Tchnienie Mokoszy)
+    if (ability.targetType === 'self') {
+      if (!this.combatState.active) {
+        return { ok: false, reason: 'Dostępne w trakcie walki.' };
+      }
+      if (this.combatState.activeTurnActorId !== this.player.id) {
+        return { ok: false, reason: 'Poczekaj na swoją turę.' };
+      }
+      pc.ap -= ability.apCost;
+      pc.mana = Math.max(0, curMana - ability.manaCost);
+      this.progression.activeCooldowns[skillId] = ability.cooldownTurns;
+
+      const attrs = this.statSheet.getEffectiveAttributes();
+      const healAmount = Math.round(25 + 2.0 * attrs.resolve);
+      const prevHp = pc.hp;
+      pc.hp = Math.min(pc.maxHp, pc.hp + healAmount);
+      const actualHeal = pc.hp - prevHp;
+      pc.dazedHeadTurns = 0;
+      pc.crippledLegsTurns = 0;
+
+      this.pushFloatingCombatText(
+        this.player.x,
+        this.player.y,
+        this.player.z + 1.9,
+        `🌿 +${actualHeal} HP`,
+        0x69f0ae
+      );
+      this.addCombatLog(
+        `🌿 [${def.name}] Przywrócono +${actualHeal} HP i usunięto negatywne statusy (-${ability.apCost} AP, -${ability.manaCost} Many).`
+      );
+      CombatAudioEngine.getInstance().playSound('shield_block');
+      return { ok: true };
+    }
+
+    // Enemy-target skill
+    const resolvedTargetId = targetId ?? this.combatState.selectedTargetId;
+    const enemy = this.npcs.find((n) => n.id === resolvedTargetId);
+    if (!enemy || !enemy.combat || !enemy.combat.isAlive) {
+      return { ok: false, reason: 'Wybierz żywego przeciwnika.' };
+    }
+
+    if (!this.combatState.active) {
+      this.startCombatWithEnemy(enemy.id);
+    }
+    if (this.combatState.activeTurnActorId !== this.player.id) {
+      return { ok: false, reason: 'Poczekaj na swoją turę.' };
+    }
+
+    this.combatState.selectedTargetId = enemy.id;
+    const playerSnap = this.getActorCombatant(this.player);
+    const enemySnap = this.getActorCombatant(enemy);
+    const dist = Math.hypot(enemy.tileX - this.player.tileX, enemy.tileY - this.player.tileY);
+
+    const wp = playerSnap.derived.weaponProfile;
+    const maxRange =
+      ability.maxRange ??
+      (wp.maxRange > 1.5 ? wp.maxRange + (ability.rangeBonus ?? 0) : wp.maxRange);
+
+    if (dist < ability.minRange - 0.1 || dist > maxRange + 0.45) {
+      reportBlocker(
+        `⚠️ Cel „${enemy.recipe.name}” jest poza zasięgiem ${def.name} (${dist.toFixed(1)} kafli, wymagany zasięg: ${ability.minRange}–${maxRange}).`
+      );
+      return { ok: false, reason: 'Cel poza zasięgiem.' };
+    }
+
+    pc.ap -= ability.apCost;
+    pc.mana = Math.max(0, curMana - ability.manaCost);
+    pc.defending = false;
+    this.progression.activeCooldowns[skillId] = ability.cooldownTurns;
+
+    this.player.direction = deltaToDirection8(
+      enemy.tileX - this.player.tileX,
+      enemy.tileY - this.player.tileY
+    );
+    enemy.direction = deltaToDirection8(
+      this.player.tileX - enemy.tileX,
+      this.player.tileY - enemy.tileY
+    );
+
+    const bonuses = this.getPlayerProgressionBonuses(true);
+    this.progression.firstStrikeReady = false;
+
+    const hitChancePct = Math.max(
+      5,
+      Math.min(
+        95,
+        Math.round(
+          (ability.isRunicBurst
+            ? 85 + (playerSnap.lore - 10) * 2.5
+            : playerSnap.derived.activeProficiency +
+              (playerSnap.perception - 10) * 3.5 +
+              wp.accuracyBonus) +
+            (ability.hitBonus ?? 0) +
+            (bonuses.keenEyeRank ?? 0) * 8 -
+            enemySnap.derived.evasionPct
+        )
+      )
+    );
+
+    const rollPct = Math.floor(rng() * 100) + 1;
+    const hit = rollPct <= hitChancePct;
+
+    if (!hit) {
+      this.pushFloatingCombatText(
+        enemy.x,
+        enemy.y,
+        enemy.z + 1.8,
+        `PUDŁO! (${hitChancePct}%)`,
+        0xb0b7c6
+      );
+      this.addCombatLog(
+        `💨 [${def.name}] Pudło w ${accusative(enemy.recipe.name)}! (Szansa: ${hitChancePct}%).`
+      );
+      CombatAudioEngine.getInstance().playSound('miss_whoosh');
+      return { ok: true };
+    }
+
+    const critChancePct = Math.max(
+      5,
+      Math.min(
+        95,
+        Math.round(
+          playerSnap.derived.critChancePct +
+            (ability.critBonus ?? 0) +
+            (bonuses.firstStrikeBonusCritPct ?? 0)
+        )
+      )
+    );
+    const critRoll = Math.floor(rng() * 100) + 1;
+    const critical = critRoll <= critChancePct;
+
+    const steadyBonus = (bonuses.steadyHandRank ?? 0) * 0.1;
+    const critMult = critical ? 1.55 + steadyBonus : 1.0;
+
+    let rawDamage = 0;
+    if (ability.isRunicBurst) {
+      const runicRank = bonuses.runicEmpowerRank ?? 0;
+      const baseRunic = 14 + 1.8 * (playerSnap.lore + runicRank) + runicRank * 3;
+      rawDamage = Math.round(baseRunic * critMult);
+    } else {
+      const span = Math.max(0, playerSnap.derived.maxDamage - playerSnap.derived.minDamage);
+      const baseRoll = playerSnap.derived.minDamage + rng() * span;
+      rawDamage = Math.max(2, Math.round(baseRoll * (ability.damageMult ?? 1.0) * critMult));
+    }
+
+    const effectivePen = ability.isRunicBurst
+      ? Math.min(0.9, ability.armorPenBonus ?? 0.5)
+      : Math.min(0.9, wp.armorPenetrationRatio + (ability.armorPenBonus ?? 0));
+    const dtAfterPen = Math.max(0, Math.round(enemySnap.derived.damageThreshold * (1 - effectivePen)));
+    const drAfterPen = Math.max(
+      0,
+      Math.round(enemySnap.derived.damageResistancePct * (1 - effectivePen))
+    );
+    const finalDt = critical ? Math.floor(dtAfterPen * 0.5) : dtAfterPen;
+    const finalDr = critical ? Math.floor(drAfterPen * 0.5) : drAfterPen;
+
+    const afterDt = Math.max(1, rawDamage - finalDt);
+    const damageDealt = Math.max(1, Math.round(afterDt * (1 - finalDr / 100)));
+    enemy.combat.hp = Math.max(0, enemy.combat.hp - damageDealt);
+
+    let statusText = '';
+    if (ability.isRunicBurst || (skillId === 'witez_rozplatanie' && critical)) {
+      enemy.combat.dazedHeadTurns = Math.max(enemy.combat.dazedHeadTurns, 1);
+      statusText = ' + OGŁUSZENIE (-3 AP)!';
+    }
+
+    if (
+      critical &&
+      !ability.isRunicBurst &&
+      wp.maxRange <= 1.5 &&
+      getSkillRank(this.progression, 'witez_furia') > 0 &&
+      !this.progression.furyApRefundedThisTurn
+    ) {
+      this.progression.furyApRefundedThisTurn = true;
+      pc.ap = Math.min(pc.maxAp + 2, pc.ap + 2);
+      this.addCombatLog('⚡ Furia Peruna! Krytyczne trafienie w zwarciu przywraca +2 AP.');
+    }
+
+    this.pushFloatingCombatText(
+      enemy.x,
+      enemy.y,
+      enemy.z + 1.85,
+      critical ? `💥 ${def.icon} -${damageDealt} HP!${statusText}` : `${def.icon} -${damageDealt} HP${statusText}`,
+      ability.isRunicBurst ? 0x56e2ff : critical ? 0xffca28 : 0xff5252
+    );
+    this.addCombatLog(
+      `${def.icon} [${def.name}] ${critical ? 'KRYTYK! ' : ''}Zadano ${damageDealt} obr. ${dative(enemy.recipe.name)}${statusText}.`
+    );
+
+    this.player.attackAnimTimer = 0.22;
+    this.player.attackAnimMaxTimer = 0.22;
+    this.player.attackTargetX = enemy.x;
+    this.player.attackTargetY = enemy.y;
+    enemy.hitRecoilTimer = 0.18;
+    enemy.hitRecoilMaxTimer = 0.18;
+    enemy.hitFromX = this.player.x;
+    enemy.hitFromY = this.player.y;
+    enemy.damageFlashTimer = 0.2;
+
+    const targetDefeated = enemy.combat.hp <= 0;
+    this.triggerCombatAttackResolved({
+      attacker: this.player,
+      target: enemy,
+      outcome: {
+        attackerId: this.player.id,
+        defenderId: enemy.id,
+        mode: 'quick',
+        apSpent: ability.apCost,
+        hit: true,
+        hitChancePct,
+        rollPct,
+        critical,
+        rawDamage,
+        mitigatedByArmor: Math.max(0, rawDamage - damageDealt),
+        damageDealt,
+        appliedStatus:
+          ability.isRunicBurst || (skillId === 'witez_rozplatanie' && critical)
+            ? 'dazed_head'
+            : null,
+        targetDefeated
+      }
+    });
+
+    if (targetDefeated) {
+      enemy.combat.isAlive = false;
+      enemy.deathAnimTimer = 0.45;
+      CombatAudioEngine.getInstance().playSound('death_gasp');
+      this.handleEnemyDefeated(
+        enemy,
+        ability.isRunicBurst ? 'runic_staffs' : wp.category
+      );
+    } else if (critical) {
+      CombatAudioEngine.getInstance().playSound('critical_boom');
+    } else {
+      CombatAudioEngine.getInstance().playSound('slash_blade');
+    }
+
+    return { ok: true };
+  }
+
   private handleEnemyDefeated(
     enemy: ActorEntity,
     usedWeaponCategory: keyof ActorCombatComponent['proficiencies']
@@ -2042,10 +2541,11 @@ export class CrpgGameState {
     enemy.path = [];
     enemy.isMoving = false;
 
-    const gain = c.xpReward || 4;
+    const gain = c.xpReward ?? 4;
     const prevProf = this.player.combat!.proficiencies[usedWeaponCategory];
     const nextProf = Math.min(150, prevProf + gain);
     this.player.combat!.proficiencies[usedWeaponCategory] = nextProf;
+    this.grantPlayerXp(gain);
 
     const profLabel = PROFICIENCY_META[usedWeaponCategory].label;
 
@@ -2053,16 +2553,13 @@ export class CrpgGameState {
       enemy.x,
       enemy.y,
       enemy.z + 2.1,
-      `☠️ POKONANO! (+${gain}% ${PROFICIENCY_META[usedWeaponCategory].shortLabel})`,
+      `☠️ POKONANO! (+${gain} XP, +${gain}% ${PROFICIENCY_META[usedWeaponCategory].shortLabel})`,
       0x4cd964
     );
 
     this.addCombatLog(
-      `🏆 Pokonano: ${accusative(enemy.recipe.name)}! Biegłość „${profLabel}” wzrosła o +${gain}% (do ${nextProf}%). Ciało wroga upadło na ziemię — podejdź i przeszukaj zwłoki.`
+      `🏆 Pokonano: ${accusative(enemy.recipe.name)}! Zdobyto +${gain} XP oraz +${gain}% biegłości „${profLabel}” (do ${nextProf}%). Ciało wroga upadło na ziemię — podejdź i przeszukaj zwłoki.`
     );
-    if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
-      this.combatReports[this.activeCombatReportId].outcome = 'victory';
-    }
 
     // Check if any hostile participants remain alive
     const remainingEnemies = this.combatState.participantIds
@@ -2071,14 +2568,19 @@ export class CrpgGameState {
 
     this.pendingEnemyCombatTurnIds = this.pendingEnemyCombatTurnIds.filter((id) => id !== enemy.id);
     if (remainingEnemies.length === 0) {
+      if (this.activeCombatReportId && this.combatReports[this.activeCombatReportId]) {
+        this.combatReports[this.activeCombatReportId].outcome = 'victory';
+      }
       this.isSequentialEnemyTurnActive = false;
       this.combatState.active = false;
       this.combatState.activeTurnActorId = null;
       this.combatState.selectedTargetId = null;
       this.player.combat!.ap = this.player.combat!.maxAp;
+      this.player.combat!.mana = this.player.combat!.maxMana ?? this.player.combat!.mana ?? 90;
       this.player.combat!.defending = false;
       this.player.combat!.dazedHeadTurns = 0;
       this.player.combat!.crippledLegsTurns = 0;
+      this.progression.activeCooldowns = {};
       this.sayPlayerBark('Starcie wygrane! Czas przejrzeć łupy.', 4.5);
       this.addCombatLog('✨ Walka turowa zakończona zwycięstwem! Punkty Akcji (AP) zostały odnowione.');
       this.addLog(`📜 Raport z walki: Zwycięstwo nad ${instrumental(enemy.recipe.name)}!`, 'combat', this.activeCombatReportId ?? undefined);
@@ -2150,16 +2652,31 @@ export class CrpgGameState {
     this.pendingEnemyCombatTurnIds = [];
     if (!this.combatState.active) return;
 
-    // Start next round & restore player's AP
+    // Start next round & restore player's AP + tick cooldowns + regen Mana
     this.combatState.round += 1;
     this.combatState.activeTurnActorId = this.player.id;
     const pSnap = this.getActorCombatant(this.player);
     this.player.combat!.maxAp = pSnap.derived.maxAp;
     this.player.combat!.ap = pSnap.derived.maxAp;
     this.player.combat!.defending = false;
+    this.progression.furyApRefundedThisTurn = false;
+
+    for (const [skillId, cd] of Object.entries(this.progression.activeCooldowns)) {
+      if (cd > 1) {
+        this.progression.activeCooldowns[skillId] = cd - 1;
+      } else {
+        delete this.progression.activeCooldowns[skillId];
+      }
+    }
+
+    const zapasRank = getSkillRank(this.progression, 'zerca_zapas');
+    const manaRegen = 4 + zapasRank * 4;
+    const maxMana = this.player.combat!.maxMana ?? pSnap.derived.maxMana;
+    this.player.combat!.maxMana = maxMana;
+    this.player.combat!.mana = Math.min(maxMana, (this.player.combat!.mana ?? maxMana) + manaRegen);
 
     this.addCombatLog(
-      `🔔 Runda ${this.combatState.round} — Twoja tura! Odnowiono ${this.player.combat!.ap}/${this.player.combat!.maxAp} AP.`
+      `🔔 Runda ${this.combatState.round} — Twoja tura! Odnowiono ${this.player.combat!.ap}/${this.player.combat!.maxAp} AP i +${manaRegen} Many.`
     );
   }
 
@@ -2326,6 +2843,20 @@ export class CrpgGameState {
     );
 
     const out = resolveCombatAttack(freshEnemySnap, freshPlayerSnap, dist, chosenMode, rng);
+    const wolaRank = getSkillRank(this.progression, 'zerca_wola');
+    if (out.hit && out.appliedStatus && wolaRank > 0) {
+      if (out.appliedStatus === 'dazed_head' && this.player.combat!.dazedHeadTurns > 0) {
+        if (wolaRank >= 2 || rng() < 0.5) {
+          this.player.combat!.dazedHeadTurns = Math.max(0, this.player.combat!.dazedHeadTurns - 1);
+          this.addCombatLog('🕯️ Wola Przodków odparła ogłuszenie!');
+        }
+      } else if (out.appliedStatus === 'crippled_legs' && this.player.combat!.crippledLegsTurns > 0) {
+        this.player.combat!.crippledLegsTurns = Math.max(
+          0,
+          this.player.combat!.crippledLegsTurns - wolaRank
+        );
+      }
+    }
     if (!out.hit) {
       this.pushFloatingCombatText(
         this.player.x,
@@ -2474,7 +3005,9 @@ export class CrpgGameState {
     this.player.combat!.isAlive = true;
     this.player.combat!.hp = this.player.combat!.maxHp;
     this.player.combat!.ap = this.player.combat!.maxAp;
+    this.player.combat!.mana = this.player.combat!.maxMana ?? this.player.combat!.mana ?? 90;
     this.player.combat!.defending = false;
+    this.progression.activeCooldowns = {};
     this.player.combat!.dazedHeadTurns = 0;
     this.player.combat!.crippledLegsTurns = 0;
 
@@ -2528,7 +3061,9 @@ export class CrpgGameState {
     this.combatState.activeTurnActorId = null;
     this.combatState.selectedTargetId = null;
     this.player.combat!.ap = this.player.combat!.maxAp;
+    this.player.combat!.mana = this.player.combat!.maxMana ?? this.player.combat!.mana ?? 90;
     this.player.combat!.defending = false;
+    this.progression.activeCooldowns = {};
     this.player.path = [];
     this.player.isMoving = false;
 
@@ -2655,6 +3190,19 @@ export class CrpgGameState {
     }
   }
 
+  public confirmPendingCombat(): void {
+    const pending = this.pendingCombatConfirmation;
+    if (!pending) return;
+    this.pendingCombatConfirmation = null;
+    this.commandAttackEnemy(pending.npcId);
+  }
+
+  public cancelPendingCombat(): void {
+    if (!this.pendingCombatConfirmation) return;
+    this.pendingCombatConfirmation = null;
+    this.addLog('🚶 Odstąpiono od ataku.');
+  }
+
   public commandTalkToNpc(npcId: string): void {
     const npc = this.npcs.find((n) => n.id === npcId);
     if (!npc) return;
@@ -2662,6 +3210,14 @@ export class CrpgGameState {
     if (npc.combat?.isHostile) {
       if (!npc.combat.isAlive) {
         this.commandLootCorpse(npc.id);
+        return;
+      }
+      if (!isDungeonLocation(this.map) && !this.combatState.active) {
+        this.pendingCombatConfirmation = {
+          npcId: npc.id,
+          npcName: npc.recipe.name,
+          difficultyLabel: npc.combat.difficultyLabel ?? 'WRÓG'
+        };
         return;
       }
       this.commandAttackEnemy(npc.id);
@@ -2736,26 +3292,9 @@ export class CrpgGameState {
     }
 
     if (prop.kind === 'travel_signpost') {
-      let targetMap: MapId = 'slavic_village';
-      let bark = 'Dotarłem do słowiańskiej osady i targowiska!';
-      if (prop.id.includes('dungeon') || prop.id.includes('sanctum')) {
-        targetMap = 'sanctum_dungeon';
-        bark = 'Zstąpiłem w głąb ponurych lochów i jaskiń Aethelgardu!';
-      } else if (prop.id.includes('clearing') || prop.id.includes('forest')) {
-        targetMap = 'forest_clearing';
-        bark = 'Powróciłem na Polanę Wilczego Ognia.';
-      } else if (prop.id.includes('village')) {
-        targetMap = 'slavic_village';
-        bark = 'Dotarłem do słowiańskiej osady i targowiska!';
-      } else {
-        targetMap = this.map.id === 'forest_clearing' ? 'slavic_village' : 'forest_clearing';
-        bark =
-          targetMap === 'slavic_village'
-            ? 'Dotarłem do słowiańskiej osady i targowiska!'
-            : 'Powróciłem na Polanę Wilczego Ognia.';
-      }
-      this.loadMap(targetMap);
-      this.sayPlayerBark(bark, 4.5);
+      const dest = resolveTravelSignpostDestination(prop.id, this.map.id);
+      this.loadMap(dest.mapId);
+      this.sayPlayerBark(dest.bark, 4.5);
       return;
     }
 
@@ -3017,6 +3556,15 @@ export class CrpgGameState {
       return { success: false, earned: 0, itemName: '' };
     }
 
+    const isCurrentlyEquipped = Object.values(this.equipmentManager.getAllEquipped()).some(
+      (eq) => eq?.instanceId === instanceId
+    );
+    if (isCurrentlyEquipped) {
+      this.addLog('⚠️ Nie można sprzedać założonego ekwipunku! Najpierw zdejmij lub podmień przedmiot.');
+      this.sayPlayerBark('Nie sprzedam tego, co mam na sobie!', 2.5);
+      return { success: false, earned: 0, itemName: '' };
+    }
+
     const found = this.backpack.findByInstanceId(instanceId);
     if (!found || !found.item) {
       return { success: false, earned: 0, itemName: '' };
@@ -3175,6 +3723,14 @@ export class CrpgGameState {
   public selectDialogueChoice(choice: DialogueChoice): void {
     if (!this.activeDialogue) return;
 
+    if (choice.requiredAttribute) {
+      const attrs = this.statSheet.getEffectiveAttributes();
+      if ((attrs[choice.requiredAttribute.stat] ?? 0) < choice.requiredAttribute.minValue) {
+        this.addLog('⚠️ Nie spełniasz wymaganego poziomu atrybutu dla tej opcji dialogowej.');
+        return;
+      }
+    }
+
     if (choice.action === 'sell_duplicates') {
       this.sellAllDuplicatesForSiekance();
     }
@@ -3201,6 +3757,15 @@ export class CrpgGameState {
 
     if (choice.logMessage) {
       this.addLog(choice.logMessage);
+    }
+
+    if (choice.xpReward && choice.xpReward > 0) {
+      const claimKey = `${this.activeDialogue.actorId}:${choice.id}`;
+      if (!this.progression.claimedDialogueXpIds.includes(claimKey)) {
+        this.progression.claimedDialogueXpIds.push(claimKey);
+        this.addLog(`✨ Zdobyto +${choice.xpReward} XP za pomyślne rozegranie rozmowy.`);
+        this.grantPlayerXp(choice.xpReward);
+      }
     }
 
     if (!choice.nextNodeId) {
@@ -3345,10 +3910,11 @@ export class CrpgGameState {
       this.statSheet.setBaseAttributes(base);
 
       if (this.player.combat) {
-        const healed = Math.min(60, this.player.combat.maxHp - this.player.combat.hp);
+        const healAmount = eff.healHp ?? 60;
+        const healed = Math.min(healAmount, this.player.combat.maxHp - this.player.combat.hp);
         this.player.combat.hp = Math.min(
           this.player.combat.maxHp,
-          this.player.combat.hp + 60
+          this.player.combat.hp + healAmount
         );
         if (healed > 0) {
           this.pushFloatingCombatText(
@@ -3358,6 +3924,23 @@ export class CrpgGameState {
             `+${healed} HP`,
             0x4cd964
           );
+        }
+        if (eff.restoreAp && this.combatState.active) {
+          this.player.combat.ap = Math.min(
+            this.player.combat.maxAp + eff.restoreAp,
+            this.player.combat.ap + eff.restoreAp
+          );
+          this.pushFloatingCombatText(
+            this.player.x,
+            this.player.y,
+            this.player.z + 2.1,
+            `+${eff.restoreAp} AP`,
+            0x4deeea
+          );
+        }
+        if (eff.clearDebuffs) {
+          this.player.combat.dazedHeadTurns = 0;
+          this.player.combat.crippledLegsTurns = 0;
         }
       }
 
@@ -3491,19 +4074,33 @@ export class CrpgGameState {
         npc.aggroCooldownTimer -= dtSeconds;
       }
 
-      // Aggro check: if hostile NPC detects player within aggro radius, initiate combat!
+      // Aggro check: hostile NPCs auto-aggro ONLY in dungeon locations (dung/dng),
+      // with a brief reaction delay so the player has initiative to react or back off.
       if (
+        isDungeonLocation(this.map) &&
         npc.combat?.isHostile &&
         !this.combatState.active &&
         !this.activeDialogue &&
+        !this.pendingCombatConfirmation &&
         (!npc.aggroCooldownTimer || npc.aggroCooldownTimer <= 0)
       ) {
         const dist = Math.hypot(this.player.tileX - npc.tileX, this.player.tileY - npc.tileY);
         const aggroDist = npc.combat.aggroRadius || 3.5;
         if (dist <= aggroDist) {
-          this.sayNpcBark(npc.id, 'Stój! Kto idzie?! Zbrojni, do mnie!', 3.0);
-          this.startCombatWithEnemy(npc.id);
-          break;
+          if (npc.aggroReactionTimer === undefined) {
+            npc.aggroReactionTimer = 0.65;
+            this.sayNpcBark(npc.id, 'Ktoś się zbliża...!', 1.1);
+          } else {
+            npc.aggroReactionTimer -= dtSeconds;
+            if (npc.aggroReactionTimer <= 0) {
+              npc.aggroReactionTimer = undefined;
+              this.sayNpcBark(npc.id, 'Stój! Kto idzie?! Zbrojni, do mnie!', 3.0);
+              this.startCombatWithEnemy(npc.id);
+              break;
+            }
+          }
+        } else if (npc.aggroReactionTimer !== undefined && dist > aggroDist + 0.5) {
+          npc.aggroReactionTimer = undefined;
         }
       }
 

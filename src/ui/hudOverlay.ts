@@ -4,16 +4,29 @@ import { CombatAudioEngine } from '../audio/combatAudio';
 import { EdgePanDirection } from '../core/isoMath';
 import { MapId } from '../core/worldMap';
 import { IsoSceneView } from '../renderer/isoSceneView';
-import { HairStyle } from '../rpg/characterData';
+import { CharacterAttributes, HairStyle } from '../rpg/characterData';
 import {
   ATTACK_MODE_META,
   CombatAttackMode,
   computeAttackPreview,
+  getWeaponCombatProfile,
   PROFICIENCY_META,
   WeaponProficiencyCategory
 } from '../rpg/combatSystem';
-import { getMerchantWares, getPrzasneKolapsyForNpc } from '../rpg/dialogueSystem';
-import { ChronicleEntry, CrpgGameState } from '../rpg/gameLoop';
+import {
+  ATTRIBUTE_LABELS,
+  canUnlockSkill,
+  getSkillRank,
+  MAX_CHARACTER_LEVEL,
+  RESPEC_COST_SIEKANCE,
+  SKILL_BRANCH_META,
+  SKILL_TREE_BY_ID,
+  SKILL_TREE_DEFS,
+  SkillBranchId,
+  xpForNextLevel
+} from '../rpg/progressionSystem';
+import { getMerchantSpecialty, getMerchantWares, getPrzasneKolapsyForNpc } from '../rpg/dialogueSystem';
+import { ChronicleEntry, CrpgGameState, MERCHANT_ACTOR_IDS } from '../rpg/gameLoop';
 import {
   clearSave,
   hasSavedGame,
@@ -22,6 +35,7 @@ import {
   setAutosaveDisabled
 } from '../rpg/saveSystem';
 import {
+  createItemInstance,
   EQUIP_SLOT_LABELS,
   EquipSlot,
   getAllItemModifiers,
@@ -118,8 +132,12 @@ export class HudOverlay {
   private readonly scene: IsoSceneView;
   private readonly devMode: boolean;
   private isInventoryOpen: boolean;
+  private isCharacterOpen = false;
+  private activeSkillBranch: SkillBranchId = 'witez';
+  private selectedSkillNodeId = 'witez_hart';
   private isPlaytestInEditor = false;
   private isChronicleExpanded = false;
+  private chronicleImportantOnly = false;
   private isCombatAdvancedOpen = false;
   private isCreditsOpen = false;
   public activeBattleLogTab: 'combat' | 'chronicle' = 'combat';
@@ -131,6 +149,7 @@ export class HudOverlay {
   private hoveredEquipSlot: EquipSlot | null = null;
   private draggedSlotIndex: number | null = null;
   private activeCombatReportModalId: string | null = null;
+  private inspectedItemInstanceId: string | null = null;
 
   constructor(
     root: HTMLElement,
@@ -177,7 +196,7 @@ export class HudOverlay {
     metaKey?: boolean;
     target?: EventTarget | null;
     preventDefault?: () => void;
-  }): void {
+  }): boolean | void {
     const targetEl = e.target as HTMLElement | null;
     if (
       targetEl &&
@@ -185,9 +204,21 @@ export class HudOverlay {
     ) {
       return;
     }
-    if (e.key?.toLowerCase() === 'i' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      this.isInventoryOpen = !this.isInventoryOpen;
+    if (e.key === 'Escape' && this.inspectedItemInstanceId) {
+      this.inspectedItemInstanceId = null;
       this.render();
+      return;
+    }
+    if (e.key === 'Escape' && this.game.pendingCombatConfirmation) {
+      this.game.cancelPendingCombat();
+      this.render();
+      return;
+    }
+    if (e.key?.toLowerCase() === 'i' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      this.toggleInventory();
+    } else if (e.key?.toLowerCase() === 'c' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      this.toggleCharacter();
+      return true;
     } else if (e.ctrlKey && e.key?.toLowerCase() === 's') {
       e.preventDefault?.();
       this.saveGameDiscreetly();
@@ -224,6 +255,24 @@ export class HudOverlay {
       this.isCombatAdvancedOpen = false;
       this.game.activatePlayerDefendStance();
       this.render();
+    } else if (
+      this.game.combatState.active &&
+      this.game.combatState.activeTurnActorId === this.game.player.id &&
+      !this.game.isSequentialEnemyTurnActive &&
+      (e.key === '4' || e.key === '5' || e.key === '6')
+    ) {
+      const idx = Number(e.key) - 4;
+      const unlockedActive = SKILL_TREE_DEFS.filter(
+        (n) => n.kind === 'active' && getSkillRank(this.game.progression, n.id) > 0 && n.activeAbility
+      );
+      const skill = unlockedActive[idx];
+      if (skill) {
+        this.game.performPlayerCombatSkill(
+          skill.id,
+          this.game.combatState.selectedTargetId ?? undefined
+        );
+        this.render();
+      }
     } else if (this.game.combatState.active && e.key?.toLowerCase() === 'v') {
       this.toggleCombatAdvanced();
     } else if (e.key?.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
@@ -242,6 +291,13 @@ export class HudOverlay {
         this.render();
       } else if (this.isChronicleExpanded) {
         this.isChronicleExpanded = false;
+        this.render();
+      } else if (this.isCharacterOpen) {
+        this.isCharacterOpen = false;
+        this.render();
+        return true;
+      } else if (this.game.activeDialogue) {
+        this.game.activeDialogue = null;
         this.render();
       } else if (this.isInventoryOpen) {
         this.isInventoryOpen = false;
@@ -296,6 +352,17 @@ export class HudOverlay {
 
   public toggleInventory(): void {
     this.isInventoryOpen = !this.isInventoryOpen;
+    if (this.isInventoryOpen) {
+      this.isCharacterOpen = false;
+    }
+    this.render();
+  }
+
+  public toggleCharacter(): void {
+    this.isCharacterOpen = !this.isCharacterOpen;
+    if (this.isCharacterOpen) {
+      this.isInventoryOpen = false;
+    }
     this.render();
   }
 
@@ -415,6 +482,366 @@ export class HudOverlay {
     `;
   }
 
+  private buildCombatActiveSkillsHtml(isPlayerTurn: boolean): string {
+    const activeSkills = SKILL_TREE_DEFS.filter(
+      (n) => n.kind === 'active' && getSkillRank(this.game.progression, n.id) > 0 && n.activeAbility
+    );
+    if (activeSkills.length === 0) return '';
+
+    const pc = this.game.player.combat;
+    const curAp = pc?.ap ?? 0;
+    const curMana = pc?.mana ?? pc?.maxMana ?? 0;
+    const wp = this.game.getActorCombatant(this.game.player).derived.weaponProfile;
+    const target = this.game.combatState.selectedTargetId
+      ? this.game.npcs.find((n) => n.id === this.game.combatState.selectedTargetId)
+      : undefined;
+    const dist =
+      target && target.combat?.isAlive
+        ? Math.hypot(target.tileX - this.game.player.tileX, target.tileY - this.game.player.tileY)
+        : null;
+
+    return activeSkills
+      .map((node, idx) => {
+        const ab = node.activeAbility!;
+        const cd = this.game.progression.activeCooldowns[node.id] ?? 0;
+        const maxRange =
+          ab.maxRange ??
+          (wp.maxRange > 1.5 ? wp.maxRange + (ab.rangeBonus ?? 0) : wp.maxRange);
+        const outOfRange =
+          ab.targetType === 'enemy' && dist !== null && (dist < ab.minRange - 0.1 || dist > maxRange + 0.45);
+        const notEnoughAp = curAp < ab.apCost;
+        const notEnoughMana = curMana < ab.manaCost;
+        const disabled = !isPlayerTurn || cd > 0 || notEnoughAp || notEnoughMana || outOfRange;
+
+        const costParts = [`⚡ ${ab.apCost} AP`];
+        if (ab.manaCost > 0) costParts.push(`💧 ${ab.manaCost} M`);
+
+        let blockerReason = '';
+        if (!isPlayerTurn) blockerReason = 'Poczekaj na swoją turę.';
+        else if (cd > 0) blockerReason = `Odnowienie: jeszcze ${cd} t.`;
+        else if (notEnoughAp) blockerReason = `Za mało AP (${curAp}/${ab.apCost}).`;
+        else if (notEnoughMana) blockerReason = `Za mało Many (${curMana}/${ab.manaCost}).`;
+        else if (outOfRange) blockerReason = `Cel poza zasięgiem (${dist!.toFixed(1)}/${maxRange}).`;
+
+        const hotkeyBadge = idx < 3 ? ` <kbd>[${idx + 4}]</kbd>` : '';
+        const statusLabel =
+          cd > 0 ? `⏳ ${cd} t.` : outOfRange ? '📏 Za daleko' : costParts.join(' • ');
+
+        return `
+          <button
+            type="button"
+            class="combat-skill-btn ${disabled ? 'disabled' : ''}"
+            data-combat-skill="${node.id}"
+            title="${escapeHtml(blockerReason ? `${blockerReason} — ${node.description}` : node.description)}"
+          >
+            <span class="cs-icon">${node.icon}</span>
+            <span class="cs-name">${escapeHtml(node.name)}${hotkeyBadge}</span>
+            <span class="cs-cost">${statusLabel}</span>
+          </button>
+        `;
+      })
+      .join('');
+  }
+
+  private buildCharacterDrawerHtml(
+    portraitDataUrl: string,
+    attrs: CharacterAttributes
+  ): string {
+    if (!this.isCharacterOpen) return '';
+
+    const prog = this.game.progression;
+    const pc = this.game.player.combat;
+    const snap = this.game.getActorCombatant(this.game.player);
+    const derived = snap.derived;
+    const isMaxLevel = prog.level >= MAX_CHARACTER_LEVEL;
+    const xpNext = xpForNextLevel(prog.level);
+    const xpPct = isMaxLevel ? 100 : Math.min(100, Math.round((prog.xp / xpNext) * 100));
+    const carryMax = this.game.statSheet.getMaxCarryWeight();
+    const carryCur = this.game.backpack.currentWeight;
+
+    const attrKeys: Array<keyof CharacterAttributes> = [
+      'might',
+      'finesse',
+      'resolve',
+      'lore',
+      'perception'
+    ];
+
+    const attrRowsHtml = attrKeys
+      .map((key) => {
+        const meta = ATTRIBUTE_LABELS[key];
+        const val = attrs[key];
+        const spent = prog.spentAttributePoints[key] ?? 0;
+        return `
+          <div class="char-attr-row" data-attr-info="${key}">
+            <div class="char-attr-info">
+              <span class="char-attr-short">${meta.short}</span>
+              <span class="char-attr-name">${meta.name}</span>
+              ${spent > 0 ? `<span class="char-attr-spent">+${spent}</span>` : ''}
+            </div>
+            <div class="char-attr-controls">
+              <strong class="char-attr-val">${val}</strong>
+              <button
+                type="button"
+                class="char-attr-plus-btn"
+                data-alloc-attr="${key}"
+                ${prog.attributePoints <= 0 ? 'disabled' : ''}
+              >+</button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    const profEntries = (
+      Object.entries(PROFICIENCY_META) as Array<
+        [WeaponProficiencyCategory, { label: string; shortLabel: string }]
+      >
+    )
+      .map(([cat, meta]) => {
+        const val = pc?.proficiencies[cat] ?? 65;
+        const pct = Math.min(100, Math.round((val / 150) * 100));
+        return `
+          <div class="char-prof-row">
+            <div class="char-prof-label"><span>${meta.label}</span><span>${val}%</span></div>
+            <div class="char-prof-bar"><div class="char-prof-fill" style="width:${pct}%"></div></div>
+          </div>
+        `;
+      })
+      .join('');
+
+    const branchTabsHtml = (Object.keys(SKILL_BRANCH_META) as SkillBranchId[])
+      .map((bId) => {
+        const b = SKILL_BRANCH_META[bId];
+        const spentInBranch = SKILL_TREE_DEFS.filter((n) => n.branch === bId).reduce(
+          (s, n) => s + getSkillRank(prog, n.id),
+          0
+        );
+        return `
+          <button
+            type="button"
+            class="skill-branch-tab ${this.activeSkillBranch === bId ? 'active' : ''}"
+            data-skill-branch="${bId}"
+            style="--branch-accent: ${b.accent}"
+          >
+            <span>${b.icon} ${b.name}</span>
+            <span class="branch-pts-pill">${spentInBranch} pkt</span>
+          </button>
+        `;
+      })
+      .join('');
+
+    const branchNodes = SKILL_TREE_DEFS.filter((n) => n.branch === this.activeSkillBranch);
+    if (!branchNodes.some((n) => n.id === this.selectedSkillNodeId) && branchNodes[0]) {
+      this.selectedSkillNodeId = branchNodes[0].id;
+    }
+
+    const tierRoman = ['I', 'II', 'III', 'IV'] as const;
+    const nodePos = (node: (typeof branchNodes)[number]): { x: number; y: number } => {
+      const y = (node.tier - 1) * 25 + 12.5;
+      const x = node.slot === 'left' ? 30 : node.slot === 'right' ? 70 : 50;
+      return { x, y };
+    };
+    const svgLinesHtml = branchNodes
+      .flatMap((node) =>
+        node.prerequisites.map((preId) => {
+          const pre = branchNodes.find((n) => n.id === preId);
+          if (!pre) return '';
+          const p1 = nodePos(pre);
+          const p2 = nodePos(node);
+          const preUnlocked = getSkillRank(prog, pre.id) > 0;
+          const bothUnlocked = preUnlocked && getSkillRank(prog, node.id) > 0;
+          const cls = bothUnlocked ? 'conn-active' : preUnlocked ? 'conn-ready' : 'conn-locked';
+          return `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" class="${cls}" />`;
+        })
+      )
+      .join('');
+
+    const tiersHtml = ([1, 2, 3, 4] as const)
+      .map((tier) => {
+        const nodes = branchNodes.filter((n) => n.tier === tier);
+        const nodesHtml = nodes
+          .map((node) => {
+            const rank = getSkillRank(prog, node.id);
+            const unlockCheck = canUnlockSkill(prog, attrs, node.id);
+            const stateCls =
+              rank >= node.maxRank
+                ? 'maxed'
+                : rank > 0
+                  ? 'unlocked'
+                  : unlockCheck.ok
+                    ? 'available'
+                    : 'locked';
+            const selectedCls = this.selectedSkillNodeId === node.id ? 'selected' : '';
+            const lockPrefix = stateCls === 'locked' ? '🔒 ' : '';
+            return `
+              <button
+                type="button"
+                class="skill-node-card ${stateCls} ${selectedCls} slot-${node.slot}"
+                data-skill-node="${node.id}"
+              >
+                <div class="skill-node-top">
+                  <span class="skill-node-icon">${node.icon}</span>
+                  <span class="skill-node-rank">${lockPrefix}${rank}/${node.maxRank}</span>
+                </div>
+                <div class="skill-node-name">${escapeHtml(node.name)}</div>
+                <div class="skill-node-kind">${node.kind === 'active' ? 'AKTYWNA' : 'PASYWNA'}</div>
+              </button>
+            `;
+          })
+          .join('');
+        return `
+          <div class="skill-tier-row tier-${tier}">
+            <span class="skill-tier-badge" title="Poziom drzewka ${tierRoman[tier - 1]}">${tierRoman[tier - 1]}</span>
+            ${nodesHtml}
+          </div>
+        `;
+      })
+      .join('');
+
+    const selNode = SKILL_TREE_BY_ID[this.selectedSkillNodeId] ?? branchNodes[0];
+    const selRank = selNode ? getSkillRank(prog, selNode.id) : 0;
+    const selCheck = selNode ? canUnlockSkill(prog, attrs, selNode.id) : { ok: false };
+    const branchMeta = SKILL_BRANCH_META[this.activeSkillBranch];
+
+    const totalSpent =
+      Object.values(prog.spentAttributePoints).reduce((s, v) => s + (v || 0), 0) +
+      Object.values(prog.unlockedSkills).reduce((s, v) => s + (v || 0), 0);
+    const respecBlocker = this.game.combatState.active
+      ? 'Niedostępne w trakcie walki'
+      : totalSpent === 0
+        ? 'Brak przydzielonych punktów'
+        : this.game.siekance < RESPEC_COST_SIEKANCE
+          ? `Wymaga ${RESPEC_COST_SIEKANCE} siekańców (masz ${this.game.siekance})`
+          : '';
+    const canRespec = respecBlocker === '';
+
+    return `
+      <div class="character-backdrop" data-action="close-character">
+      <div class="character-drawer dark-fantasy-frame">
+        <div class="drawer-header">
+          <div class="drawer-title">
+            <span>❖ Karta Postaci — ${escapeHtml(this.game.player.recipe.name)}</span>
+            <span class="char-level-pill">Poziom ${prog.level}</span>
+            ${
+              prog.attributePoints + prog.skillPoints > 0
+                ? `<span class="char-points-banner">✨ Atrybuty: <strong>${prog.attributePoints}</strong> • Umiejętności: <strong>${prog.skillPoints}</strong></span>`
+                : ''
+            }
+          </div>
+          <div class="drawer-header-actions">
+            <button type="button" class="char-close-btn" data-action="close-character" title="Zamknij okno Postaci [Esc]">✕ Zamknij [Esc]</button>
+          </div>
+        </div>
+
+        <div class="character-workspace">
+          <div class="char-left-column">
+            <div class="char-identity-card">
+              <img src="${portraitDataUrl}" alt="Portret" class="char-drawer-portrait" />
+              <div class="char-identity-meta">
+                <div class="char-identity-title">${escapeHtml(this.game.player.recipe.title)}</div>
+                <div class="char-xp-row">
+                  <span>${isMaxLevel ? 'Maksymalny poziom' : `XP: ${prog.xp} / ${xpNext}`}</span>
+                  <span>${xpPct}%</span>
+                </div>
+                <div class="char-xp-bar"><div class="char-xp-fill" style="width:${xpPct}%"></div></div>
+                <div class="char-resources-row">
+                  <span>❤️ ${pc?.hp ?? derived.maxHp}/${derived.maxHp}</span>
+                  <span>💧 ${pc?.mana ?? derived.maxMana}/${derived.maxMana}</span>
+                  <span>⚡ ${pc?.ap ?? derived.maxAp}/${derived.maxAp} AP</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="char-section-box">
+              <div class="char-section-header">
+                <span>Rozdział Atrybutów</span>
+                <span class="char-pts-pill ${prog.attributePoints > 0 ? 'has-pts' : ''}">Wolne: ${prog.attributePoints}</span>
+              </div>
+              <div class="char-attr-list">${attrRowsHtml}</div>
+            </div>
+
+            <div class="char-section-box">
+              <div class="char-section-header"><span>Statystyki Bojowe</span></div>
+              <div class="char-derived-grid">
+                <div><span>⚔️ Obrażenia</span><strong>${derived.minDamage}–${derived.maxDamage}</strong></div>
+                <div><span>💥 Szansa Kryta</span><strong>${derived.critChancePct}%</strong></div>
+                <div><span>🛡️ Pancerz (DT/DR)</span><strong>${derived.damageThreshold} / ${derived.damageResistancePct}%</strong></div>
+                <div><span>💨 Unik</span><strong>${derived.evasionPct}%</strong></div>
+                <div><span>⚡ Inicjatywa</span><strong>${derived.sequence}</strong></div>
+                <div><span>🎒 Udźwig</span><strong>${carryCur.toFixed(1)}/${carryMax} kg</strong></div>
+              </div>
+            </div>
+
+            <div class="char-section-box">
+              <div class="char-section-header"><span>Biegłości Broni</span></div>
+              <div class="char-prof-list">${profEntries}</div>
+            </div>
+          </div>
+
+          <div class="char-right-column">
+            <div class="char-section-header">
+              <span>Drzewko Umiejętności</span>
+              <span class="char-pts-pill ${prog.skillPoints > 0 ? 'has-pts' : ''}">Punkty Umiejętności: ${prog.skillPoints}</span>
+            </div>
+
+            <div class="skill-branch-tabs">${branchTabsHtml}</div>
+            <div class="skill-branch-subtitle">${branchMeta.icon} ${escapeHtml(branchMeta.subtitle)}</div>
+
+            <div class="skill-tree-canvas">
+              <svg class="skill-tree-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${svgLinesHtml}</svg>
+              ${tiersHtml}
+            </div>
+
+            ${
+              selNode
+                ? `
+              <div class="skill-inspector-card">
+                <div class="skill-insp-header">
+                  <div>
+                    <span class="skill-insp-icon">${selNode.icon}</span>
+                    <strong>${escapeHtml(selNode.name)}</strong>
+                    <span class="skill-insp-badge">${selNode.kind === 'active' ? 'Zdolność Aktywna' : 'Talent Pasywny'}</span>
+                  </div>
+                  <span class="skill-insp-rank">Ranga ${selRank}/${selNode.maxRank}</span>
+                </div>
+                <p class="skill-insp-desc">${escapeHtml(selNode.description)}</p>
+                <div class="skill-insp-footer">
+                  <span class="skill-insp-req">${selCheck.ok ? '✅ Gotowe do odblokowania (koszt: 1 pkt)' : escapeHtml(selCheck.reason ?? '')}</span>
+                  <button
+                    type="button"
+                    class="hud-btn skill-unlock-btn"
+                    data-unlock-skill="${selNode.id}"
+                    ${!selCheck.ok ? 'disabled' : ''}
+                  >
+                    ${selRank >= selNode.maxRank ? 'Maks. ranga' : selRank > 0 ? 'Ulepsz (1 pkt)' : 'Odblokuj (1 pkt)'}
+                  </button>
+                </div>
+              </div>
+            `
+                : ''
+            }
+
+            <div class="char-respec-bar">
+              <span>💰 Srebro: <strong>${this.game.siekance} siekańców</strong>${respecBlocker ? ` <span class="respec-blocker">(${escapeHtml(respecBlocker)})</span>` : ''}</span>
+              <button
+                type="button"
+                class="hud-btn respec-btn"
+                data-action="respec-progression"
+                ${!canRespec ? 'disabled' : ''}
+                title="${escapeHtml(respecBlocker || 'Zwróć wszystkie przydzielone punkty atrybutów i umiejętności (poza walką)')}"
+              >
+                🔄 Resetuj rozwój (${RESPEC_COST_SIEKANCE} siek.)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="skill-hover-tooltip" id="skill-hover-tooltip" role="tooltip" aria-hidden="true"></div>
+      </div>
+    `;
+  }
+
   private buildCharacterStatSheetHtml(report: ItemComparisonReport | null): string {
     const sheet = this.game.statSheet;
     const impactMap = new Map<StatType, number>();
@@ -508,6 +935,26 @@ export class HudOverlay {
     const isPlayerTurn =
       this.game.combatState.activeTurnActorId === this.game.player.id &&
       !this.game.isSequentialEnemyTurnActive;
+
+    const curMana = pCombat.mana ?? pCombat.maxMana ?? 0;
+    const wp = playerSnap.derived.weaponProfile;
+    const canAffordAnyActiveSkill = SKILL_TREE_DEFS.some((n) => {
+      if (n.kind !== 'active' || !n.activeAbility || getSkillRank(this.game.progression, n.id) <= 0) {
+        return false;
+      }
+      const ab = n.activeAbility;
+      const cd = this.game.progression.activeCooldowns[n.id] ?? 0;
+      if (cd > 0 || pCombat.ap < ab.apCost || curMana < ab.manaCost) return false;
+      if (ab.targetType === 'self') return true;
+      const maxRange = ab.maxRange ?? (wp.maxRange > 1.5 ? wp.maxRange + (ab.rangeBonus ?? 0) : wp.maxRange);
+      return dist >= ab.minRange - 0.1 && dist <= maxRange + 0.45;
+    });
+    const canAffordAnyAction =
+      quickPreview.hasEnoughAp ||
+      powerPreview.hasEnoughAp ||
+      (!pCombat.defending && pCombat.ap >= 2) ||
+      canAffordAnyActiveSkill;
+    const shouldHighlightEndTurn = isPlayerTurn && (pCombat.ap <= 0 || !canAffordAnyAction);
 
     return `
       <div class="combat-tactical-bar ${this.isCombatAdvancedOpen ? 'veteran-open' : ''}">
@@ -627,9 +1074,9 @@ export class HudOverlay {
             <div class="combat-turn-btns">
               <button
                 type="button"
-                class="combat-exec-btn end-turn ${!isPlayerTurn ? 'disabled' : ''}"
+                class="combat-exec-btn end-turn ${!isPlayerTurn ? 'disabled' : ''} ${shouldHighlightEndTurn ? 'end-turn-ready' : ''}"
                 data-combat-action="end-turn"
-                title="Zakończ swoją turę i odnów punkty AP w kolejnej rundzie (Klawisz Spacja)"
+                title="${shouldHighlightEndTurn ? 'Brak PA na kolejne akcje — kliknij lub wciśnij [Spacja], aby zakończyć turę!' : 'Zakończ swoją turę i odnów punkty AP w kolejnej rundzie (Klawisz Spacja)'}"
               >
                 ⏭️ Koniec Tury <kbd>[Spacja]</kbd>
               </button>
@@ -644,6 +1091,9 @@ export class HudOverlay {
               </button>
             </div>
           </div>
+        </div>
+        <div class="combat-active-skills-row">
+          ${this.buildCombatActiveSkillsHtml(isPlayerTurn)}
         </div>
 
         <!-- TRYB EKSPERTA: Rozwijany panel celowania anatomicznego dla wyjadacza -->
@@ -780,8 +1230,8 @@ export class HudOverlay {
       <div class="combat-live-log ${this.isCombatLogExpanded ? 'expanded' : ''}">
         <div class="combat-log-header">
           <div class="combat-log-tabs">
-            <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-combat">⚔️ Dziennik Walki (${logs.length})</button>
-            <button type="button" class="combat-tab-btn" data-action="set-battle-tab-chronicle" title="Przełącz na Kronikę Świata">📜 Kronika</button>
+            <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-combat" title="Dziennik Walki">⚔️ Walka (${logs.length})</button>
+            <button type="button" class="combat-tab-btn" data-action="set-battle-tab-chronicle" title="Przełącz na Kronikę Świata">📜 Kronika (${this.game.chronicleEntries.length})</button>
           </div>
           <span class="combat-log-target-pill" title="Aktualny cel starcia">🎯 ${escapeHtml(targetName)} • Runda ${this.game.combatState.round}</span>
         </div>
@@ -789,10 +1239,131 @@ export class HudOverlay {
           ${entriesHtml}
         </div>
         <div class="combat-log-footer">
-          <span class="combat-log-hint">Rzuty k100, obrażenia, DT/DR pancerza</span>
-          <button type="button" class="combat-log-expand-btn" data-action="toggle-combat-log-expanded" title="Rozwiń/zwiń wysokość dziennika walki">
-            ${this.isCombatLogExpanded ? '▼ Mniej' : '▲ Więcej'}
+          <span class="combat-log-hint">Rzuty k100 • Obrażenia • DT/DR</span>
+          <button type="button" class="chronicle-toggle-btn expand-btn" data-action="toggle-combat-log-expanded" title="Rozwiń/zwiń wysokość widoku Walka">
+            ${this.isCombatLogExpanded ? '▼ Zwiń' : '▲ Rozwiń'}
           </button>
+        </div>
+      </div>
+    `;
+  }
+
+  private buildItemDetailsModalHtml(): string {
+    if (!this.inspectedItemInstanceId) return '';
+    const found = this.game.backpack.findByInstanceId(this.inspectedItemInstanceId);
+    if (!found) return '';
+    const item = found.item;
+    const def = getItemDefinition(item.definitionId);
+    if (!def) return '';
+
+    const rarity = RARITY_META[def.rarity];
+    const itemPrice = getItemPriceInSiekance(item);
+    const slotLabel = def.equipSlot ? EQUIP_SLOT_LABELS[def.equipSlot].label : 'Przedmiot';
+    const modifiers = getAllItemModifiers(item);
+    const weaponProfile =
+      def.itemType === 'Weapon' && def.equipSlot === 'mainHand'
+        ? getWeaponCombatProfile(def.id, null)
+        : null;
+
+    const report = ItemComparisonEngine.compareCandidate(
+      item,
+      this.game.equipmentManager,
+      this.game.statSheet
+    );
+
+    const modsHtml =
+      modifiers.length > 0
+        ? modifiers
+            .map((m) => {
+              const meta = STAT_META[m.targetStat];
+              const sign = m.value >= 0 ? '+' : '';
+              return `<div class="item-detail-mod-row"><span>${meta.icon} ${meta.label}</span><strong>${sign}${m.value}</strong></div>`;
+            })
+            .join('')
+        : '<div class="item-detail-empty">Brak stałych premii do statystyk.</div>';
+
+    const deltasHtml =
+      report.directDeltas.length > 0
+        ? report.directDeltas
+            .map((d) => {
+              const meta = STAT_META[d.stat];
+              return `<span class="compact-delta-item">${meta.icon} ${meta.label}: ${formatDeltaBadge(d.stat, d.delta)}</span>`;
+            })
+            .join('')
+        : '<span class="comp-no-delta">Brak zmian względem założonego ekwipunku</span>';
+
+    const reqHtml =
+      def.requirements.length > 0
+        ? `<div class="item-detail-section">
+            <div class="item-detail-section-title">Wymagania</div>
+            <div class="item-detail-reqs">
+              ${def.requirements
+                .map((r) => {
+                  const cur = Math.round(this.game.statSheet.getStatValue(r.stat));
+                  const ok = cur >= r.minValue;
+                  return `<span class="item-detail-req ${ok ? 'ok' : 'fail'}">${STAT_META[r.stat].label}: ${cur}/${r.minValue}</span>`;
+                })
+                .join('')}
+            </div>
+          </div>`
+        : '';
+
+    return `
+      <div class="item-details-backdrop" data-action="close-item-details">
+        <div class="item-details-modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+          <div class="item-details-header">
+            <div>
+              <div class="item-details-name" style="color:${rarity.colorHex}">${escapeHtml(def.name)}</div>
+              <div class="item-details-sub">
+                <span class="comp-rarity-badge" style="color:${rarity.colorHex}; border-color:${rarity.colorHex}55;">★ ${rarity.label.toUpperCase()}</span>
+                <span>${escapeHtml(slotLabel)}${def.isTwoHanded ? ' • 2H (Dwuręczna)' : ''}</span>
+              </div>
+            </div>
+            <button type="button" class="combat-report-close-btn" data-action="close-item-details" title="Zamknij (Esc)">✕</button>
+          </div>
+
+          <div class="item-details-meta-strip">
+            <span>⚖️ Waga: <strong>${def.weight.toFixed(1)} kg</strong></span>
+            <span>💰 Wartość: <strong>${itemPrice} siek.</strong></span>
+            <span>🛡️ Wytrzymałość: <strong>${item.currentDurability}/${item.maxDurability}</strong></span>
+          </div>
+
+          ${
+            def.description
+              ? `<div class="item-details-desc">${escapeHtml(def.description)}</div>`
+              : ''
+          }
+
+          ${
+            weaponProfile
+              ? `<div class="item-detail-section">
+                  <div class="item-detail-section-title">Parametry bojowe broni</div>
+                  <div class="item-detail-weapon-grid">
+                    <span>${weaponProfile.icon} Zasięg: <strong>${weaponProfile.minRange}–${weaponProfile.maxRange} kafelków</strong></span>
+                    <span>⚡ Koszt bazowy: <strong>${weaponProfile.baseApCost} AP</strong></span>
+                    <span>🛡️ Penetracja pancerza: <strong>${Math.round(weaponProfile.armorPenetrationRatio * 100)}%</strong></span>
+                    <span>🎯 Celność: <strong>+${weaponProfile.accuracyBonus}%</strong> • Kryt: <strong>+${weaponProfile.critBonus}%</strong></span>
+                  </div>
+                </div>`
+              : ''
+          }
+
+          <div class="item-detail-section">
+            <div class="item-detail-section-title">Premie i modyfikatory</div>
+            <div class="item-detail-mods-list">${modsHtml}</div>
+          </div>
+
+          ${reqHtml}
+
+          <div class="item-detail-section">
+            <div class="item-detail-section-title">Porównanie z obecnym ekwipunkiem</div>
+            <div class="comp-deltas-grid">${deltasHtml}</div>
+          </div>
+
+          <div class="item-details-footer">
+            <button type="button" class="hud-btn" data-action="equip-inspected-item" data-instance-id="${escapeHtml(item.instanceId)}">⚔️ Załóż</button>
+            <button type="button" class="hud-btn" data-action="close-item-details">Zamknij</button>
+          </div>
         </div>
       </div>
     `;
@@ -840,6 +1411,7 @@ export class HudOverlay {
             <div class="comp-deltas-section">
               <div class="comp-section-title">Działanie po spożyciu / użyciu:</div>
               <div class="comp-deltas-grid">
+                ${eff?.healHp ? `<span class="stat-delta-pill delta-up">❤️ +${eff.healHp} HP</span>` : ''}
                 ${eff?.might ? `<span class="stat-delta-pill delta-up">▲ +${eff.might} Siła</span>` : ''}
                 ${eff?.resolve ? `<span class="stat-delta-pill delta-up">▲ +${eff.resolve} Determinacja</span>` : ''}
                 ${eff?.perception ? `<span class="stat-delta-pill delta-up">▲ +${eff.perception} Percepcja</span>` : ''}
@@ -1137,15 +1709,17 @@ export class HudOverlay {
       ? getSlavicPortrait(activeActorId)
       : '';
 
-    const isMerchantDialogue = ['npc_dobromir', 'npc_bogusz', 'npc_gniewosz'].includes(activeActorId);
+    const isMerchantDialogue =
+      MERCHANT_ACTOR_IDS.includes(activeActorId) || getMerchantWares(activeActorId).length > 0;
     const merchantWares = isMerchantDialogue ? getMerchantWares(activeActorId) : [];
+    const merchantSpecialty = isMerchantDialogue ? getMerchantSpecialty(activeActorId) : null;
 
     const merchantShopHtml =
       isMerchantDialogue && merchantWares.length > 0
         ? `
         <div class="merchant-shop-panel">
           <div class="merchant-shop-header">
-            <span class="merchant-shop-title">💎 Drogocenne towary kupca (Wymagają grindu i siekańców):</span>
+            <span class="merchant-shop-title">${escapeHtml(merchantSpecialty?.shopTitle ?? '💎 Towary kupca (za siekańce)')}:</span>
             <span class="merchant-shop-wallet">Twój trzos: 💰 <strong>${this.game.siekance}</strong> siek.</span>
           </div>
           <div class="merchant-wares-list">
@@ -1161,6 +1735,31 @@ export class HudOverlay {
                   ? `rgb(${def.visualDef.trimColor.r}, ${def.visualDef.trimColor.g}, ${def.visualDef.trimColor.b})`
                   : '#999';
 
+                const wareCompHtml = (() => {
+                  if (!def?.equipSlot) return '';
+                  const candidate = createItemInstance(ware.id, 1);
+                  const rep = ItemComparisonEngine.compareCandidate(
+                    candidate,
+                    this.game.equipmentManager,
+                    this.game.statSheet
+                  );
+                  const equippedInSlot = this.game.equipmentManager.getEquipped(def.equipSlot);
+                  const equippedDef = equippedInSlot
+                    ? getItemDefinition(equippedInSlot.definitionId)
+                    : null;
+                  const deltaBadges =
+                    rep.directDeltas.length > 0
+                      ? rep.directDeltas
+                          .slice(0, 4)
+                          .map((d) => `${STAT_META[d.stat].icon} ${formatDeltaBadge(d.stat, d.delta)}`)
+                          .join(' ')
+                      : '<span class="comp-no-delta">= Tyle samo co założony</span>';
+                  const eqHint = equippedDef
+                    ? `<span class="ware-equipped-ref">vs ${escapeHtml(equippedDef.name)}</span>`
+                    : `<span class="ware-equipped-ref">Wolny slot</span>`;
+                  return `<div class="ware-comp-row">${deltaBadges} ${eqHint}</div>`;
+                })();
+
                 return `
                 <div class="merchant-ware-card ${canAfford ? 'can-afford' : 'too-expensive'}">
                   <div class="ware-swatch" style="background: linear-gradient(135deg, ${swatch} 55%, ${trim} 100%);">
@@ -1169,6 +1768,7 @@ export class HudOverlay {
                   <div class="ware-info">
                     <div class="ware-name" style="color: ${rarity.colorHex}">${escapeHtml(ware.title)}</div>
                     <div class="ware-desc">${escapeHtml(ware.description)}</div>
+                    ${wareCompHtml}
                   </div>
                   <div class="ware-buy-action">
                     <span class="ware-price ${canAfford ? 'afford' : 'costly'}">💰 ${ware.priceSiekance} siek.</span>
@@ -1188,6 +1788,58 @@ export class HudOverlay {
               })
               .join('')}
           </div>
+          <div class="merchant-bag-section">
+            <div class="merchant-bag-header">
+              <span class="merchant-bag-title">🎒 Twój plecak — załóż z plecaka lub sprzedaj za siekańce (założonego ekwipunku nie można sprzedać)</span>
+            </div>
+            <div class="merchant-bag-list">
+              ${(() => {
+                const bagItems = this.game.backpack.getSlots().filter((s): s is ItemInstance => Boolean(s));
+                if (bagItems.length === 0) {
+                  return '<div class="merchant-bag-empty">Plecak jest pusty.</div>';
+                }
+                return bagItems
+                  .map((item) => {
+                    const def = getItemDefinition(item.definitionId);
+                    if (!def) return '';
+                    const rarity = RARITY_META[def.rarity];
+                    const sellPrice = getItemPriceInSiekance(item);
+                    const stackText = item.stackCount > 1 ? ` ×${item.stackCount}` : '';
+                    let compBadges = '';
+                    if (def.equipSlot) {
+                      const rep = ItemComparisonEngine.compareCandidate(
+                        item,
+                        this.game.equipmentManager,
+                        this.game.statSheet
+                      );
+                      compBadges =
+                        rep.directDeltas.length > 0
+                          ? rep.directDeltas
+                              .slice(0, 3)
+                              .map((d) => `${STAT_META[d.stat].icon} ${formatDeltaBadge(d.stat, d.delta)}`)
+                              .join(' ')
+                          : '<span class="comp-no-delta">= Bez zmian</span>';
+                    }
+                    const equipBtn = def.equipSlot
+                      ? `<button type="button" class="btn-merchant-equip" data-action="merchant-equip-item" data-instance-id="${escapeHtml(item.instanceId)}" title="Załóż z plecaka (stary przedmiot trafi do plecaka)">🛡️ Załóż</button>`
+                      : '';
+                    return `
+                      <div class="merchant-bag-row">
+                        <div class="merchant-bag-item-info">
+                          <span class="merchant-bag-item-name" style="color: ${rarity.colorHex}">${escapeHtml(def.name)}${stackText}</span>
+                          ${compBadges ? `<span class="merchant-bag-comp">${compBadges}</span>` : ''}
+                        </div>
+                        <div class="merchant-bag-actions">
+                          ${equipBtn}
+                          <button type="button" class="btn-merchant-sell" data-action="merchant-sell-item" data-instance-id="${escapeHtml(item.instanceId)}" title="Sprzedaj za ${sellPrice} siekańców">💰 +${sellPrice}</button>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join('');
+              })()}
+            </div>
+          </div>
         </div>
       `
         : '';
@@ -1205,8 +1857,11 @@ export class HudOverlay {
             </div>
             <div class="dialogue-content-col">
               <div class="dialogue-header">
-                <span class="dialogue-speaker">${escapeHtml(this.game.activeDialogue.node.speakerName)}</span>
-                <span class="dialogue-title">${escapeHtml(this.game.activeDialogue.node.speakerTitle)}</span>
+                <div class="dialogue-header-info">
+                  <span class="dialogue-speaker">${escapeHtml(this.game.activeDialogue.node.speakerName)}</span>
+                  <span class="dialogue-title">${escapeHtml(this.game.activeDialogue.node.speakerTitle)}</span>
+                </div>
+                <button type="button" class="dialogue-close-btn" data-action="close-dialogue" title="Anuluj rozmowę [Esc]">✕ Zamknij [Esc]</button>
               </div>
               <div class="dialogue-body-wrap">
                 <p class="dialogue-body">„${escapeHtml(this.game.activeDialogue.node.text)}”</p>
@@ -1437,6 +2092,11 @@ export class HudOverlay {
                       <div class="bag-item-actions">
                         <span class="equip-state">${actionLabel}</span>
                         ${
+                          def.itemType === 'Weapon' || def.itemType === 'Armor'
+                            ? `<button type="button" class="bag-inspect-btn" data-action="inspect-item" data-instance-id="${slotItem.instanceId}" title="Zobacz pełne szczegóły przedmiotu">👁️ Zobacz</button>`
+                            : ''
+                        }
+                        ${
                           isNearMerchant
                             ? `<button type="button" class="bag-sell-btn" data-action="sell-single" data-instance-id="${slotItem.instanceId}" title="Sprzedaj kupcowi za ${itemPrice} siekańców">💰 Sprzedaj</button>`
                             : ''
@@ -1472,17 +2132,15 @@ export class HudOverlay {
     `;
 
     const mapSwitcherHtml = `
-          <button class="compass-angle-btn ${this.game.map.id === 'forest_clearing' ? 'active' : ''}" data-map-id="forest_clearing" title="Lokacja leśna (32×32): Polana Wilczego Ognia">
-            🌲 Polana
-          </button>
-          <button class="compass-angle-btn ${this.game.map.id === 'slavic_village' ? 'active' : ''}" data-map-id="slavic_village" title="Słowiańska Osada i Targowisko (44×44): Chaty, Kramy, Studnia, Gaj i Kurhan">
-            🏘️ Słowiańska Osada
-          </button>
-          <button class="compass-angle-btn ${this.game.map.id === 'sanctum_dungeon' ? 'active' : ''}" data-map-id="sanctum_dungeon" title="Lochy i Jaskinie Aethelgardu (36×36): Górne Jaskinie, Katakumby i Tron Czempiona">
-            🗝️ Lochy i Jaskinie
-          </button>
-          <span style="opacity:0.3;margin:0 4px;">|</span>
-      `;
+      <label class="transport-picker" title="Szybki transport między lokacjami">
+        <span class="transport-label">🧭 Transport</span>
+        <select class="transport-select" data-action="transport-select" aria-label="Transport między lokacjami">
+          <option value="forest_clearing" ${this.game.map.id === 'forest_clearing' ? 'selected' : ''}>🌲 Polana Wilczego Ognia</option>
+          <option value="slavic_village" ${this.game.map.id === 'slavic_village' ? 'selected' : ''}>🏘️ Słowiańska Osada</option>
+          <option value="sanctum_dungeon" ${this.game.map.id === 'sanctum_dungeon' ? 'selected' : ''}>🗝️ Lochy i Jaskinie</option>
+        </select>
+      </label>
+    `;
 
     const isFullscreen =
       typeof document !== 'undefined' && Boolean(document.fullscreenElement);
@@ -1494,7 +2152,7 @@ export class HudOverlay {
         data-action="toggle-fullscreen"
         title="Przełącz grę w tryb pełnoekranowy (F11 / Pełny ekran)"
       >
-        ⛶ ${isFullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran'}
+        ⛶ ${isFullscreen ? 'Tryb okna' : 'Pełny ekran'}
       </button>
     `;
 
@@ -1532,6 +2190,13 @@ export class HudOverlay {
       </button>
     `;
 
+    const topUtilityStackHtml = `
+      <div class="top-utility-stack">
+        ${audioBtnHtml}
+        ${discreetCreditsBtnHtml}
+      </div>
+    `;
+
     const telemetryOrControlsHtml = this.devMode
       ? `
         <div class="telemetry-badges">
@@ -1540,8 +2205,7 @@ export class HudOverlay {
           <button type="button" class="compass-angle-btn ${this.isPlaytestInEditor ? 'active' : ''}" data-action="toggle-editor-playtest" title="Przełącz między czystym Edytorem Poziomu a testowaniem rozgrywki cRPG">
             ${this.isPlaytestInEditor ? '🛠️ Wróć do Edytora' : '🎮 Testuj Rozgrywkę'}
           </button>
-          ${discreetCreditsBtnHtml}
-          ${audioBtnHtml}
+          ${topUtilityStackHtml}
           ${discreetSaveBtnHtml}
           <span class="telemetry-pill">FPS: <strong>${this.scene.fps}</strong></span>
           <span class="telemetry-pill">Bake: <strong>${this.scene.lastBakeDurationMs} ms</strong></span>
@@ -1551,9 +2215,7 @@ export class HudOverlay {
       `
       : `
         <div class="telemetry-badges">
-          <span class="telemetry-pill">LPM: <strong>Ruch</strong> • I: <strong>Plecak</strong></span>
-          ${discreetCreditsBtnHtml}
-          ${audioBtnHtml}
+          ${topUtilityStackHtml}
           ${discreetSaveBtnHtml}
           <button
             type="button"
@@ -1576,9 +2238,13 @@ export class HudOverlay {
           timestamp: Date.now() - idx * 1000
         }));
 
+    const filteredChronicleList = this.chronicleImportantOnly
+      ? chronicleList.filter((e) => e.severity === 'important' || e.severity === 'critical')
+      : chronicleList;
+
     const visibleEntries = this.isChronicleExpanded
-      ? chronicleList
-      : chronicleList.slice(0, 16);
+      ? filteredChronicleList
+      : filteredChronicleList.slice(0, 16);
 
     const isRecentLog = Date.now() - this.game.lastLogTimestamp < 2200;
     const pulseClass = isRecentLog ? `pulse-${this.game.lastLogSeverity}` : '';
@@ -1612,6 +2278,7 @@ export class HudOverlay {
         : `
       ${dialogueHtml}
       ${inventoryDrawerHtml}
+      ${this.buildCharacterDrawerHtml(charTex.portraitDataUrl, attrs)}
 
       <div class="bottom-hud ${this.game.combatState.active ? 'combat-mode-active' : ''}">
         <div class="hero-card">
@@ -1620,23 +2287,47 @@ export class HudOverlay {
             <span class="armor-badge" title="Całkowity Pancerz / Obrażenia">🛡️ ${totalArmor} | ⚔️ ${totalAttack}</span>
           </div>
           <div class="hero-details">
-            <div class="hero-name">${escapeHtml(player.recipe.name)} <span class="hero-hp-ap-pill">❤️ ${player.combat?.hp ?? 215}/${player.combat?.maxHp ?? 215} • ⚡ ${player.combat?.ap ?? 11}/${player.combat?.maxAp ?? 11} AP</span></div>
-            <div class="hero-title">${escapeHtml(player.recipe.title)}</div>
+            ${(() => {
+              const prog = this.game.progression;
+              const xpNext = xpForNextLevel(prog.level);
+              const xpPct = prog.level >= MAX_CHARACTER_LEVEL ? 100 : Math.min(100, Math.round((prog.xp / xpNext) * 100));
+              const manaVal = player.combat?.mana ?? player.combat?.maxMana ?? 90;
+              const manaMax = player.combat?.maxMana ?? 90;
+              return `
+                <div class="hero-name"><span>${escapeHtml(player.recipe.name)}</span> <span class="hero-hp-ap-pill" title="Życie (HP) • Mana • Punkty Akcji (AP)">❤️ ${player.combat?.hp ?? 215}/${player.combat?.maxHp ?? 215} • 💧 ${manaVal}/${manaMax} • ⚡ ${player.combat?.ap ?? 11}/${player.combat?.maxAp ?? 11}</span></div>
+                <div class="hero-title">${escapeHtml(player.recipe.title)} • <span class="hero-lvl-tag">Poz. ${prog.level}</span></div>
+                <div class="hero-xp-strip" title="Doświadczenie: ${prog.xp}/${xpNext} XP">
+                  <div class="hero-xp-bar"><div class="hero-xp-fill" style="width:${xpPct}%"></div></div>
+                  <span class="hero-xp-text">XP ${prog.level >= MAX_CHARACTER_LEVEL ? 'MAX' : `${prog.xp}/${xpNext}`}</span>
+                </div>
+              `;
+            })()}
             <div class="attr-row">
               <span title="Siła">SIŁ <strong>${attrs.might}</strong></span>
-              <span title="Finezja">FIN <strong>${attrs.finesse}</strong></span>
+              <span title="Finezyjność">FIN <strong>${attrs.finesse}</strong></span>
               <span title="Determinacja">DET <strong>${attrs.resolve}</strong></span>
-              <span title="Wiedza Tajemna">WIE <strong>${attrs.lore}</strong></span>
+              <span title="Wiedza">WIE <strong>${attrs.lore}</strong></span>
               <span title="Percepcja">PER <strong>${attrs.perception}</strong></span>
             </div>
             <div class="quick-actions">
+              <button class="hud-btn ${this.isCharacterOpen ? 'active' : ''}" data-action="toggle-character" title="${
+                this.game.progression.attributePoints + this.game.progression.skillPoints > 0
+                  ? `Masz ${this.game.progression.attributePoints} pkt atrybutów i ${this.game.progression.skillPoints} pkt umiejętności do wydania! [C]`
+                  : 'Otwórz Kartę Postaci i Drzewko Umiejętności (Klawisz C)'
+              }">
+                🧬 Postać [C]${
+                  this.game.progression.attributePoints + this.game.progression.skillPoints > 0
+                    ? ` <span class="unspent-points-badge">${this.game.progression.attributePoints + this.game.progression.skillPoints}</span>`
+                    : ''
+                }
+              </button>
               <button class="hud-btn ${this.isInventoryOpen ? 'active' : ''}" data-action="toggle-inventory" title="Otwórz Plecak (Klawisz I)">
                 🎒 Plecak (${occupiedCount}/${this.game.backpack.capacity})
               </button>
               <button class="hud-btn" data-action="use-campfire" title="Podejdź do ogniska i upiecz kiełbasę">
                 🔥 ${hasRawSausage ? 'Upiecz Kiełbasę!' : 'Ognisko'}
               </button>
-              <button class="hud-btn" data-action="center-camera" title="Wycentruj kamerę na bohaterze">
+              <button class="hud-btn" data-action="center-camera" title="Wycentruj kamerę na bohaterze i przywróć domyślny rzut izometryczny (0°, zoom 100%)">
                 🎯 Kamera
               </button>
               ${
@@ -1652,6 +2343,7 @@ export class HudOverlay {
           </div>
         </div>
 
+        ${this.game.combatState.active ? '<div class="combat-unified-dock">' : ''}
         ${this.buildCombatOverlayHtml()}
 
         ${
@@ -1664,21 +2356,29 @@ export class HudOverlay {
               this.game.combatState.active
                 ? `
                 <div class="combat-log-tabs">
-                  <button type="button" class="combat-tab-btn" data-action="set-battle-tab-combat" title="Przełącz na Dziennik Walki">⚔️ Dziennik Walki (${this.game.combatLogs.length})</button>
-                  <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-chronicle">📜 Kronika</button>
+                  <button type="button" class="combat-tab-btn" data-action="set-battle-tab-combat" title="Przełącz na widok Walki">⚔️ Walka (${this.game.combatLogs.length})</button>
+                  <button type="button" class="combat-tab-btn active" data-action="set-battle-tab-chronicle">📜 Kronika (${this.game.chronicleEntries.length})</button>
                 </div>
                 `
-                : `<span class="log-header-title">📜 Kronika Wydarzeń (${this.game.chronicleEntries.length})${headerBadge}</span>`
+                : `<span class="log-header-title">📜 Kronika (${this.game.chronicleEntries.length})${headerBadge}</span>`
             }
-            ${
-              this.isChronicleExpanded
-                ? `<button type="button" class="chronicle-close-x-btn" data-action="toggle-chronicle" title="Zwiń Kronikę (Esc)">✕</button>`
-                : `<button type="button" class="chronicle-toggle-btn expand-btn" data-action="toggle-chronicle" title="Rozwiń Kronikę Wydarzeń na całą wysokość ekranu">▲ Rozwiń</button>`
-            }
+            <div class="log-header-controls">
+              <button
+                type="button"
+                class="chronicle-filter-pill ${this.chronicleImportantOnly ? 'active' : ''}"
+                data-action="toggle-chronicle-important-filter"
+                title="Subtelny filtr: pokaż tylko ważne wydarzenia i zagrożenia"
+              >⭐ Ważne</button>
+              ${
+                this.isChronicleExpanded
+                  ? `<button type="button" class="chronicle-close-x-btn" data-action="toggle-chronicle" title="Zwiń Kronikę (Esc)">✕</button>`
+                  : `<button type="button" class="chronicle-toggle-btn expand-btn" data-action="toggle-chronicle" title="Rozwiń Kronikę Wydarzeń na całą wysokość ekranu">▲ Rozwiń</button>`
+              }
+            </div>
           </div>
           <div class="log-entries">
             ${visibleEntries.length === 0
-              ? '<div class="log-line log-severity-info"><span class="log-bullet">•</span> <span class="log-line-text">Kronika wydarzeń jest pusta.</span></div>'
+              ? `<div class="log-line log-severity-info"><span class="log-bullet">•</span> <span class="log-line-text">${this.chronicleImportantOnly ? 'Brak ważnych wydarzeń w kronice.' : 'Kronika wydarzeń jest pusta.'}</span></div>`
               : visibleEntries
                   .map((entry, idx) => {
                     const isNewest = idx === 0 && isRecentLog;
@@ -1738,6 +2438,7 @@ export class HudOverlay {
         </div>
         `
         }
+        ${this.game.combatState.active ? '</div>' : ''}
       </div>
     `;
 
@@ -1785,7 +2486,28 @@ export class HudOverlay {
       `;
     }
 
+    const pendingConfirm = this.game.pendingCombatConfirmation;
+    const combatConfirmModalHtml = pendingConfirm
+      ? `
+        <div class="combat-confirm-backdrop">
+          <div class="combat-confirm-modal" role="dialog" aria-modal="true">
+            <div class="combat-confirm-title">⚔️ Rozpocząć walkę?</div>
+            <div class="combat-confirm-body">
+              Czy na pewno chcesz zaatakować: <strong>${escapeHtml(pendingConfirm.npcName)}</strong>
+              <span class="combat-confirm-tag">(${escapeHtml(pendingConfirm.difficultyLabel)})</span>?
+            </div>
+            <div class="combat-confirm-actions">
+              <button type="button" class="btn-combat-confirm-fight" data-action="confirm-combat">⚔️ Walcz</button>
+              <button type="button" class="btn-combat-confirm-leave" data-action="cancel-combat">🚶 Odejdź</button>
+            </div>
+          </div>
+        </div>
+      `
+      : '';
+
     this.root.innerHTML = `
+      ${this.buildItemDetailsModalHtml()}
+      ${combatConfirmModalHtml}
       ${combatReportModalHtml}
       ${edgeOverlayHtml}
       <div class="top-bar">
@@ -1799,17 +2521,11 @@ export class HudOverlay {
 
         <div class="camera-compass-bar">
           ${mapSwitcherHtml}
-          <button class="compass-btn" data-action="rot-ccw" title="Obróć kamerę o -90° (Klawisz Q)">⟲ Q</button>
-          ${(['N (0°)', 'E (90°)', 'S (180°)', 'W (270°)'] as const)
-            .map(
-              (label, idx) => `
-              <button class="compass-angle-btn ${this.scene.rotation === idx ? 'active' : ''}" data-rot="${idx}">
-                ${label}
-              </button>
-            `
-            )
-            .join('')}
-          <button class="compass-btn" data-action="rot-cw" title="Obróć kamerę o +90° (Klawisz E)">E ⟳</button>
+          <div class="camera-rotate-compact" title="Obrót kamery [Q / E]">
+            <button type="button" class="compass-arrow-btn" data-action="rot-ccw" title="Obróć kamerę o -90° (Klawisz Q)">◀</button>
+            <span class="compass-angle-readout">${(['N · 0°', 'E · 90°', 'S · 180°', 'W · 270°'] as const)[((this.scene.rotation % 4) + 4) % 4]}</span>
+            <button type="button" class="compass-arrow-btn" data-action="rot-cw" title="Obróć kamerę o +90° (Klawisz E)">▶</button>
+          </div>
         </div>
 
         ${telemetryOrControlsHtml}
@@ -1840,6 +2556,28 @@ export class HudOverlay {
         } else if (action === 'close-credits') {
           this.isCreditsOpen = false;
           this.render();
+        } else if (action === 'confirm-combat') {
+          this.game.confirmPendingCombat();
+          this.render();
+        } else if (action === 'cancel-combat') {
+          this.game.cancelPendingCombat();
+          this.render();
+        } else if (action === 'inspect-item') {
+          const instId = btn.dataset.instanceId;
+          if (instId) {
+            this.inspectedItemInstanceId = instId;
+            this.render();
+          }
+        } else if (action === 'close-item-details') {
+          this.inspectedItemInstanceId = null;
+          this.render();
+        } else if (action === 'equip-inspected-item') {
+          const instId = btn.dataset.instanceId;
+          if (instId && this.game.useOrEquipInstance(instId)) {
+            this.inspectedItemInstanceId = null;
+            this.hoveredBagInstanceId = null;
+            this.render();
+          }
         } else if (action === 'sell-duplicates') {
           this.game.sellAllDuplicatesForSiekance();
           this.render();
@@ -1851,12 +2589,37 @@ export class HudOverlay {
             this.render();
           }
         } else if (action === 'toggle-inventory') {
-          this.isInventoryOpen = !this.isInventoryOpen;
+          this.toggleInventory();
           this.hoveredBagInstanceId = null;
           this.hoveredEquipSlot = null;
+        } else if (action === 'toggle-character') {
+          this.toggleCharacter();
+        } else if (action === 'close-character') {
+          this.isCharacterOpen = false;
+          this.render();
+        } else if (action === 'close-dialogue') {
+          this.game.activeDialogue = null;
+          this.render();
+        } else if (action === 'respec-progression') {
+          this.game.respecPlayerProgression();
           this.render();
         } else if (action === 'toggle-chronicle') {
           this.toggleChronicleExpanded();
+        } else if (action === 'toggle-chronicle-important-filter') {
+          this.chronicleImportantOnly = !this.chronicleImportantOnly;
+          this.render();
+        } else if (action === 'merchant-equip-item') {
+          const instId = btn.dataset.instanceId;
+          if (instId) {
+            this.game.useOrEquipInstance(instId);
+            this.render();
+          }
+        } else if (action === 'merchant-sell-item') {
+          const instId = btn.dataset.instanceId;
+          if (instId) {
+            this.game.sellItemForSiekance(instId);
+            this.render();
+          }
         } else if (action === 'set-battle-tab-chronicle') {
           this.activeBattleLogTab = 'chronicle';
           this.render();
@@ -1935,19 +2698,24 @@ export class HudOverlay {
           this.scene.activeTool = this.isPlaytestInEditor ? 'interact' : 'paint_terrain';
           this.render();
         } else if (action === 'center-camera') {
-          this.scene.centerCameraOnPlayer();
+          if (typeof this.scene.resetCameraToDefault === 'function') {
+            this.scene.resetCameraToDefault();
+          } else {
+            this.scene.centerCameraOnPlayer();
+          }
         }
       });
     });
 
-    this.root.querySelectorAll<HTMLElement>('[data-map-id]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const mapId = btn.dataset.mapId as MapId;
+    const transportSelect = this.root.querySelector<HTMLSelectElement>('[data-action="transport-select"]');
+    if (transportSelect) {
+      transportSelect.addEventListener('change', () => {
+        const mapId = transportSelect.value as MapId;
         this.game.loadMap(mapId);
         this.scene.centerCameraOnPlayer();
         this.render();
       });
-    });
+    }
 
     this.root.querySelectorAll<HTMLElement>('[data-engage-enemy]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -2124,7 +2892,7 @@ export class HudOverlay {
         });
 
         slotEl.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement)?.closest('.bag-sell-btn')) {
+          if ((e.target as HTMLElement)?.closest('.bag-sell-btn, .bag-inspect-btn')) {
             return;
           }
           if (this.game.useOrEquipInstance(instanceId)) {
@@ -2173,6 +2941,196 @@ export class HudOverlay {
       });
     });
 
+    this.root.querySelectorAll<HTMLElement>('[data-alloc-attr]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const stat = btn.dataset.allocAttr as keyof CharacterAttributes | undefined;
+        if (stat) {
+          this.game.allocatePlayerAttribute(stat);
+          this.render();
+        }
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>('[data-skill-branch]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const branch = btn.dataset.skillBranch as SkillBranchId | undefined;
+        if (branch) {
+          this.activeSkillBranch = branch;
+          const first = SKILL_TREE_DEFS.find((n) => n.branch === branch);
+          if (first) this.selectedSkillNodeId = first.id;
+          this.render();
+        }
+      });
+    });
+
+    const charDrawer = this.root.querySelector<HTMLElement>('.character-drawer');
+    if (charDrawer) {
+      charDrawer.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    const skillTooltipEl = this.root.querySelector<HTMLElement>('#skill-hover-tooltip');
+    const positionCharacterTooltip = (anchor: HTMLElement): void => {
+      if (!skillTooltipEl) return;
+      skillTooltipEl.classList.add('visible');
+      skillTooltipEl.setAttribute('aria-hidden', 'false');
+
+      const rect = anchor.getBoundingClientRect();
+      const ttWidth = 300;
+      const ttHeight = skillTooltipEl.offsetHeight || 190;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 720;
+
+      let left = rect.right + 12;
+      if (left + ttWidth > vw - 12) {
+        left = Math.max(12, rect.left - ttWidth - 12);
+      }
+      let top = rect.top + rect.height / 2 - ttHeight / 2;
+      if (top + ttHeight > vh - 12) {
+        top = vh - ttHeight - 12;
+      }
+      if (top < 12) {
+        top = 12;
+      }
+      skillTooltipEl.style.left = `${Math.round(left)}px`;
+      skillTooltipEl.style.top = `${Math.round(top)}px`;
+    };
+
+    const showSkillTooltip = (anchor: HTMLElement, nodeId: string): void => {
+      if (!skillTooltipEl) return;
+      const node = SKILL_TREE_BY_ID[nodeId];
+      if (!node) return;
+      const prog = this.game.progression;
+      const attrs = this.game.statSheet.getEffectiveAttributes();
+      const rank = getSkillRank(prog, node.id);
+      const unlockCheck = canUnlockSkill(prog, attrs, node.id);
+      const costRow = node.activeAbility
+        ? `
+          <div class="skill-tt-costs">
+            <span>⚡ ${node.activeAbility.apCost} PA</span>
+            <span>💧 ${node.activeAbility.manaCost} Many</span>
+            <span>⏳ ${node.activeAbility.cooldownTurns} t. odn.</span>
+          </div>
+        `
+        : '';
+      const statusText =
+        rank >= node.maxRank
+          ? '<span class="skill-tt-status maxed">✓ Maksymalna ranga</span>'
+          : unlockCheck.ok
+            ? '<span class="skill-tt-status ready">✅ Gotowe do odblokowania (Dwuklik)</span>'
+            : `<span class="skill-tt-status locked">🔒 ${escapeHtml(unlockCheck.reason ?? 'Wymagania niespełnione')}</span>`;
+
+      skillTooltipEl.innerHTML = `
+        <div class="skill-tt-header">
+          <span class="skill-tt-icon">${node.icon}</span>
+          <div class="skill-tt-titles">
+            <div class="skill-tt-name">${escapeHtml(node.name)}</div>
+            <div class="skill-tt-meta">
+              <span class="skill-tt-kind ${node.kind}">${node.kind === 'active' ? 'Zdolność Aktywna' : 'Talent Pasywny'}</span>
+              <span class="skill-tt-rank">Ranga ${rank}/${node.maxRank}</span>
+            </div>
+          </div>
+        </div>
+        <div class="skill-tt-summary">${escapeHtml(node.summary)}</div>
+        <p class="skill-tt-desc">${escapeHtml(node.description)}</p>
+        ${costRow}
+        <div class="skill-tt-footer">${statusText}</div>
+      `;
+      positionCharacterTooltip(anchor);
+    };
+
+    const showAttrTooltip = (anchor: HTMLElement, attrKey: keyof CharacterAttributes): void => {
+      if (!skillTooltipEl) return;
+      const meta = ATTRIBUTE_LABELS[attrKey];
+      if (!meta) return;
+      const prog = this.game.progression;
+      const attrs = this.game.statSheet.getEffectiveAttributes();
+      const val = attrs[attrKey];
+      const spent = prog.spentAttributePoints[attrKey] ?? 0;
+
+      skillTooltipEl.innerHTML = `
+        <div class="skill-tt-header">
+          <span class="skill-tt-icon skill-tt-icon-text">${escapeHtml(meta.short)}</span>
+          <div class="skill-tt-titles">
+            <div class="skill-tt-name">${escapeHtml(meta.name)}</div>
+            <div class="skill-tt-meta">
+              <span class="skill-tt-kind passive">Atrybut Główny</span>
+              <span class="skill-tt-rank">Wartość: ${val}${spent > 0 ? ` (+${spent})` : ''}</span>
+            </div>
+          </div>
+        </div>
+        <div class="skill-tt-summary">Wpływ na statystyki bohatera:</div>
+        <p class="skill-tt-desc">${escapeHtml(meta.effectHint)}</p>
+        <div class="skill-tt-footer">${
+          prog.attributePoints > 0
+            ? `<span class="skill-tt-status ready">✅ Kliknij +, aby przydzielić 1 pkt (wolne: ${prog.attributePoints})</span>`
+            : '<span class="skill-tt-status locked">Brak wolnych punktów atrybutów</span>'
+        }</div>
+      `;
+      positionCharacterTooltip(anchor);
+    };
+
+    const hideSkillTooltip = (): void => {
+      if (!skillTooltipEl) return;
+      skillTooltipEl.classList.remove('visible');
+      skillTooltipEl.setAttribute('aria-hidden', 'true');
+    };
+
+    this.root.querySelectorAll<HTMLElement>('[data-attr-info]').forEach((row) => {
+      row.addEventListener('mouseenter', () => {
+        const attrKey = row.dataset.attrInfo as keyof CharacterAttributes | undefined;
+        if (attrKey) showAttrTooltip(row, attrKey);
+      });
+      row.addEventListener('mouseleave', hideSkillTooltip);
+    });
+
+    this.root.querySelectorAll<HTMLElement>('[data-skill-node]').forEach((btn) => {
+      btn.addEventListener('mouseenter', () => {
+        const nodeId = btn.dataset.skillNode;
+        if (nodeId) showSkillTooltip(btn, nodeId);
+      });
+      btn.addEventListener('focus', () => {
+        const nodeId = btn.dataset.skillNode;
+        if (nodeId) showSkillTooltip(btn, nodeId);
+      });
+      btn.addEventListener('mouseleave', hideSkillTooltip);
+      btn.addEventListener('blur', hideSkillTooltip);
+      btn.addEventListener('click', () => {
+        const nodeId = btn.dataset.skillNode;
+        if (nodeId) {
+          this.selectedSkillNodeId = nodeId;
+          this.render();
+        }
+      });
+      btn.addEventListener('dblclick', () => {
+        const nodeId = btn.dataset.skillNode;
+        if (nodeId) {
+          this.selectedSkillNodeId = nodeId;
+          this.game.unlockPlayerSkill(nodeId);
+          this.render();
+        }
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>('[data-unlock-skill]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const nodeId = btn.dataset.unlockSkill;
+        if (nodeId) {
+          this.game.unlockPlayerSkill(nodeId);
+          this.render();
+        }
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>('[data-combat-skill]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const skillId = btn.dataset.combatSkill;
+        if (!skillId) return;
+        const targetId = this.game.combatState.selectedTargetId ?? undefined;
+        this.game.performPlayerCombatSkill(skillId, targetId);
+        this.render();
+      });
+    });
+
     this.root.querySelectorAll<HTMLElement>('[data-choice-idx]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const idx = Number(btn.dataset.choiceIdx);
@@ -2180,6 +3138,7 @@ export class HudOverlay {
         if (choice) {
           if (choice.action === 'open_trade') {
             this.isInventoryOpen = true;
+            this.isCharacterOpen = false;
           }
           this.game.selectDialogueChoice(choice);
           this.render();
@@ -2240,7 +3199,7 @@ export class HudOverlay {
                 <div class="credits-subtitle">Legal Attribution & Open-Source Asset Notice</div>
               </div>
             </div>
-            <button type="button" class="credits-close-btn" data-action="close-credits" title="Zamknij (Klawisz Esc)">✕</button>
+            <button type="button" class="credits-close-btn" data-action="close-credits" title="Zamknij (Klawisz Esc)">✕ Zamknij [Esc]</button>
           </div>
 
           <div class="credits-modal-body">
@@ -2260,6 +3219,18 @@ export class HudOverlay {
                 <span>Autor: <strong>Glionox</strong> (<a href="https://glionox.itch.io/top-down-forest-tileset" target="_blank" rel="noopener noreferrer">itch.io</a>)</span>
                 <span>Zastosowanie: <strong>Free & Commercial Projects</strong></span>
               </div>
+            </div>
+
+            <div class="credits-section-box">
+              <div class="credits-section-title">🔊 Efekty Dźwiękowe Walki (OpenGameArt.org)</div>
+              <ul class="credits-list">
+                <li>
+                  <strong>RPG Sound Pack:</strong> artisticdude (OpenGameArt.org) — Licencja <em>CC0 1.0 Public Domain</em>
+                </li>
+                <li>
+                  <strong>37 Hits &amp; Punches:</strong> Independent.nu / qubodup (OpenGameArt.org) — Licencja <em>CC0 1.0 Public Domain</em>
+                </li>
+              </ul>
             </div>
 
             <div class="credits-section-box">

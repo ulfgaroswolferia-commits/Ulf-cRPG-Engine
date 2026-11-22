@@ -194,6 +194,38 @@ const ITEM_METADATA_OVERRIDES: Record<string, ExtendedItemMeta> = {
     itemType: 'Consumable',
     equipSlot: null
   },
+  elixir_vitality: {
+    rarity: 'Uncommon',
+    weight: 0.25,
+    priceSiekance: 45,
+    maxStack: 10,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
+  elixir_swarog: {
+    rarity: 'Rare',
+    weight: 0.25,
+    priceSiekance: 65,
+    maxStack: 10,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
+  elixir_weles: {
+    rarity: 'Epic',
+    weight: 0.3,
+    priceSiekance: 95,
+    maxStack: 10,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
+  elixir_antidote: {
+    rarity: 'Uncommon',
+    weight: 0.2,
+    priceSiekance: 40,
+    maxStack: 10,
+    itemType: 'Consumable',
+    equipSlot: null
+  },
   trinket_lunula: {
     rarity: 'Rare',
     weight: 0.2,

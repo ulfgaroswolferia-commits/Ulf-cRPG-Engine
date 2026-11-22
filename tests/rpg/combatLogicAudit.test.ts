@@ -126,34 +126,57 @@ describe('Combat Logic In-Depth Audit (AP Economy, Combat Maneuvers, Status Effe
     expect(game.player.combat!.ap).toBe(standardMaxAp);
   });
 
-  it('triggers aggro when player approaches hostile NPC within aggroRadius and applies retreat cooldown on flee', () => {
-    const game = new CrpgGameState('forest_clearing');
-    const easyEnemy = game.npcs.find((n) => n.id === 'enemy_bandit_easy')!;
-    expect(easyEnemy.combat?.aggroRadius).toBeGreaterThan(0);
+  it('triggers aggro ONLY in dungeon locations after a brief initiative delay and applies retreat cooldown on flee', () => {
+    // 1. W lokacji niedungeonowej (forest_clearing / slavic_village) brak automatycznego aggro
+    const clearingGame = new CrpgGameState('forest_clearing');
+    const clearingEnemy = clearingGame.npcs.find((n) => n.id === 'enemy_bandit_easy')!;
+    expect(clearingEnemy.combat?.aggroRadius).toBeGreaterThan(0);
 
-    // Umieszczenie gracza daleko od wroga -> brak walki
-    game.player.tileX = 2;
-    game.player.tileY = 2;
-    game.update(0.1);
-    expect(game.combatState.active).toBe(false);
+    clearingGame.player.tileX = clearingEnemy.tileX - 2;
+    clearingGame.player.tileY = clearingEnemy.tileY;
+    clearingGame.update(1.5);
+    expect(clearingGame.combatState.active).toBe(false);
 
-    // Podejście gracza w zasięg aggro wroga (odległość <= 3.5 kafli)
-    game.player.tileX = easyEnemy.tileX - 2;
-    game.player.tileY = easyEnemy.tileY;
-    game.update(0.1);
+    // Celowe kliknięcie wroga poza dungeonem otwiera potwierdzenie walki (Walcz / Odejdź)
+    clearingGame.commandTalkToNpc(clearingEnemy.id);
+    expect(clearingGame.pendingCombatConfirmation?.npcId).toBe(clearingEnemy.id);
+    expect(clearingGame.combatState.active).toBe(false);
 
-    // Wróg powinien zainicjować walkę turową
-    expect(game.combatState.active).toBe(true);
-    expect(game.combatState.selectedTargetId).toBe(easyEnemy.id);
+    clearingGame.cancelPendingCombat();
+    expect(clearingGame.pendingCombatConfirmation).toBeNull();
+    expect(clearingGame.combatState.active).toBe(false);
+
+    // 2. W dungeonie (sanctum_dungeon) wróg najpierw reaguje (daje graczowi inicjatywę), a po ~0.65s wchodzi w walkę
+    const dungeonGame = new CrpgGameState('sanctum_dungeon');
+    const dungeonEnemy = dungeonGame.npcs.find((n) => n.combat?.isHostile && n.combat.isAlive)!;
+    expect(dungeonEnemy.combat?.aggroRadius).toBeGreaterThan(0);
+
+    dungeonGame.player.tileX = 2;
+    dungeonGame.player.tileY = 2;
+    dungeonGame.update(0.1);
+    expect(dungeonGame.combatState.active).toBe(false);
+
+    // Podejście gracza w zasięg aggro w dungeonie
+    dungeonGame.player.tileX = dungeonEnemy.tileX - 1;
+    dungeonGame.player.tileY = dungeonEnemy.tileY;
+    dungeonGame.update(0.1);
+    // Na pierwszej klatce gracz ma jeszcze okno inicjatywy (walka jeszcze nie ruszyła)
+    expect(dungeonGame.combatState.active).toBe(false);
+    expect(dungeonEnemy.aggroReactionTimer).toBeGreaterThan(0);
+
+    // Po upływie opóźnienia reakcji wróg inicjuje walkę turową
+    dungeonGame.update(0.7);
+    expect(dungeonGame.combatState.active).toBe(true);
+    expect(dungeonGame.combatState.selectedTargetId).toBe(dungeonEnemy.id);
 
     // Ucieczka z walki (fleeCombat)
-    game.fleeCombat();
-    expect(game.combatState.active).toBe(false);
-    expect(easyEnemy.aggroCooldownTimer).toBeGreaterThan(0);
+    dungeonGame.fleeCombat();
+    expect(dungeonGame.combatState.active).toBe(false);
+    expect(dungeonEnemy.aggroCooldownTimer).toBeGreaterThan(0);
 
     // Natychmiastowy update nie powinien ponownie wywołać walki z uwagi na cooldown
-    game.update(0.1);
-    expect(game.combatState.active).toBe(false);
+    dungeonGame.update(0.8);
+    expect(dungeonGame.combatState.active).toBe(false);
   });
 
   it('handles victory gracefully: cleans up participant queue, resets AP, removes statuses, and records victory log', () => {

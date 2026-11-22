@@ -103,8 +103,128 @@ export const MERCHANT_WARES: Record<string, MerchantWaresItem[]> = {
       priceSiekance: 350,
       description: 'Cenny pierścień z rubinem zrabowany z grobowca archonta (+2 FIN, +1 OBR).'
     }
+  ],
+  npc_wislawa: [
+    {
+      id: 'elixir_vitality',
+      title: 'Eliksir Życia z Dziurawca',
+      priceSiekance: 45,
+      description: 'Złocisty wywar zielarski przywracający siły witalne (+80 HP, +1 Determinacja).'
+    },
+    {
+      id: 'elixir_antidote',
+      title: 'Wywar Oczyszczający Guślarza',
+      priceSiekance: 40,
+      description: 'Gorzki odwar usuwający ogłuszenie i okaleczenie nóg (+50 HP).'
+    },
+    {
+      id: 'elixir_weles',
+      title: 'Eliksir Cienia Welesa',
+      priceSiekance: 95,
+      description: 'Silny eliksir z księżycowego ziela (+120 HP, +1 Wiedza, +1 Percepcja).'
+    },
+    {
+      id: 'item_dziurawiec_herb',
+      title: 'Świętojański Dziurawiec',
+      priceSiekance: 18,
+      description: 'Suszone ziele słońca wzmacniające siłę i zmysły (+1 SIŁ, +1 PER, +60 HP).'
+    },
+    {
+      id: 'item_piolun_herb',
+      title: 'Piołun z Uroczyska',
+      priceSiekance: 18,
+      description: 'Gorzkie ziele wzmacniające hart ducha (+2 DET, +60 HP).'
+    },
+    {
+      id: 'trinket_motanka',
+      title: 'Lalka Motanka z Lnu i Chrustu',
+      priceSiekance: 110,
+      description: 'Tradycyjny słowiański talizman chroniący przed urokami (+2 Determinacja).'
+    }
+  ],
+  npc_guslarz: [
+    {
+      id: 'elixir_swarog',
+      title: 'Eliksir Żaru Swaroga',
+      priceSiekance: 65,
+      description: 'Ognista nalewka guślarska pobudzająca w boju (+55 HP, +2 AP w walce, +1 SIŁ).'
+    },
+    {
+      id: 'elixir_vitality',
+      title: 'Eliksir Życia z Dziurawca',
+      priceSiekance: 45,
+      description: 'Złocisty wywar leczniczy na rany z puszczy (+80 HP, +1 Determinacja).'
+    },
+    {
+      id: 'elixir_antidote',
+      title: 'Wywar Oczyszczający Guślarza',
+      priceSiekance: 40,
+      description: 'Odwar z piołunu i szałwii znoszący ogłuszenie oraz okaleczenie (+50 HP).'
+    },
+    {
+      id: 'elixir_weles',
+      title: 'Eliksir Cienia Welesa',
+      priceSiekance: 95,
+      description: 'Rytualny eliksir regeneracyjny (+120 HP, +1 Wiedza, +1 Percepcja).'
+    },
+    {
+      id: 'item_moon_herbs',
+      title: 'Pęczek Ziół Księżycowych',
+      priceSiekance: 35,
+      description: 'Świetliste zioła znad potoku (+1 PER, +1 WIE, +60 HP).'
+    },
+    {
+      id: 'item_dzban_miodu',
+      title: 'Gliniany Dzban Miodu Czwórniaka',
+      priceSiekance: 30,
+      description: 'Sycony miód pitny z leśnej pasieki (+2 SIŁ, +1 DET, +60 HP).'
+    }
   ]
 };
+
+export interface MerchantSpecialtyInfo {
+  icon: string;
+  badgeLabel: string;
+  shopTitle: string;
+}
+
+export const MERCHANT_SPECIALTIES: Record<string, MerchantSpecialtyInfo> = {
+  npc_dobromir: {
+    icon: '⚔️🛡️',
+    badgeLabel: 'Zbrojmistrz i Kupiec',
+    shopTitle: '⚔️🛡️ Zbrojmistrz i Kupiec — Oręż, Pancerze i Skup Łupów'
+  },
+  npc_bogusz: {
+    icon: '🏹🎒',
+    badgeLabel: 'Kramarz i Łuczarz',
+    shopTitle: '🏹🎒 Kramarz Szlaku — Łuki, Opończe i Skup'
+  },
+  npc_wislawa: {
+    icon: '🌿🧪',
+    badgeLabel: 'Zielarka • Eliksiry',
+    shopTitle: '🌿🧪 Apteka Zielarki — Eliksiry, Zioła i Skup Znalezisk'
+  },
+  npc_guslarz: {
+    icon: '🔮🧪',
+    badgeLabel: 'Guślarz • Eliksiry',
+    shopTitle: '🔮🧪 Alchemia Guślarza — Eliksiry, Wywary i Skup'
+  },
+  npc_gniewosz: {
+    icon: '🗝️💎',
+    badgeLabel: 'Paser i Relikty',
+    shopTitle: '🗝️💎 Skarbiec Pasera — Relikty i Skup Fantów'
+  }
+};
+
+export function getMerchantSpecialty(merchantId: string): MerchantSpecialtyInfo {
+  return (
+    MERCHANT_SPECIALTIES[merchantId] ?? {
+      icon: '💰',
+      badgeLabel: 'Handlarz',
+      shopTitle: '💰 Towary Kupca (za siekańce)'
+    }
+  );
+}
 
 export function getMerchantWares(merchantId: string): MerchantWaresItem[] {
   return MERCHANT_WARES[merchantId] ?? [];
@@ -121,6 +241,7 @@ export interface DialogueChoice {
   };
   unlocksDoorId?: string;
   grantsItemId?: string;
+  xpReward?: number;
   logMessage?: string;
 }
 
@@ -344,6 +465,7 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           requiredAttribute: { stat: 'resolve', minValue: 12 },
           nextNodeId: 'gniewko_reward',
           grantsItemId: 'ring_wolf_signet',
+          xpReward: 15,
           logMessage: 'Król Gniewomir nagrodził Cię Sygnetem Wilczego Szlaku.'
         },
         {
@@ -464,6 +586,7 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           requiredAttribute: { stat: 'lore', minValue: 13 },
           nextNodeId: 'vaelen_impressed',
           unlocksDoorId: 'door_vault_west',
+          xpReward: 12,
           logMessage: 'Kapitan Vaelen przekazał Ci klucz i odblokował Zachodnie Wrota Skarbca.'
         },
         {
@@ -545,6 +668,7 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           requiredAttribute: { stat: 'perception', minValue: 12 },
           nextNodeId: 'lyra_discovery',
           grantsItemId: 'helm_arcane_circlet',
+          xpReward: 10,
           logMessage: 'Otrzymano przedmiot: Diadem Gwiaździstego Spojrzenia.'
         },
         {
@@ -603,6 +727,7 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           requiredAttribute: { stat: 'perception', minValue: 13 },
           nextNodeId: 'dobromir_gift',
           grantsItemId: 'ring_emerald_seal',
+          xpReward: 12,
           logMessage: 'Kupiec Dobromir podarował Ci Szmaragdową Pieczęć Konklawe za czujne oko.'
         },
         {
@@ -945,6 +1070,7 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           requiredAttribute: { stat: 'lore', minValue: 13 },
           nextNodeId: 'radogost_reward',
           grantsItemId: 'weapon_astral_staff',
+          xpReward: 12,
           logMessage: 'Żerca Radogost pobłogosławił Cię i wręczył Kostur Runiczny Żerców!'
         },
         {
@@ -972,9 +1098,20 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
     root: {
       id: 'root',
       speakerName: 'Zielarka Wisława',
-      speakerTitle: 'Uzdrowicielka i Plecionkarka',
-      text: 'Bądź pozdrowiony, wędrowcze. Moje wianki i suszone zioła z uroczysk odpędzają nocne mary i gorączkę. Czy potrzebujesz piołunu na żołądek lub ochronnej lalki motanki?',
+      speakerTitle: 'Zielarka • Eliksiry i Zioła (Skup za siekańce)',
+      text: 'Bądź pozdrowiony, wędrowcze. Moje wianki, suszone zioła i warzone eliksiry z dziurawca oraz piołunu leczą rany i odpędzają uroki w boju. Możesz też sprzedać mi zbędne łupy oraz znaleziska za srebrne siekańce.',
       choices: [
+        {
+          id: 'c_wislawa_trade_buy',
+          text: '🌿🧪 Pokaż swoje eliksiry, zioła i mikstury (Handel).',
+          nextNodeId: 'wislawa_trade'
+        },
+        {
+          id: 'c_wislawa_sell_dupes',
+          text: '💰 Sprzedaj wszystkie duplikaty i zbędne fanty za siekańce.',
+          action: 'sell_duplicates',
+          nextNodeId: 'wislawa_sold_dupes'
+        },
         {
           id: 'c_wislawa_herbs',
           text: 'Chętnie dowiem się więcej o Twoich ziołach i motankach.',
@@ -986,11 +1123,43 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           requiredAttribute: { stat: 'perception', minValue: 12 },
           nextNodeId: 'wislawa_reward',
           grantsItemId: 'trinket_motanka',
+          xpReward: 10,
           logMessage: 'Zielarka Wisława podarowała Ci Lalkę Motankę z Lnu i Chrustu!'
         },
         {
           id: 'c_wislawa_leave',
           text: 'Niechaj bory obficie rodzą zioła, Wisławo.',
+          nextNodeId: null
+        }
+      ]
+    },
+    wislawa_trade: {
+      id: 'wislawa_trade',
+      speakerName: 'Zielarka Wisława',
+      speakerTitle: 'Zielarka • Eliksiry i Zioła',
+      text: 'Oto świeżo warzone eliksiry i suszone zioła z uroczysk. Wybierz potrzebne mikstury poniżej, a w plecaku po prawej możesz sprzedać mi każdy zbędny łup za siekańce.',
+      choices: [
+        {
+          id: 'c_wislawa_trade_back',
+          text: 'Wróć do rozmowy.',
+          nextNodeId: 'root'
+        }
+      ]
+    },
+    wislawa_sold_dupes: {
+      id: 'wislawa_sold_dupes',
+      speakerName: 'Zielarka Wisława',
+      speakerTitle: 'Zielarka • Eliksiry i Zioła',
+      text: 'Zbędne fanty odebrane, a srebrne siekańce odliczone co do kruszca. Chcesz kupić któryś z moich eliksirów?',
+      choices: [
+        {
+          id: 'c_wislawa_sold_to_trade',
+          text: '🌿🧪 Pokaż eliksiry na sprzedaż.',
+          nextNodeId: 'wislawa_trade'
+        },
+        {
+          id: 'c_wislawa_sold_close',
+          text: 'Dziękuję, Wisławo.',
           nextNodeId: null
         }
       ]
@@ -1018,6 +1187,81 @@ export const DIALOGUE_TREES: Record<string, Record<string, DialogueNode>> = {
           id: 'c_wislawa_accept',
           text: 'Niech Swaróg Ci sprzyja, Wisławo.',
           nextNodeId: null
+        }
+      ]
+    }
+  },
+  npc_guslarz: {
+    root: {
+      id: 'root',
+      speakerName: 'Guślarz Boruta',
+      speakerTitle: 'Guślarz i Alchemik Uroczyska (Eliksiry za siekańce)',
+      text: 'Cień dębów kryje stare tajemnice, wędrowcze. Warzę eliksiry żaru Swaroga, wywary oczyszczające i mikstury Welesa. Przynieś łupy z puszczy — zapłacę siekańcami albo odstąpię Ci moje eliksiry.',
+      choices: [
+        {
+          id: 'c_guslarz_trade_buy',
+          text: '🔮🧪 Pokaż eliksiry i wywary guślarskie (Handel).',
+          nextNodeId: 'guslarz_trade'
+        },
+        {
+          id: 'c_guslarz_sell_dupes',
+          text: '💰 Sprzedaj wszystkie duplikaty z plecaka za siekańce.',
+          action: 'sell_duplicates',
+          nextNodeId: 'guslarz_sold_dupes'
+        },
+        {
+          id: 'c_guslarz_lore',
+          text: 'Skąd czerpiesz składniki do swoich eliksirów?',
+          nextNodeId: 'guslarz_lore'
+        },
+        {
+          id: 'c_guslarz_leave',
+          text: 'Bywaj w zdrowiu, Guślarzu.',
+          nextNodeId: null
+        }
+      ]
+    },
+    guslarz_trade: {
+      id: 'guslarz_trade',
+      speakerName: 'Guślarz Boruta',
+      speakerTitle: 'Guślarz • Eliksiry i Wywary',
+      text: 'Oto moje fiolki z wywarami. Eliksir Żaru Swaroga doda Ci nawet +2 AP w samym środku bitwy, a Wywar Oczyszczający zdejmie ogłuszenie. Możesz też sprzedać mi dowolne przedmioty z plecaka.',
+      choices: [
+        {
+          id: 'c_guslarz_trade_back',
+          text: 'Wróć do rozmowy.',
+          nextNodeId: 'root'
+        }
+      ]
+    },
+    guslarz_sold_dupes: {
+      id: 'guslarz_sold_dupes',
+      speakerName: 'Guślarz Boruta',
+      speakerTitle: 'Guślarz • Eliksiry i Wywary',
+      text: 'Stare żelaziwo i zdublowane trofea przejęte, a siekańce brzęczą już w Twoim trzósie.',
+      choices: [
+        {
+          id: 'c_guslarz_sold_to_trade',
+          text: '🔮🧪 Przejrzyj eliksiry na sprzedaż.',
+          nextNodeId: 'guslarz_trade'
+        },
+        {
+          id: 'c_guslarz_sold_close',
+          text: 'Do zobaczenia.',
+          nextNodeId: null
+        }
+      ]
+    },
+    guslarz_lore: {
+      id: 'guslarz_lore',
+      speakerName: 'Guślarz Boruta',
+      speakerTitle: 'Guślarz i Alchemik Uroczyska',
+      text: 'Zioła księżycowe zbieram nad potokiem, popiół biorę z ogniska wilczych strażników, a wodę z pradawnej studni. Gdy zapada zmrok nad kurhanami, bez dobrego eliksiru nikt nie ujdzie cało.',
+      choices: [
+        {
+          id: 'c_guslarz_lore_back',
+          text: 'Mądrze prawisz. Wróćmy do handlu.',
+          nextNodeId: 'root'
         }
       ]
     }

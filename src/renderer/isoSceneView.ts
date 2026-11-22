@@ -52,7 +52,13 @@ import {
   createDefaultProficiencies,
   EnemyDifficultyTier
 } from '../rpg/combatSystem';
-import { ActorEntity, CrpgGameState } from '../rpg/gameLoop';
+import { getMerchantSpecialty } from '../rpg/dialogueSystem';
+import {
+  ActorEntity,
+  CrpgGameState,
+  MERCHANT_ACTOR_IDS,
+  resolveTravelSignpostDestination
+} from '../rpg/gameLoop';
 import {
   createAtmosphericPostFilter,
   evaluateDeferredPbrLightAtPoint,
@@ -169,6 +175,10 @@ class FrameDisplayPool {
     this.spriteCursor++;
     sp.alpha = 1;
     sp.tint = 0xffffff;
+    sp.scale.set(1, 1);
+    sp.rotation = 0;
+    sp.anchor.set(0, 0);
+    sp.visible = true;
     return sp;
   }
 
@@ -182,6 +192,11 @@ class FrameDisplayPool {
     }
     this.graphicsCursor++;
     g.alpha = 1;
+    g.position.set(0, 0);
+    g.scale.set(1, 1);
+    g.rotation = 0;
+    g.zIndex = 0;
+    g.visible = true;
     return g;
   }
 
@@ -207,6 +222,7 @@ class FrameDisplayPool {
     }
     entry.lastUsedFrame = this.frame;
     entry.text.alpha = 1;
+    entry.text.zIndex = 0;
     return entry.text;
   }
 
@@ -404,6 +420,7 @@ export class IsoSceneView {
         const prevPlayerAp = this.game.player.combat?.ap;
         const prevDialogue = this.game.activeDialogue;
         const prevCombatActive = this.game.combatState.active;
+        const prevPendingCombatConfirm = this.game.pendingCombatConfirmation;
 
         // 1. Update game simulation first so render uses fresh actor positions
         this.game.update(dt);
@@ -419,7 +436,8 @@ export class IsoSceneView {
           this.game.player.combat?.hp !== prevPlayerHp ||
           this.game.player.combat?.ap !== prevPlayerAp ||
           this.game.activeDialogue !== prevDialogue ||
-          this.game.combatState.active !== prevCombatActive
+          this.game.combatState.active !== prevCombatActive ||
+          this.game.pendingCombatConfirmation !== prevPendingCombatConfirm
         ) {
           this.onUiStateChange?.();
         }
@@ -480,6 +498,15 @@ export class IsoSceneView {
 
   public setRotation(rot: CameraRotation): void {
     this.rotation = rot;
+    this.centerCameraOnPlayer();
+    this.onUiStateChange?.();
+  }
+
+  /** Resets rotation, zoom, and position to the initial isometric view centered on the player. */
+  public resetCameraToDefault(): void {
+    this.rotation = 0;
+    this.zoom = 1.0;
+    this.targetZoom = 1.0;
     this.centerCameraOnPlayer();
     this.onUiStateChange?.();
   }
@@ -1053,12 +1080,12 @@ export class IsoSceneView {
     return entry;
   }
 
-  private getTileTexturePair(terrain: TileTerrainType, z: number): DualPbrTexturePair {
-    const key = `${terrain}_z${z}`;
+  private getTileTexturePair(terrain: TileTerrainType, z: number, variant = 0): DualPbrTexturePair {
+    const key = `${terrain}_z${z}_v${variant}`;
     const existing = this.tileTextureCache.get(key);
     if (existing) return existing;
 
-    const synth: SynthesizedPbrBufferPair = generateTilePbrBuffers(terrain, z);
+    const synth: SynthesizedPbrBufferPair = generateTilePbrBuffers(terrain, z, variant);
     const pair: DualPbrTexturePair = {
       albedo: rgbaBufferToTexture(synth.albedoRGBA, synth.width, synth.height),
       normalMat: rgbaBufferToTexture(synth.normalMaterialRGBA, synth.width, synth.height),
@@ -1136,14 +1163,16 @@ export class IsoSceneView {
 
     window.addEventListener('keydown', (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+      if (document.querySelector('.character-backdrop, .credits-modal-backdrop')) {
+        this.keysDown.clear();
+        return;
+      }
       const k = e.key.toLowerCase();
       this.keysDown.add(k);
       if (k === 'q') {
         this.rotateCamera(-1);
       } else if (k === 'e') {
         this.rotateCamera(1);
-      } else if (k === 'c') {
-        this.centerCameraOnPlayer();
       } else if (k === 'r' && this.activeTool === 'place_prop') {
         this.editorPropOrientation =
           this.editorPropOrientation === '1x1'
@@ -1164,6 +1193,7 @@ export class IsoSceneView {
     canvas.addEventListener(
       'wheel',
       (e) => {
+        if (document.querySelector('.character-backdrop, .credits-modal-backdrop')) return;
         e.preventDefault();
         const factor = e.deltaY < 0 ? 1.15 : 0.87;
         this.targetZoom = Math.min(1.85, Math.max(0.55, Number((this.targetZoom * factor).toFixed(2))));
@@ -1241,8 +1271,9 @@ export class IsoSceneView {
     const onPointerOrMouseMove = (e: MouseEvent | PointerEvent): void => {
       const target = e.target as HTMLElement | null;
       const overUi = Boolean(
+        document.querySelector('.character-backdrop, .credits-modal-backdrop') ||
         target?.closest(
-          '.top-bar button, .hero-card, .chronicle-log, .combat-tactical-bar, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
+          '.top-bar, .top-bar button, .hero-card, .chronicle-log, .combat-unified-dock, .combat-tactical-bar, .combat-live-log, .combat-confirm-backdrop, .combat-report-backdrop, .item-details-backdrop, .character-backdrop, .character-drawer, .credits-modal-backdrop, .credits-modal-window, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
         )
       );
       this.updateEdgePanPointerState(e.clientX, e.clientY, true, overUi);
@@ -1312,7 +1343,7 @@ export class IsoSceneView {
   }
 
   public stepCameraEdgePan(dt: number, viewportW: number, viewportH: number): void {
-    if (this.isDraggingCamera) {
+    if (this.isDraggingCamera || this.game.combatState.active || this.game.pendingCombatConfirmation) {
       if (this.activeEdgeDirection !== null) {
         this.activeEdgeDirection = null;
         this.syncEdgeIndicatorDom();
@@ -1857,7 +1888,8 @@ export class IsoSceneView {
           continue;
         }
 
-        const texPair = this.getTileTexturePair(cell.terrain, cell.z);
+        const tileVariant = ((cell.x * 7 + cell.y * 13) & 3);
+        const texPair = this.getTileTexturePair(cell.terrain, cell.z, tileVariant);
         const sprite = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
         sprite.anchor.set(texPair.anchorX, texPair.anchorY);
         sprite.position.set(scr.x, scr.y);
@@ -1877,6 +1909,58 @@ export class IsoSceneView {
         );
 
         this.floorLayer.addChild(sprite);
+
+        // Soft organic edge blending for dirt_path / mossy_cobble bordering grass/soil
+        if (
+          this.bufferMode === 'final_pbr' &&
+          (cell.terrain === 'dirt_path' || cell.terrain === 'mossy_cobble')
+        ) {
+          const blendEdges = [
+            { drx: 0, dry: -1, x1: 0, y1: -TILE_HEIGHT * 0.5, x2: TILE_WIDTH * 0.5, y2: 0 },
+            { drx: 1, dry: 0, x1: TILE_WIDTH * 0.5, y1: 0, x2: 0, y2: TILE_HEIGHT * 0.5 },
+            { drx: 0, dry: 1, x1: 0, y1: TILE_HEIGHT * 0.5, x2: -TILE_WIDTH * 0.5, y2: 0 },
+            { drx: -1, dry: 0, x1: -TILE_WIDTH * 0.5, y1: 0, x2: 0, y2: -TILE_HEIGHT * 0.5 }
+          ];
+          let blendGfx: Graphics | null = null;
+          for (const edge of blendEdges) {
+            const nrx = rx + edge.drx;
+            const nry = ry + edge.dry;
+            if (nrx < 0 || nrx >= rotW || nry < 0 || nry >= rotH) continue;
+            const nWorld = toWorldGrid(nrx, nry, mapW, mapH, this.rotation);
+            const neighbor = this.game.map.tiles[nWorld.y]?.[nWorld.x];
+            if (
+              neighbor &&
+              neighbor.z === cell.z &&
+              (neighbor.terrain === 'forest_grass' || neighbor.terrain === 'forest_soil')
+            ) {
+              if (!blendGfx) blendGfx = this.displayPool.graphics();
+              const grassCol = neighbor.terrain === 'forest_grass' ? 0x456330 : 0x334729;
+              const mx = scr.x + (edge.x1 + edge.x2) * 0.5;
+              const my = scr.y + (edge.y1 + edge.y2) * 0.5;
+              blendGfx.ellipse(mx, my, 18, 9).fill({ color: grassCol, alpha: 0.42 });
+              blendGfx
+                .ellipse(
+                  scr.x + edge.x1 * 0.72 + edge.x2 * 0.28,
+                  scr.y + edge.y1 * 0.72 + edge.y2 * 0.28,
+                  11,
+                  5.5
+                )
+                .fill({ color: grassCol, alpha: 0.34 });
+              blendGfx
+                .ellipse(
+                  scr.x + edge.x1 * 0.28 + edge.x2 * 0.72,
+                  scr.y + edge.y1 * 0.28 + edge.y2 * 0.72,
+                  11,
+                  5.5
+                )
+                .fill({ color: grassCol, alpha: 0.34 });
+            }
+          }
+          if (blendGfx) {
+            blendGfx.tint = sprite.tint;
+            this.floorLayer.addChild(blendGfx);
+          }
+        }
 
         if (cell.terrain === 'abyss_water' && this.bufferMode === 'final_pbr') {
           // Dynamic specular caustics rippling across dark water surface
@@ -1943,19 +2027,30 @@ export class IsoSceneView {
               ? 0x4deeea
               : 0xff453a;
 
-      this.cursorAndPathGraphics
-        .poly([
-          hScr.x,
-          hScr.y - TILE_HEIGHT * 0.5,
-          hScr.x + TILE_WIDTH * 0.5,
-          hScr.y,
-          hScr.x,
-          hScr.y + TILE_HEIGHT * 0.5,
-          hScr.x - TILE_WIDTH * 0.5,
-          hScr.y
-        ])
-        .fill({ color: highlightColor, alpha: 0.18 })
-        .stroke({ color: highlightColor, width: 2.2, alpha: 0.92 });
+      const showTacticalGrid =
+        this.game.combatState.active || this.activeTool !== 'interact';
+
+      if (showTacticalGrid) {
+        this.cursorAndPathGraphics
+          .poly([
+            hScr.x,
+            hScr.y - TILE_HEIGHT * 0.5,
+            hScr.x + TILE_WIDTH * 0.5,
+            hScr.y,
+            hScr.x,
+            hScr.y + TILE_HEIGHT * 0.5,
+            hScr.x - TILE_WIDTH * 0.5,
+            hScr.y
+          ])
+          .fill({ color: highlightColor, alpha: 0.18 })
+          .stroke({ color: highlightColor, width: 2.2, alpha: 0.92 });
+      } else {
+        // Exploration mode: subtle organic ground ring instead of a tactical grid diamond
+        this.cursorAndPathGraphics
+          .ellipse(hScr.x, hScr.y, 16, 8)
+          .fill({ color: highlightColor, alpha: 0.12 })
+          .stroke({ color: highlightColor, width: 1.4, alpha: 0.55 });
+      }
 
       // Preview A* path if in interact mode and hovering walkable tile
       if (this.activeTool === 'interact' && this.game.isTileWalkable(hx, hy)) {
@@ -2243,27 +2338,58 @@ export class IsoSceneView {
             (prop.kind === 'ground_loot' && !prop.isOpen);
 
           if (showInteractiveHint && this.bufferMode !== 'depth_dag') {
-            const styleKey =
-              prop.kind === 'campfire'
-                ? 'prop_campfire'
-                : prop.kind === 'exit_path'
-                  ? 'prop_exit'
-                  : 'prop_default';
-            const label = this.displayPool.text(prop.name, styleKey, () => ({
-              fontFamily: 'Inter, sans-serif',
-              fontSize: 11,
-              fontWeight: '600',
-              fill:
+            if (prop.kind === 'travel_signpost' && isPropHovered) {
+              const dest = resolveTravelSignpostDestination(prop.id, this.game.map.id);
+              const textStr = `🧭 Transport do:\n${dest.label}`;
+              const label = this.displayPool.text(textStr, 'prop_transport_hover', () => ({
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 12,
+                fontWeight: '700',
+                align: 'center',
+                fill: 0xfde68a,
+                stroke: { color: 0x06080c, width: 3.5 }
+              }));
+              label.anchor.set(0.5, 1);
+              const labelY = scr.y - 60;
+              label.position.set(scr.x, labelY);
+
+              const padX = 10;
+              const padY = 6;
+              const boxW = Math.max(170, label.width + padX * 2);
+              const boxH = label.height + padY * 2;
+              const pill = this.displayPool.graphics();
+              pill
+                .roundRect(scr.x - boxW * 0.5, labelY - label.height - padY, boxW, boxH, 6)
+                .fill({ color: 0x0a0e16, alpha: 0.94 })
+                .stroke({ color: 0xe5bd68, width: 1.6, alpha: 0.95 });
+              pill.zIndex = 900;
+              label.zIndex = 901;
+              this.debugOverlayContainer.sortableChildren = true;
+              this.debugOverlayContainer.addChild(pill);
+              this.debugOverlayContainer.addChild(label);
+            } else {
+              const styleKey =
                 prop.kind === 'campfire'
-                  ? 0xffb74d
+                  ? 'prop_campfire'
                   : prop.kind === 'exit_path'
-                    ? 0xff7043
-                    : 0xffe082,
-              stroke: { color: 0x06080c, width: 3.2 }
-            }));
-            label.anchor.set(0.5, 1);
-            label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
-            this.debugOverlayContainer.addChild(label);
+                    ? 'prop_exit'
+                    : 'prop_default';
+              const label = this.displayPool.text(prop.name, styleKey, () => ({
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 11,
+                fontWeight: '600',
+                fill:
+                  prop.kind === 'campfire'
+                    ? 0xffb74d
+                    : prop.kind === 'exit_path'
+                      ? 0xff7043
+                      : 0xffe082,
+                stroke: { color: 0x06080c, width: 3.2 }
+              }));
+              label.anchor.set(0.5, 1);
+              label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+              this.debugOverlayContainer.addChild(label);
+            }
           }
 
           if (this.bufferMode === 'depth_dag') {
@@ -2315,7 +2441,7 @@ export class IsoSceneView {
         ryMin: rotPos.ry - 0.32,
         ryMax: rotPos.ry + 0.32,
         zMin: actor.z,
-        zMax: actor.z + 1.9,
+        zMax: isDead ? actor.z + 0.25 : actor.z + 1.9,
         render: (orderIndex, totalCount) => {
           let actorScrX = scr.x;
           let actorScrY = scr.y;
@@ -2550,10 +2676,16 @@ export class IsoSceneView {
                 ? ` ${statusIcons}`
                 : '';
 
+            const isMerchantActor =
+              Boolean(actor.isMerchant) || MERCHANT_ACTOR_IDS.includes(actor.id);
+            const merchantSpec = isMerchantActor ? getMerchantSpecialty(actor.id) : null;
+
             const labelText =
               this.bufferMode === 'depth_dag'
                 ? `#${orderIndex} ${actor.recipe.name}`
-                : `${diffPrefix}${actor.recipe.name}${hpSuffix}`;
+                : merchantSpec
+                  ? `${merchantSpec.icon} ${actor.recipe.name}`
+                  : `${diffPrefix}${actor.recipe.name}${hpSuffix}`;
 
             const nameFill =
               actor.id === this.game.player.id
@@ -2564,7 +2696,9 @@ export class IsoSceneView {
                     : actor.combat.difficulty === 'normal'
                       ? 0xffd54f
                       : 0xff6e6e
-                  : 0xf5d77f;
+                  : merchantSpec
+                    ? 0xffe082
+                    : 0xf5d77f;
 
             const nameTag = this.displayPool.text(
               labelText,
@@ -2580,6 +2714,34 @@ export class IsoSceneView {
             nameTag.anchor.set(0.5, 1);
             nameTag.position.set(scr.x, scr.y - 79);
             this.debugOverlayContainer.addChild(nameTag);
+
+            // Overhead specialization icon badge visible from afar for every vendor
+            if (merchantSpec && this.bufferMode !== 'depth_dag') {
+              const badgeText = this.displayPool.text(
+                merchantSpec.icon,
+                'merchant_icon_badge',
+                () => ({
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: 15,
+                  fontWeight: '800',
+                  fill: 0xfff6d6,
+                  stroke: { color: 0x080a0f, width: 3.5 }
+                })
+              );
+              badgeText.anchor.set(0.5, 0.5);
+              const pillW = Math.max(36, badgeText.width + 14);
+              const pillH = 22;
+              const pillX = scr.x;
+              const pillY = scr.y - 108;
+
+              const badgeBg = this.displayPool.graphics();
+              badgeBg
+                .roundRect(pillX - pillW * 0.5, pillY - pillH * 0.5, pillW, pillH, 9)
+                .fill({ color: 0x101520, alpha: 0.88 })
+                .stroke({ color: 0xe5bd68, width: 1.6, alpha: 0.95 });
+              badgeText.position.set(pillX, pillY);
+              this.debugOverlayContainer.addChild(badgeBg, badgeText);
+            }
 
             // Tactical Hit Chance & Damage Preview when hovering a Hostile Enemy
             if (isHovered && actor.combat?.isHostile && this.bufferMode !== 'depth_dag') {

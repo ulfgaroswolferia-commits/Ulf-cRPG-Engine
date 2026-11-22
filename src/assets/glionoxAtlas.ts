@@ -862,10 +862,11 @@ const glionoxTileCache = new Map<string, SynthesizedPbrBufferPair>();
  */
 export function generateGlionoxForestTilePbr(
   terrain: 'forest_grass' | 'forest_soil' | 'dirt_path' | 'abyss_water',
-  elevationSteps: number
+  elevationSteps: number,
+  variant = 0
 ): SynthesizedPbrBufferPair | null {
   if (!loadedSheets) return null;
-  const key = `oga_glionox_tile_${terrain}_z${elevationSteps}`;
+  const key = `oga_glionox_tile_${terrain}_z${elevationSteps}_v${variant}`;
   const cached = glionoxTileCache.get(key);
   if (cached) return cached;
 
@@ -900,7 +901,7 @@ export function generateGlionoxForestTilePbr(
   };
 
   // Select OGA 128x64 isometric diamond tile row & column
-  const ogaCol = (((elevationSteps * 3 + 1) % 8) + 8) % 8;
+  const ogaCol = (((elevationSteps * 3 + 1 + variant * 2) % 8) + 8) % 8;
   const ogaRow =
     terrain === 'forest_grass'
       ? elevationSteps % 2 === 0
@@ -939,11 +940,10 @@ export function generateGlionoxForestTilePbr(
           b = detailSample.a > 128 ? detailSample.b : 68;
         }
 
-        const edgeShade = edgeDist < 0.04 ? 0.9 : 1.0;
         const outIdx = (y * width + x) * 4;
-        albedoRGBA[outIdx] = Math.round(r * edgeShade);
-        albedoRGBA[outIdx + 1] = Math.round(g * edgeShade);
-        albedoRGBA[outIdx + 2] = Math.round(b * edgeShade);
+        albedoRGBA[outIdx] = r;
+        albedoRGBA[outIdx + 1] = g;
+        albedoRGBA[outIdx + 2] = b;
         albedoRGBA[outIdx + 3] = 255;
       }
     }

@@ -5,6 +5,11 @@ import { CharacterAttributes, CharacterVisualRecipe } from './characterData';
 import { ActorCombatComponent, CombatAttackMode } from './combatSystem';
 import { ActorEntity, ChronicleEntry, CombatReport, CrpgGameState, detectLogSeverity } from './gameLoop';
 import { EquipSlot, ItemInstance, syncInstanceCounter } from './inventorySystem';
+import {
+  CharacterProgressionState,
+  createInitialProgressionState,
+  syncSkillModifiersOnStatSheet
+} from './progressionSystem';
 
 function clampDirection8(dir: number): Direction8 {
   const n = Math.round(dir);
@@ -107,11 +112,14 @@ export interface SerializedGameState {
   };
   baseAttributes: CharacterAttributes;
   siekance?: number;
+  progression?: CharacterProgressionState;
   backpack: Array<{ slotIndex: number; item: ItemInstance | null }>;
   equipment: Record<EquipSlot, ItemInstance | null>;
   mapProps: SerializedPropState[];
   npcs: SerializedNpcState[];
   logs: string[];
+  combatLogs?: string[];
+  activeCombatReportId?: string | null;
   chronicleEntries?: ChronicleEntry[];
   combatReports?: Record<string, CombatReport>;
   combatState?: {
@@ -184,7 +192,7 @@ export function serializeGameState(
   }));
 
   return {
-    version: 1,
+    version: 2,
     timestamp: Date.now(),
     mapId: game.map.id,
     player: {
@@ -199,11 +207,14 @@ export function serializeGameState(
     },
     baseAttributes: game.statSheet.getBaseAttributes(),
     siekance: game.siekance,
+    progression: JSON.parse(JSON.stringify(game.progression)),
     backpack: backpackSlots,
     equipment: serializedEquipped,
     mapProps,
     npcs,
     logs: game.logs.slice(0, 80),
+    combatLogs: game.combatLogs.slice(0, 60),
+    activeCombatReportId: game.activeCombatReportId,
     chronicleEntries: game.chronicleEntries ? JSON.parse(JSON.stringify(game.chronicleEntries.slice(0, 80))) : [],
     combatReports: game.combatReports ? JSON.parse(JSON.stringify(game.combatReports)) : {},
     combatState: {
@@ -291,10 +302,28 @@ export function deserializeGameState(
       }
     }
 
-    // 4. Restore Player attributes & character recipe
+    // 4. Restore Player attributes, progression & character recipe
     if (data.baseAttributes) {
       game.statSheet.setBaseAttributes(data.baseAttributes);
     }
+    const baseProg = createInitialProgressionState();
+    if (data.progression) {
+      game.progression = {
+        ...baseProg,
+        ...data.progression,
+        spentAttributePoints: {
+          ...baseProg.spentAttributePoints,
+          ...(data.progression.spentAttributePoints ?? {})
+        },
+        unlockedSkills: { ...(data.progression.unlockedSkills ?? {}) },
+        claimedDialogueXpIds: [...(data.progression.claimedDialogueXpIds ?? [])],
+        activeCooldowns: { ...(data.progression.activeCooldowns ?? {}) }
+      };
+    } else {
+      game.progression = baseProg;
+    }
+    syncSkillModifiersOnStatSheet(game.progression, game.statSheet);
+
     if (data.player.recipe) {
       game.player.recipe = {
         ...game.player.recipe,
@@ -311,20 +340,7 @@ export function deserializeGameState(
     game.player.path = [];
     game.player.isMoving = false;
 
-    if (game.player.combat && data.player.combat) {
-      game.player.combat.hp = data.player.combat.hp;
-      game.player.combat.maxHp = data.player.combat.maxHp;
-      game.player.combat.ap = data.player.combat.ap;
-      game.player.combat.maxAp = data.player.combat.maxAp;
-      game.player.combat.defending = data.player.combat.defending;
-      game.player.combat.dazedHeadTurns = data.player.combat.dazedHeadTurns;
-      game.player.combat.crippledLegsTurns = data.player.combat.crippledLegsTurns;
-      if (data.player.combat.proficiencies) {
-        game.player.combat.proficiencies = { ...data.player.combat.proficiencies };
-      }
-    }
-
-    // 5. Restore Inventory, Currency & Equipment
+    // 5. Restore Inventory, Currency & Equipment first so statSheet modifiers match before restoring HP/Mana
     if (typeof data.siekance === 'number') {
       game.siekance = data.siekance;
     }
@@ -341,6 +357,25 @@ export function deserializeGameState(
           game.equipmentManager.equipDirectInstance(item, slot);
           restoredInstanceIds.push(item.instanceId);
         }
+      }
+    }
+
+    if (game.player.combat && data.player.combat) {
+      const derived = game.getActorCombatant(game.player).derived;
+      game.player.combat.maxHp = derived.maxHp;
+      game.player.combat.hp = Math.min(data.player.combat.hp, derived.maxHp);
+      game.player.combat.maxMana = derived.maxMana;
+      game.player.combat.mana =
+        typeof data.player.combat.mana === 'number'
+          ? Math.min(data.player.combat.mana, derived.maxMana)
+          : derived.maxMana;
+      game.player.combat.maxAp = derived.maxAp;
+      game.player.combat.ap = Math.min(data.player.combat.ap, derived.maxAp);
+      game.player.combat.defending = data.player.combat.defending;
+      game.player.combat.dazedHeadTurns = data.player.combat.dazedHeadTurns;
+      game.player.combat.crippledLegsTurns = data.player.combat.crippledLegsTurns;
+      if (data.player.combat.proficiencies) {
+        game.player.combat.proficiencies = { ...data.player.combat.proficiencies };
       }
     }
 
@@ -368,6 +403,11 @@ export function deserializeGameState(
     }
 
     // 7. Restore Logs, Chronicle & Combat Reports
+    game.activeCombatReportId = data.activeCombatReportId ?? null;
+    game.combatLogs.length = 0;
+    if (Array.isArray(data.combatLogs) && data.combatLogs.length > 0) {
+      game.combatLogs.push(...data.combatLogs);
+    }
     for (const key of Object.keys(game.combatReports)) {
       delete game.combatReports[key];
     }

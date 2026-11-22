@@ -89,4 +89,35 @@ describe('Combat Tactical Dock & 1-Turn Auto-Collapsing Aiming Drawer', () => {
     hud.handleGlobalKey({ code: 'Space' });
     expect((hud as any).isCombatAdvancedOpen).toBe(false);
   });
+
+  it('highlights and pulses End Turn button when AP is 0 or no combat action is affordable', () => {
+    const game = new CrpgGameState('forest_clearing');
+    const enemy = game.npcs.find((n) => n.combat?.isHostile);
+    expect(enemy).toBeDefined();
+    if (!enemy) return;
+
+    const scene = new IsoSceneView(game);
+    const fakeRoot = {
+      innerHTML: '',
+      querySelectorAll: () => [],
+      querySelector: () => null
+    } as unknown as HTMLElement;
+
+    const hud = new HudOverlay(fakeRoot, game, scene);
+    game.startCombatWithEnemy(enemy.id);
+
+    // Full AP -> not highlighted
+    hud.render();
+    expect(fakeRoot.innerHTML).not.toContain('end-turn-ready');
+
+    // 1 AP (no attack/defend/skill affordable) -> highlighted
+    game.player.combat!.ap = 1;
+    hud.render();
+    expect(fakeRoot.innerHTML).toContain('end-turn-ready');
+
+    // 0 AP -> highlighted
+    game.player.combat!.ap = 0;
+    hud.render();
+    expect(fakeRoot.innerHTML).toContain('end-turn-ready');
+  });
 });

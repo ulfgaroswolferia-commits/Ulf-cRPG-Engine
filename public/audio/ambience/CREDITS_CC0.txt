@@ -1,0 +1,14 @@
+All files in this directory and the added creature SFX in ../sfx/ are CC0 / Public Domain from OpenGameArt.org:
+
+Ambience (/audio/ambience/):
+- forest_ambience.mp3 — https://opengameart.org/content/forest-ambience (CC0)
+- creepy_forest.ogg — https://opengameart.org/content/creepy-forest-f (CC0 / Public Domain)
+- dawn_wind.ogg — https://opengameart.org/content/wind-whoosh-loop (CC0)
+- night_storm.ogg — https://opengameart.org/content/rain-long-thunder (CC0)
+- village_crowd.ogg — https://opengameart.org/content/crowd-shoutingspeaking-ambience (CC0)
+- tavern_ambience.ogg — https://opengameart.org/content/tavern-0 (CC0)
+
+Creature / Supernatural SFX (/audio/sfx/):
+- witch_cackle.ogg — https://opengameart.org/content/witch-cackle (CC0)
+- ghost_breath.flac — https://opengameart.org/content/ghost-breath (CC0)
+- wraith_moan.mp3 — https://opengameart.org/content/ghost-monster-voice-moaning-growling (CC0)
