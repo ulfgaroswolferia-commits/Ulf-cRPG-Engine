@@ -135,6 +135,55 @@ export function resolvePropVisualTransform(
     : IDENTITY_PROP_VISUAL_TRANSFORM;
 }
 
+export interface CustomPropSpriteSpec {
+  id?: string;
+  idPrefix?: string;
+  kind?: PropKind;
+  url: string;
+  anchorX?: number;
+  anchorY?: number;
+  targetWidthPx?: number;
+  keyOutWhiteBackground?: boolean;
+}
+
+const customPropSpriteRegistry: CustomPropSpriteSpec[] = [];
+
+export function registerCustomPropSprite(spec: CustomPropSpriteSpec): void {
+  const existingIdx = customPropSpriteRegistry.findIndex(
+    (s) =>
+      (spec.id && s.id === spec.id) ||
+      (spec.idPrefix && s.idPrefix === spec.idPrefix) ||
+      (!spec.id && !spec.idPrefix && spec.kind && s.kind === spec.kind)
+  );
+  if (existingIdx >= 0) {
+    customPropSpriteRegistry[existingIdx] = spec;
+  } else {
+    customPropSpriteRegistry.push(spec);
+  }
+}
+
+export function clearCustomPropSprites(): void {
+  customPropSpriteRegistry.length = 0;
+}
+
+export function resolveCustomPropSprite(prop: {
+  id?: string;
+  kind: PropKind;
+}): CustomPropSpriteSpec | null {
+  if (prop.id) {
+    const exact = customPropSpriteRegistry.find((s) => s.id === prop.id);
+    if (exact) return exact;
+    const prefix = customPropSpriteRegistry.find(
+      (s) => s.idPrefix && prop.id!.startsWith(s.idPrefix)
+    );
+    if (prefix) return prefix;
+  }
+  const byKind = customPropSpriteRegistry.find(
+    (s) => !s.id && !s.idPrefix && s.kind === prop.kind
+  );
+  return byKind ?? null;
+}
+
 interface DualPbrTexturePair {
   albedo: Texture;
   normalMat: Texture;
@@ -344,6 +393,10 @@ export class IsoSceneView {
   private readonly transitionTextureCache = new Map<string, DualPbrTexturePair>();
   private readonly microFoliageTextureCache = new Map<number, DualPbrTexturePair>();
   private readonly propTextureCache = new Map<string, DualPbrTexturePair>();
+  private readonly customPropImageCache = new Map<string, DualPbrTexturePair>();
+  private readonly customPropLoadingUrls = new Set<string>();
+  public explorationAttackMode = false;
+  public hitStopTimer = 0;
   private readonly characterTextureCache = new Map<string, CharacterDualFrameTextures>();
   private readonly displayPool = new FrameDisplayPool();
   private readonly scratchPbrLit = { r: 0, g: 0, b: 0, specular: 0 };
@@ -465,6 +518,10 @@ export class IsoSceneView {
       try {
         const dt = Math.min(0.1, ticker.deltaMS / 1000);
         this.fps = Math.round(ticker.FPS);
+        if (this.hitStopTimer > 0) {
+          this.hitStopTimer = Math.max(0, this.hitStopTimer - dt);
+          return;
+        }
         this.elapsedSeconds += dt;
         if (this.screenShakeTimer > 0) {
           this.screenShakeTimer = Math.max(0, this.screenShakeTimer - dt);
@@ -1251,13 +1308,135 @@ export class IsoSceneView {
     return pair;
   }
 
+  private loadCustomPropImageTexture(spec: CustomPropSpriteSpec): void {
+    const cacheKey = `${spec.url}|${spec.targetWidthPx ?? 0}|${spec.anchorX ?? 0.5}|${spec.anchorY ?? 0.86}`;
+    if (this.customPropImageCache.has(cacheKey) || this.customPropLoadingUrls.has(cacheKey)) {
+      return;
+    }
+    if (typeof Image === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+    this.customPropLoadingUrls.add(cacheKey);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const targetW = Math.max(
+          48,
+          Math.min(512, Math.round(spec.targetWidthPx ?? Math.min(240, img.naturalWidth || 200)))
+        );
+        const aspect = (img.naturalHeight || targetW) / Math.max(1, img.naturalWidth || targetW);
+        const targetH = Math.max(48, Math.round(targetW * aspect));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        const imgData = ctx.getImageData(0, 0, targetW, targetH);
+        const px = imgData.data;
+
+        // Optional border flood-fill to cleanly remove solid white background from AI PNGs
+        if (spec.keyOutWhiteBackground !== false) {
+          const visited = new Uint8Array(targetW * targetH);
+          const queue: number[] = [];
+          const isBgLike = (idx4: number): boolean => {
+            const r = px[idx4];
+            const g = px[idx4 + 1];
+            const b = px[idx4 + 2];
+            const a = px[idx4 + 3];
+            if (a < 20) return true;
+            return r >= 232 && g >= 232 && b >= 232 && Math.abs(r - g) < 16 && Math.abs(g - b) < 16;
+          };
+          const pushIfBg = (x: number, y: number): void => {
+            const p = y * targetW + x;
+            if (visited[p]) return;
+            if (isBgLike(p * 4)) {
+              visited[p] = 1;
+              queue.push(p);
+            }
+          };
+          for (let x = 0; x < targetW; x++) {
+            pushIfBg(x, 0);
+            pushIfBg(x, targetH - 1);
+          }
+          for (let y = 0; y < targetH; y++) {
+            pushIfBg(0, y);
+            pushIfBg(targetW - 1, y);
+          }
+          for (let head = 0; head < queue.length; head++) {
+            const p = queue[head];
+            px[p * 4 + 3] = 0;
+            const x = p % targetW;
+            const y = (p - x) / targetW;
+            if (x > 0) pushIfBg(x - 1, y);
+            if (x < targetW - 1) pushIfBg(x + 1, y);
+            if (y > 0) pushIfBg(x, y - 1);
+            if (y < targetH - 1) pushIfBg(x, y + 1);
+          }
+        }
+
+        // Synthesize lightweight Sobel luminance normal map for dynamic PBR torch/daylight lighting
+        const normalRGBA = new Uint8ClampedArray(targetW * targetH * 4);
+        const lum = new Float32Array(targetW * targetH);
+        for (let i = 0; i < targetW * targetH; i++) {
+          lum[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+        }
+        for (let y = 0; y < targetH; y++) {
+          for (let x = 0; x < targetW; x++) {
+            const i = y * targetW + x;
+            const i4 = i * 4;
+            if (px[i4 + 3] < 10) {
+              normalRGBA[i4 + 3] = 0;
+              continue;
+            }
+            const lL = lum[y * targetW + Math.max(0, x - 1)];
+            const lR = lum[y * targetW + Math.min(targetW - 1, x + 1)];
+            const lU = lum[Math.max(0, y - 1) * targetW + x];
+            const lD = lum[Math.min(targetH - 1, y + 1) * targetW + x];
+            const nx = Math.max(-1, Math.min(1, (lL - lR) * 2.2));
+            const ny = Math.max(-1, Math.min(1, (lU - lD) * 2.2 - 0.18));
+            normalRGBA[i4] = Math.round((nx * 0.5 + 0.5) * 255);
+            normalRGBA[i4 + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+            normalRGBA[i4 + 2] = 205;
+            normalRGBA[i4 + 3] = px[i4 + 3];
+          }
+        }
+
+        const pair: DualPbrTexturePair = {
+          albedo: rgbaBufferToTexture(px, targetW, targetH),
+          normalMat: rgbaBufferToTexture(normalRGBA, targetW, targetH),
+          anchorX: spec.anchorX ?? 0.5,
+          anchorY: spec.anchorY ?? 0.86
+        };
+        this.customPropImageCache.set(cacheKey, pair);
+      } finally {
+        this.customPropLoadingUrls.delete(cacheKey);
+      }
+    };
+    img.onerror = () => {
+      this.customPropLoadingUrls.delete(cacheKey);
+    };
+    img.src = spec.url;
+  }
+
   private getPropTexturePair(
     kind: PropKind,
     isOpen: boolean,
     rotW: number,
     rotH: number,
-    variant = 0
+    variant = 0,
+    propId?: string
   ): DualPbrTexturePair {
+    const customSpec = resolveCustomPropSprite({ id: propId, kind });
+    if (customSpec) {
+      const customKey = `${customSpec.url}|${customSpec.targetWidthPx ?? 0}|${customSpec.anchorX ?? 0.5}|${customSpec.anchorY ?? 0.86}`;
+      const loaded = this.customPropImageCache.get(customKey);
+      if (loaded) return loaded;
+      this.loadCustomPropImageTexture(customSpec);
+    }
+
     const key = `${kind}_${isOpen ? 'open' : 'closed'}_${rotW}x${rotH}_v${variant}`;
     const existing = this.propTextureCache.get(key);
     if (existing) return existing;
@@ -1384,6 +1563,26 @@ export class IsoSceneView {
     );
 
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.button === 2 && !this.game.combatState.active && this.activeTool === 'interact') {
+        this.updateHoveredTileFromPointer(e.clientX, e.clientY);
+        if (this.hoveredWorldTile) {
+          const { x, y } = this.hoveredWorldTile;
+          const hostileAtTile = this.game.npcs.find(
+            (n) =>
+              n.tileX === x &&
+              n.tileY === y &&
+              n.combat?.isHostile &&
+              n.combat.isAlive
+          );
+          if (hostileAtTile) {
+            this.explorationAttackMode = false;
+            this.game.commandAttackEnemyFromExploration(hostileAtTile.id);
+            this.onUiStateChange?.();
+            return;
+          }
+        }
+      }
+
       if (e.button === 1 || e.button === 2) {
         this.isDraggingCamera = true;
         this.isManualCameraPanning = true;
@@ -1410,6 +1609,24 @@ export class IsoSceneView {
             this.lastPaintedTileKey = `${x},${y}`;
           }
           this.applyEditorToolAtTile(x, y);
+          this.onUiStateChange?.();
+          return;
+        }
+
+        if (this.explorationAttackMode && !this.game.combatState.active) {
+          const hostileAtTile = this.game.npcs.find(
+            (n) =>
+              n.tileX === x &&
+              n.tileY === y &&
+              n.combat?.isHostile &&
+              n.combat.isAlive
+          );
+          this.explorationAttackMode = false;
+          if (hostileAtTile) {
+            this.game.commandAttackEnemyFromExploration(hostileAtTile.id);
+          } else {
+            this.game.addLog('Anulowano celowanie — kliknij przeciwnika, aby rozpocząć walkę.', 'info');
+          }
           this.onUiStateChange?.();
           return;
         }
@@ -2608,7 +2825,8 @@ export class IsoSceneView {
             Boolean(prop.isOpen),
             fp.width,
             fp.height,
-            prop.variant ?? ((prop.x * 7 + prop.y * 13) % 9)
+            prop.variant ?? ((prop.x * 7 + prop.y * 13) % 9),
+            prop.id
           );
 
           // Grounding Ambient Occlusion (AO) & Directional Penumbra Shadow for solid props

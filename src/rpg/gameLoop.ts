@@ -328,6 +328,9 @@ export class CrpgGameState {
   }
 
   public isSequentialEnemyTurnActive = false;
+  public enemyCombatMoveSpeed = 4.6;
+  public enemyCombatPauseScale = 0.55;
+  public pendingSurpriseAttack = false;
   private pendingEnemyCombatTurnIds: string[] = [];
   private currentEnemyTurnPhase: 'move' | 'pause_before_attack' | 'attack' | 'pause_after_attack' = 'move';
   private enemyTurnPhaseTimer = 0;
@@ -2101,6 +2104,61 @@ export class CrpgGameState {
     };
   }
 
+  /**
+   * Fallout / Planescape: Torment style exploration combat initiation:
+   * approaches a living hostile enemy if needed and opens turn-based combat
+   * with an immediate opening strike (marking `pendingSurpriseAttack` if unseen/stealthed).
+   */
+  public commandAttackEnemyFromExploration(enemyId: string): boolean {
+    if (this.combatState.active) return false;
+    const enemy = this.npcs.find((n) => n.id === enemyId);
+    if (!enemy || !enemy.combat?.isHostile || !enemy.combat.isAlive) {
+      return false;
+    }
+
+    this.pendingSurpriseAttack = this.isStealthActive || enemy.aggroReactionTimer === undefined;
+    const playerSnap = this.getActorCombatant(this.player);
+    const maxRange = Math.max(1.4, playerSnap.derived.weaponProfile.maxRange);
+    const dist = Math.hypot(enemy.tileX - this.player.tileX, enemy.tileY - this.player.tileY);
+
+    if (dist <= maxRange + 0.45) {
+      this.player.pendingAttackTargetId = null;
+      this.startCombatWithEnemy(enemy.id);
+      this.performPlayerCombatAttack(enemy.id, this.combatState.selectedAttackMode);
+      return true;
+    }
+
+    const candidates = [
+      { x: enemy.tileX - 1, y: enemy.tileY },
+      { x: enemy.tileX + 1, y: enemy.tileY },
+      { x: enemy.tileX, y: enemy.tileY - 1 },
+      { x: enemy.tileX, y: enemy.tileY + 1 },
+      { x: enemy.tileX - 1, y: enemy.tileY - 1 },
+      { x: enemy.tileX + 1, y: enemy.tileY + 1 },
+      { x: enemy.tileX - 1, y: enemy.tileY + 1 },
+      { x: enemy.tileX + 1, y: enemy.tileY - 1 }
+    ]
+      .filter((t) => Boolean(this.map.tiles[t.y]?.[t.x]?.walkable))
+      .sort(
+        (a, b) =>
+          Math.hypot(a.x - this.player.tileX, a.y - this.player.tileY) -
+          Math.hypot(b.x - this.player.tileX, b.y - this.player.tileY)
+      );
+
+    if (candidates.length === 0) {
+      this.startCombatWithEnemy(enemy.id);
+      return true;
+    }
+
+    const dest = candidates[0];
+    this.player.pendingDialogueActorId = null;
+    this.player.pendingInteractionPropId = null;
+    this.player.pendingLootCorpseId = null;
+    this.player.pendingAttackTargetId = enemy.id;
+    this.commandPlayerMoveTo(dest.x, dest.y);
+    return true;
+  }
+
   public startCombatWithEnemy(enemyId: string): boolean {
     const enemy = this.npcs.find((n) => n.id === enemyId);
     if (!enemy || !enemy.combat || !enemy.combat.isAlive) return false;
@@ -2957,10 +3015,10 @@ export class CrpgGameState {
     }
 
     if (this.currentEnemyTurnPhase === 'move') {
-      this.updateActorMovement(enemy, dtSeconds, 3.2, false);
+      this.updateActorMovement(enemy, dtSeconds, this.enemyCombatMoveSpeed, false);
       if (!enemy.isMoving) {
         this.currentEnemyTurnPhase = 'pause_before_attack';
-        this.enemyTurnPhaseTimer = 0.35;
+        this.enemyTurnPhaseTimer = Math.max(0.08, 0.35 * this.enemyCombatPauseScale);
       }
       return;
     }
@@ -2989,7 +3047,7 @@ export class CrpgGameState {
             return;
           }
           this.currentEnemyTurnPhase = 'pause_after_attack';
-          this.enemyTurnPhaseTimer = 0.4;
+          this.enemyTurnPhaseTimer = Math.max(0.1, 0.4 * this.enemyCombatPauseScale);
         } else {
           this.onEnemyCombatTurnEnded(enemy, this.currentEnemyAttacksThisTurn);
           this.startNextQueuedEnemyTurn();
