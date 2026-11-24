@@ -135,15 +135,22 @@ export function resolvePropVisualTransform(
     : IDENTITY_PROP_VISUAL_TRANSFORM;
 }
 
+export const BLOCKING_MODAL_SELECTOR =
+  '.character-backdrop, .credits-modal-backdrop, .dialogue-backdrop, .combat-confirm-backdrop, .combat-report-modal-backdrop, .item-details-backdrop, .ostrze-overlay';
+
 export interface CustomPropSpriteSpec {
   id?: string;
   idPrefix?: string;
   kind?: PropKind;
+  /** Optional open/closed state filter (e.g. closed vs open chest). Undefined matches any state. */
+  isOpen?: boolean;
   url: string;
   anchorX?: number;
   anchorY?: number;
   targetWidthPx?: number;
   keyOutWhiteBackground?: boolean;
+  /** Deterministic horizontal mirror on odd prop variants (ideal for trees & cliffs). */
+  allowMirrorX?: boolean;
 }
 
 const customPropSpriteRegistry: CustomPropSpriteSpec[] = [];
@@ -151,9 +158,10 @@ const customPropSpriteRegistry: CustomPropSpriteSpec[] = [];
 export function registerCustomPropSprite(spec: CustomPropSpriteSpec): void {
   const existingIdx = customPropSpriteRegistry.findIndex(
     (s) =>
-      (spec.id && s.id === spec.id) ||
-      (spec.idPrefix && s.idPrefix === spec.idPrefix) ||
-      (!spec.id && !spec.idPrefix && spec.kind && s.kind === spec.kind)
+      s.isOpen === spec.isOpen &&
+      ((spec.id && s.id === spec.id) ||
+        (spec.idPrefix && s.idPrefix === spec.idPrefix) ||
+        (!spec.id && !spec.idPrefix && spec.kind && s.kind === spec.kind))
   );
   if (existingIdx >= 0) {
     customPropSpriteRegistry[existingIdx] = spec;
@@ -166,22 +174,147 @@ export function clearCustomPropSprites(): void {
   customPropSpriteRegistry.length = 0;
 }
 
+/**
+ * Removes solid white backgrounds (both border-connected and enclosed interior pockets)
+ * from RGBA pixel buffers and defringes 1px white JPEG halos around dark outlines while
+ * preserving warm/tinted bright highlights (e.g. candle flames, cream canvas, pale bark).
+ */
+export function keyOutWhiteBackgroundRgba(
+  px: Uint8ClampedArray,
+  width: number,
+  height: number
+): void {
+  const total = width * height;
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+
+  const isBgLike = (idx4: number): boolean => {
+    const a = px[idx4 + 3];
+    if (a < 20) return true;
+    const r = px[idx4];
+    const g = px[idx4 + 1];
+    const b = px[idx4 + 2];
+    const mn = r < g ? (r < b ? r : b) : g < b ? g : b;
+    const mx = r > g ? (r > b ? r : b) : g > b ? g : b;
+    return mn >= 216 && mx - mn <= 18;
+  };
+
+  const isPureWhiteSeed = (idx4: number): boolean => {
+    const a = px[idx4 + 3];
+    if (a < 20) return false;
+    const r = px[idx4];
+    const g = px[idx4 + 1];
+    const b = px[idx4 + 2];
+    const mn = r < g ? (r < b ? r : b) : g < b ? g : b;
+    const mx = r > g ? (r > b ? r : b) : g > b ? g : b;
+    return mn >= 222 && mx - mn <= 15;
+  };
+
+  const pushIfBg = (x: number, y: number): void => {
+    const p = y * width + x;
+    if (visited[p]) return;
+    if (isBgLike(p * 4)) {
+      visited[p] = 1;
+      queue[tail++] = p;
+    }
+  };
+
+  const drainQueue = (): void => {
+    while (head < tail) {
+      const p = queue[head++];
+      px[p * 4 + 3] = 0;
+      const x = p % width;
+      const y = (p - x) / width;
+      if (x > 0) pushIfBg(x - 1, y);
+      if (x < width - 1) pushIfBg(x + 1, y);
+      if (y > 0) pushIfBg(x, y - 1);
+      if (y < height - 1) pushIfBg(x, y + 1);
+    }
+  };
+
+  // Pass 1: Border-connected white background flood-fill
+  for (let x = 0; x < width; x++) {
+    pushIfBg(x, 0);
+    pushIfBg(x, height - 1);
+  }
+  for (let y = 0; y < height; y++) {
+    pushIfBg(0, y);
+    pushIfBg(width - 1, y);
+  }
+  drainQueue();
+
+  // Pass 2: Enclosed pure-white background pockets (e.g. between rafters, wheel spokes, branches)
+  for (let p = 0; p < total; p++) {
+    if (visited[p]) continue;
+    if (isPureWhiteSeed(p * 4)) {
+      visited[p] = 1;
+      queue[tail++] = p;
+      drainQueue();
+    }
+  }
+
+  // Pass 3: Soft 1px white-halo defringing on silhouette edges adjacent to keyed-out background
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x;
+      if (visited[p]) continue;
+      const touchesBg =
+        (x > 0 && visited[p - 1] === 1) ||
+        (x < width - 1 && visited[p + 1] === 1) ||
+        (y > 0 && visited[p - width] === 1) ||
+        (y < height - 1 && visited[p + width] === 1);
+      if (!touchesBg) continue;
+
+      const i4 = p * 4;
+      const r = px[i4];
+      const g = px[i4 + 1];
+      const b = px[i4 + 2];
+      const mn = r < g ? (r < b ? r : b) : g < b ? g : b;
+      const mx = r > g ? (r > b ? r : b) : g > b ? g : b;
+      if (mn >= 115 && mx - mn <= 32) {
+        const lum = r * 0.299 + g * 0.587 + b * 0.114;
+        const alpha = Math.max(0, Math.min(1, (232 - lum) / 117));
+        if (alpha <= 0.06) {
+          px[i4 + 3] = 0;
+        } else {
+          px[i4] = Math.max(0, Math.min(255, Math.round((r - 255 * (1 - alpha)) / alpha)));
+          px[i4 + 1] = Math.max(0, Math.min(255, Math.round((g - 255 * (1 - alpha)) / alpha)));
+          px[i4 + 2] = Math.max(0, Math.min(255, Math.round((b - 255 * (1 - alpha)) / alpha)));
+          px[i4 + 3] = Math.round(px[i4 + 3] * alpha);
+        }
+      }
+    }
+  }
+}
+
 export function resolveCustomPropSprite(prop: {
   id?: string;
   kind: PropKind;
+  isOpen?: boolean;
 }): CustomPropSpriteSpec | null {
+  const stateMatches = (s: CustomPropSpriteSpec): boolean =>
+    s.isOpen === undefined || prop.isOpen === undefined ? s.isOpen === undefined : s.isOpen === prop.isOpen;
+  const pickBest = (predicate: (s: CustomPropSpriteSpec) => boolean): CustomPropSpriteSpec | null => {
+    if (prop.isOpen !== undefined) {
+      const exactState = customPropSpriteRegistry.find(
+        (s) => predicate(s) && s.isOpen === prop.isOpen
+      );
+      if (exactState) return exactState;
+    }
+    const anyState = customPropSpriteRegistry.find((s) => predicate(s) && stateMatches(s));
+    if (anyState) return anyState;
+    return customPropSpriteRegistry.find((s) => predicate(s) && s.isOpen === false) ?? null;
+  };
+
   if (prop.id) {
-    const exact = customPropSpriteRegistry.find((s) => s.id === prop.id);
+    const exact = pickBest((s) => s.id === prop.id);
     if (exact) return exact;
-    const prefix = customPropSpriteRegistry.find(
-      (s) => s.idPrefix && prop.id!.startsWith(s.idPrefix)
-    );
+    const prefix = pickBest((s) => Boolean(s.idPrefix && prop.id!.startsWith(s.idPrefix)));
     if (prefix) return prefix;
   }
-  const byKind = customPropSpriteRegistry.find(
-    (s) => !s.id && !s.idPrefix && s.kind === prop.kind
-  );
-  return byKind ?? null;
+  return pickBest((s) => !s.id && !s.idPrefix && s.kind === prop.kind);
 }
 
 interface DualPbrTexturePair {
@@ -189,6 +322,7 @@ interface DualPbrTexturePair {
   normalMat: Texture;
   anchorX: number;
   anchorY: number;
+  allowMirrorX?: boolean;
 }
 
 interface CharacterDualFrameTextures {
@@ -197,6 +331,74 @@ interface CharacterDualFrameTextures {
   normalFrames: Texture[][];
   portraitDataUrl: string;
   bakeDurationMs: number;
+}
+
+export type AmbientTimeOfDay = 'swit' | 'dzien' | 'zmierzch' | 'noc';
+
+/**
+ * Computes grid tiles threatened by a telegraphed enemy combat intent so the 2.5D
+ * battlefield can render pulsing crimson-amber danger zones before the enemy strikes.
+ */
+export function getTelegraphThreatTiles(
+  originX: number,
+  originY: number,
+  intent: string,
+  mapW: number,
+  mapH: number
+): Array<{ x: number; y: number }> {
+  const tiles: Array<{ x: number; y: number }> = [];
+  const radius = intent === 'terror_howl' ? 2 : 1;
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      if (intent === 'terror_howl' && Math.abs(dx) + Math.abs(dy) > 2) continue;
+      const nx = originX + dx;
+      const ny = originY + dy;
+      if (nx >= 0 && nx < mapW && ny >= 0 && ny < mapH) {
+        tiles.push({ x: nx, y: ny });
+      }
+    }
+  }
+  return tiles;
+}
+
+/**
+ * Classifies whether a WorldMap is an outdoor environment (grass/dirt/mud/water or trees)
+ * vs an indoor/underground dungeon/crypt, so ambient leaves, fireflies, and dawn mist
+ * never appear inside mines or crypts.
+ */
+export function isOutdoorMap(map: {
+  width: number;
+  height: number;
+  tiles: { terrain: TileTerrainType }[][];
+  props: { kind: PropKind }[];
+}): boolean {
+  if (
+    map.props.some(
+      (p) => p.kind === 'ancient_oak' || p.kind === 'pine_tree' || p.kind === 'dead_tree'
+    )
+  ) {
+    return true;
+  }
+  let outdoorCount = 0;
+  let totalCount = 0;
+  for (let y = 0; y < map.height; y++) {
+    const row = map.tiles[y];
+    if (!row) continue;
+    for (let x = 0; x < map.width; x++) {
+      const tile = row[x];
+      if (!tile) continue;
+      totalCount++;
+      if (
+        tile.terrain === 'forest_grass' ||
+        tile.terrain === 'dirt_path' ||
+        tile.terrain === 'forest_soil'
+      ) {
+        outdoorCount++;
+      }
+    }
+  }
+  return totalCount > 0 && outdoorCount / totalCount >= 0.2;
 }
 
 interface FloatingParticle {
@@ -210,6 +412,8 @@ interface FloatingParticle {
   maxLife: number;
   color: number;
   size: number;
+  kind?: 'ember' | 'mote' | 'leaf' | 'firefly' | 'mist' | 'dust';
+  phase?: number;
 }
 
 interface SlashArcVfx {
@@ -441,6 +645,14 @@ export class IsoSceneView {
   private cachedParticlePropsLen = -1;
   private cachedFireProps: WorldPropEntity[] = [];
   private cachedArcaneProps: WorldPropEntity[] = [];
+  private cachedTreeProps: WorldPropEntity[] = [];
+  private cachedIsOutdoor = true;
+  public timeOfDay: AmbientTimeOfDay = 'dzien';
+  public getTelegraphedIntent?: (actorId: string) => string | null;
+  private readonly reducedMotion: boolean =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private onUiStateChange?: () => void;
 
   constructor(game: CrpgGameState, onUiStateChange?: () => void) {
@@ -1309,7 +1521,7 @@ export class IsoSceneView {
   }
 
   private loadCustomPropImageTexture(spec: CustomPropSpriteSpec): void {
-    const cacheKey = `${spec.url}|${spec.targetWidthPx ?? 0}|${spec.anchorX ?? 0.5}|${spec.anchorY ?? 0.86}`;
+    const cacheKey = `${spec.url}|${spec.targetWidthPx ?? 0}|${spec.anchorX ?? 0.5}|${spec.anchorY ?? 0.86}|${spec.allowMirrorX ? 1 : 0}`;
     if (this.customPropImageCache.has(cacheKey) || this.customPropLoadingUrls.has(cacheKey)) {
       return;
     }
@@ -1333,49 +1545,34 @@ export class IsoSceneView {
         canvas.height = targetH;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.drawImage(img, 0, 0, targetW, targetH);
+
+        // Key out white backgrounds at higher working resolution (up to 512px) BEFORE
+        // downscaling to targetW x targetH so narrow slits (e.g. wattle weave, thin twigs)
+        // never blur with white background into grey artifacts, and edges anti-alias cleanly.
+        if (spec.keyOutWhiteBackground !== false) {
+          const workW = Math.max(targetW, Math.min(512, img.naturalWidth || targetW));
+          const workH = Math.max(targetH, Math.round(workW * aspect));
+          const workCanvas = document.createElement('canvas');
+          workCanvas.width = workW;
+          workCanvas.height = workH;
+          const workCtx = workCanvas.getContext('2d');
+          if (workCtx) {
+            workCtx.drawImage(img, 0, 0, workW, workH);
+            const workData = workCtx.getImageData(0, 0, workW, workH);
+            keyOutWhiteBackgroundRgba(workData.data, workW, workH);
+            workCtx.putImageData(workData, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(workCanvas, 0, 0, targetW, targetH);
+          } else {
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+          }
+        } else {
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+        }
+
         const imgData = ctx.getImageData(0, 0, targetW, targetH);
         const px = imgData.data;
-
-        // Optional border flood-fill to cleanly remove solid white background from AI PNGs
-        if (spec.keyOutWhiteBackground !== false) {
-          const visited = new Uint8Array(targetW * targetH);
-          const queue: number[] = [];
-          const isBgLike = (idx4: number): boolean => {
-            const r = px[idx4];
-            const g = px[idx4 + 1];
-            const b = px[idx4 + 2];
-            const a = px[idx4 + 3];
-            if (a < 20) return true;
-            return r >= 232 && g >= 232 && b >= 232 && Math.abs(r - g) < 16 && Math.abs(g - b) < 16;
-          };
-          const pushIfBg = (x: number, y: number): void => {
-            const p = y * targetW + x;
-            if (visited[p]) return;
-            if (isBgLike(p * 4)) {
-              visited[p] = 1;
-              queue.push(p);
-            }
-          };
-          for (let x = 0; x < targetW; x++) {
-            pushIfBg(x, 0);
-            pushIfBg(x, targetH - 1);
-          }
-          for (let y = 0; y < targetH; y++) {
-            pushIfBg(0, y);
-            pushIfBg(targetW - 1, y);
-          }
-          for (let head = 0; head < queue.length; head++) {
-            const p = queue[head];
-            px[p * 4 + 3] = 0;
-            const x = p % targetW;
-            const y = (p - x) / targetW;
-            if (x > 0) pushIfBg(x - 1, y);
-            if (x < targetW - 1) pushIfBg(x + 1, y);
-            if (y > 0) pushIfBg(x, y - 1);
-            if (y < targetH - 1) pushIfBg(x, y + 1);
-          }
-        }
 
         // Synthesize lightweight Sobel luminance normal map for dynamic PBR torch/daylight lighting
         const normalRGBA = new Uint8ClampedArray(targetW * targetH * 4);
@@ -1408,7 +1605,8 @@ export class IsoSceneView {
           albedo: rgbaBufferToTexture(px, targetW, targetH),
           normalMat: rgbaBufferToTexture(normalRGBA, targetW, targetH),
           anchorX: spec.anchorX ?? 0.5,
-          anchorY: spec.anchorY ?? 0.86
+          anchorY: spec.anchorY ?? 0.86,
+          allowMirrorX: spec.allowMirrorX
         };
         this.customPropImageCache.set(cacheKey, pair);
       } finally {
@@ -1429,9 +1627,9 @@ export class IsoSceneView {
     variant = 0,
     propId?: string
   ): DualPbrTexturePair {
-    const customSpec = resolveCustomPropSprite({ id: propId, kind });
+    const customSpec = resolveCustomPropSprite({ id: propId, kind, isOpen });
     if (customSpec) {
-      const customKey = `${customSpec.url}|${customSpec.targetWidthPx ?? 0}|${customSpec.anchorX ?? 0.5}|${customSpec.anchorY ?? 0.86}`;
+      const customKey = `${customSpec.url}|${customSpec.targetWidthPx ?? 0}|${customSpec.anchorX ?? 0.5}|${customSpec.anchorY ?? 0.86}|${customSpec.allowMirrorX ? 1 : 0}`;
       const loaded = this.customPropImageCache.get(customKey);
       if (loaded) return loaded;
       this.loadCustomPropImageTexture(customSpec);
@@ -1513,7 +1711,7 @@ export class IsoSceneView {
 
     window.addEventListener('keydown', (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
-      if (document.querySelector('.character-backdrop, .credits-modal-backdrop')) {
+      if (document.querySelector(BLOCKING_MODAL_SELECTOR)) {
         this.keysDown.clear();
         return;
       }
@@ -1553,7 +1751,7 @@ export class IsoSceneView {
     canvas.addEventListener(
       'wheel',
       (e) => {
-        if (document.querySelector('.character-backdrop, .credits-modal-backdrop')) return;
+        if (document.querySelector(BLOCKING_MODAL_SELECTOR)) return;
         e.preventDefault();
         const factor = e.deltaY < 0 ? 1.15 : 0.87;
         this.targetZoom = Math.min(1.85, Math.max(0.55, Number((this.targetZoom * factor).toFixed(2))));
@@ -1563,6 +1761,9 @@ export class IsoSceneView {
     );
 
     canvas.addEventListener('pointerdown', (e) => {
+      if (document.querySelector(BLOCKING_MODAL_SELECTOR)) {
+        return;
+      }
       if (e.button === 2 && !this.game.combatState.active && this.activeTool === 'interact') {
         this.updateHoveredTileFromPointer(e.clientX, e.clientY);
         if (this.hoveredWorldTile) {
@@ -1668,10 +1869,20 @@ export class IsoSceneView {
 
     const onPointerOrMouseMove = (e: MouseEvent | PointerEvent): void => {
       const target = e.target as HTMLElement | null;
+      const isBlockingModalOpen = Boolean(document.querySelector(BLOCKING_MODAL_SELECTOR));
+      if (isBlockingModalOpen) {
+        this.isDraggingCamera = false;
+        this.isPaintingWithBrush = false;
+        this.hoveredWorldTile = null;
+        this.updateEdgePanPointerState(e.clientX, e.clientY, true, true);
+        if (canvas.style.cursor !== 'default') {
+          canvas.style.cursor = 'default';
+        }
+        return;
+      }
       const overUi = Boolean(
-        document.querySelector('.character-backdrop, .credits-modal-backdrop') ||
         target?.closest(
-          '.top-bar, .top-bar button, .hero-card, .chronicle-log.expanded, .chronicle-log .chronicle-toggle-btn, .chronicle-log .combat-tab-btn, .chronicle-log .combat-report-tag-btn, .combat-top-banner, .combat-unified-dock, .combat-tactical-bar, .combat-live-log, .combat-confirm-backdrop, .combat-report-backdrop, .item-details-backdrop, .character-backdrop, .character-drawer, .credits-modal-backdrop, .credits-modal-window, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal'
+          '.top-bar, .top-bar button, .hero-card, .chronicle-log.expanded, .chronicle-log .chronicle-toggle-btn, .chronicle-log .combat-tab-btn, .chronicle-log .combat-report-tag-btn, .combat-top-banner, .combat-unified-dock, .combat-tactical-bar, .combat-live-log, .combat-confirm-backdrop, .combat-report-modal-backdrop, .item-details-backdrop, .character-backdrop, .character-drawer, .credits-modal-backdrop, .credits-modal-window, .inventory-drawer, .inspector-card, .inspector-expand-btn, .dialogue-modal, .ostrze-overlay'
         )
       );
       this.updateEdgePanPointerState(e.clientX, e.clientY, true, overUi);
@@ -1683,6 +1894,10 @@ export class IsoSceneView {
         this.dragLastY = e.clientY;
         this.cameraOffsetX += dx;
         this.cameraOffsetY += dy;
+        return;
+      }
+      if (overUi) {
+        this.hoveredWorldTile = null;
         return;
       }
       this.updateHoveredTileFromPointer(e.clientX, e.clientY);
@@ -1953,8 +2168,8 @@ export class IsoSceneView {
   }
 
   private updateParticles(dt: number): void {
-    // Spawn atmospheric crackling embers, sparks, and ethereal motes
-    if (this.particles.length < 140 && Math.random() < 0.72) {
+    // Spawn atmospheric crackling embers, sparks, ethereal motes, and everyday time-of-day ambient
+    if (!this.reducedMotion && this.particles.length < 150 && Math.random() < 0.75) {
       if (
         this.cachedParticleMapRef !== this.game.map ||
         this.cachedParticlePropsLen !== this.game.map.props.length
@@ -1970,12 +2185,22 @@ export class IsoSceneView {
             p.kind === 'slavic_shrine' ||
             p.kind === 'runic_altar'
         );
+        this.cachedTreeProps = this.game.map.props.filter(
+          (p) => p.kind === 'ancient_oak' || p.kind === 'pine_tree'
+        );
+        this.cachedIsOutdoor = isOutdoorMap(this.game.map);
       }
 
       const fireProps = this.cachedFireProps;
       const arcaneProps = this.cachedArcaneProps;
+      const treeProps = this.cachedTreeProps;
+      const px = this.game.player.x;
+      const py = this.game.player.y;
+      const mapW = this.game.map.width;
+      const mapH = this.game.map.height;
 
-      if (fireProps.length > 0 && Math.random() < 0.55) {
+      const roll = Math.random();
+      if (fireProps.length > 0 && roll < 0.38) {
         // Crackling sparks & embers rising from campfires / torches
         const p = fireProps[Math.floor(Math.random() * fireProps.length)];
         if (p.isOpen) {
@@ -1991,10 +2216,11 @@ export class IsoSceneView {
             life: 0,
             maxLife: 0.8 + Math.random() * 0.85,
             color: sparkColors[Math.floor(Math.random() * sparkColors.length)],
-            size: 1.6 + Math.random() * 1.4
+            size: 1.6 + Math.random() * 1.4,
+            kind: 'ember'
           });
         }
-      } else if (arcaneProps.length > 0 && Math.random() < 0.45) {
+      } else if (arcaneProps.length > 0 && roll < 0.54) {
         // Floating ethereal motes around arcane crystals & ancient shrines
         const p = arcaneProps[Math.floor(Math.random() * arcaneProps.length)];
         const moteColors = [0x58e6ff, 0x80d8ff, 0xce93d8, 0x69f0ae];
@@ -2008,7 +2234,93 @@ export class IsoSceneView {
           life: 0,
           maxLife: 1.6 + Math.random() * 1.2,
           color: moteColors[Math.floor(Math.random() * moteColors.length)],
-          size: 2.2 + Math.random() * 1.5
+          size: 2.2 + Math.random() * 1.5,
+          kind: 'mote'
+        });
+      } else if (
+        this.cachedIsOutdoor &&
+        treeProps.length > 0 &&
+        (this.timeOfDay === 'dzien' || this.timeOfDay === 'swit') &&
+        roll < 0.78
+      ) {
+        // Gently drifting autumn birch/pine leaves falling from tree canopies
+        const t = treeProps[Math.floor(Math.random() * treeProps.length)];
+        const leafColors = [0xc9963b, 0xa86f2c, 0x7d8a3c, 0xb87d34];
+        this.particles.push({
+          x: t.x + 0.5 + (Math.random() - 0.5) * 1.6,
+          y: t.y + 0.5 + (Math.random() - 0.5) * 1.6,
+          z: t.z + 1.8 + Math.random() * 1.1,
+          vx: 0.22 + Math.random() * 0.18,
+          vy: 0.08 + (Math.random() - 0.5) * 0.16,
+          vz: -(0.34 + Math.random() * 0.22),
+          life: 0,
+          maxLife: 3.4 + Math.random() * 2.2,
+          color: leafColors[Math.floor(Math.random() * leafColors.length)],
+          size: 2.4 + Math.random() * 1.2,
+          kind: 'leaf',
+          phase: Math.random() * Math.PI * 2
+        });
+      } else if (
+        this.cachedIsOutdoor &&
+        (this.timeOfDay === 'zmierzch' || this.timeOfDay === 'noc') &&
+        roll < 0.84
+      ) {
+        // Warm golden-lime fireflies bobbing lazily at dusk & night
+        const fx = Math.max(1, Math.min(mapW - 2, px + (Math.random() - 0.5) * 14));
+        const fy = Math.max(1, Math.min(mapH - 2, py + (Math.random() - 0.5) * 14));
+        const fz = this.game.map.tiles[Math.floor(fy)]?.[Math.floor(fx)]?.z ?? 0;
+        const fireflyColors = [0xd9f99d, 0xfef08a, 0xbef264];
+        this.particles.push({
+          x: fx,
+          y: fy,
+          z: fz + 0.35 + Math.random() * 0.85,
+          vx: (Math.random() - 0.5) * 0.32,
+          vy: (Math.random() - 0.5) * 0.32,
+          vz: (Math.random() - 0.5) * 0.12,
+          life: 0,
+          maxLife: 3.2 + Math.random() * 2.6,
+          color: fireflyColors[Math.floor(Math.random() * fireflyColors.length)],
+          size: 2.2 + Math.random() * 1.1,
+          kind: 'firefly',
+          phase: Math.random() * Math.PI * 2
+        });
+      } else if (this.cachedIsOutdoor && this.timeOfDay === 'swit' && roll < 0.9) {
+        // Subtle low-lying dawn ground mist wisps
+        const mx = Math.max(1, Math.min(mapW - 2, px + (Math.random() - 0.5) * 16));
+        const my = Math.max(1, Math.min(mapH - 2, py + (Math.random() - 0.5) * 16));
+        const mz = this.game.map.tiles[Math.floor(my)]?.[Math.floor(mx)]?.z ?? 0;
+        this.particles.push({
+          x: mx,
+          y: my,
+          z: mz + 0.18,
+          vx: 0.25 + Math.random() * 0.15,
+          vy: (Math.random() - 0.5) * 0.08,
+          vz: 0.02,
+          life: 0,
+          maxLife: 5.0 + Math.random() * 2.5,
+          color: 0xdbeafe,
+          size: 26 + Math.random() * 18,
+          kind: 'mist',
+          phase: Math.random() * Math.PI * 2
+        });
+      } else if (!this.cachedIsOutdoor && roll < 0.82) {
+        // Subtle subterranean dust motes in crypts & mines
+        const dx = Math.max(1, Math.min(mapW - 2, px + (Math.random() - 0.5) * 12));
+        const dy = Math.max(1, Math.min(mapH - 2, py + (Math.random() - 0.5) * 12));
+        const dz = this.game.map.tiles[Math.floor(dy)]?.[Math.floor(dx)]?.z ?? 0;
+        this.particles.push({
+          x: dx,
+          y: dy,
+          z: dz + 0.4 + Math.random() * 1.4,
+          vx: (Math.random() - 0.5) * 0.12,
+          vy: (Math.random() - 0.5) * 0.12,
+          vz: 0.04 + (Math.random() - 0.5) * 0.08,
+          life: 0,
+          maxLife: 4.0 + Math.random() * 2.5,
+          color: 0xcbd5e1,
+          size: 1.5 + Math.random() * 0.9,
+          kind: 'dust',
+          phase: Math.random() * Math.PI * 2
         });
       } else {
         const enabledLights = this.game.map.lights.filter((l) => l.enabled);
@@ -2025,7 +2337,8 @@ export class IsoSceneView {
             life: 0,
             maxLife: 1.2 + Math.random() * 1.1,
             color: isCyan ? 0x58e6ff : 0xffb347,
-            size: isCyan ? 2.6 : 2.2
+            size: isCyan ? 2.6 : 2.2,
+            kind: 'ember'
           });
         }
       }
@@ -2038,11 +2351,27 @@ export class IsoSceneView {
         this.particles.splice(i, 1);
         continue;
       }
-      p.vx += Math.sin(p.life * 7.5 + p.y * 2.5) * 0.06 * dt;
-      p.vy += Math.cos(p.life * 7.5 + p.x * 2.5) * 0.06 * dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
+      if (p.kind === 'leaf') {
+        const ph = (p.phase ?? 0) + p.life * 2.6;
+        p.x += (p.vx + Math.sin(ph) * 0.28) * dt;
+        p.y += (p.vy + Math.cos(ph * 0.8) * 0.18) * dt;
+        p.z = Math.max(0.05, p.z + p.vz * dt);
+      } else if (p.kind === 'firefly') {
+        const ph = (p.phase ?? 0) + p.life * 2.1;
+        p.x += (p.vx + Math.sin(ph) * 0.22) * dt;
+        p.y += (p.vy + Math.cos(ph * 1.15) * 0.22) * dt;
+        p.z += (p.vz + Math.sin(ph * 1.6) * 0.14) * dt;
+      } else if (p.kind === 'mist' || p.kind === 'dust') {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
+      } else {
+        p.vx += Math.sin(p.life * 7.5 + p.y * 2.5) * 0.06 * dt;
+        p.vy += Math.cos(p.life * 7.5 + p.x * 2.5) * 0.06 * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
+      }
     }
 
     for (let i = this.slashArcs.length - 1; i >= 0; i--) {
@@ -2894,8 +3223,9 @@ export class IsoSceneView {
           const sp = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
           sp.anchor.set(texPair.anchorX, texPair.anchorY);
           sp.position.set(scr.x, scr.y + vt.offsetY);
-          if (vt.scaleX !== 1 || vt.scaleY !== 1) {
-            sp.scale.set(vt.scaleX, vt.scaleY);
+          const mirrorSign = texPair.allowMirrorX && ((prop.variant ?? 0) & 1) === 1 ? -1 : 1;
+          if (vt.scaleX !== 1 || vt.scaleY !== 1 || mirrorSign !== 1) {
+            sp.scale.set(vt.scaleX * mirrorSign, vt.scaleY);
           }
 
           // Apply X-Ray Wall Cutaway if wall occludes the player character!
@@ -3203,9 +3533,62 @@ export class IsoSceneView {
                 .ellipse(actorScrX + shadowOffsetX * 0.55, actorScrY + shadowOffsetY * 0.55, 20, 10)
                 .fill({ color: 0x030509, alpha: 0.18 });
 
-              // Tactical Combat Stance indicator ring
+              // Tactical Combat Stance indicator ring, Selected Target Reticle & Boss Telegraph Danger Zone
               if (this.game.combatState.active) {
                 const isActiveTurn = this.game.combatState.activeTurnActorId === actor.id;
+                const isSelectedTarget =
+                  !isPlayer &&
+                  Boolean(actor.combat?.isHostile) &&
+                  this.game.combatState.selectedTargetId === actor.id;
+                const telegraphedIntent =
+                  !isPlayer && actor.combat?.isHostile
+                    ? (this.getTelegraphedIntent?.(actor.id) ?? null)
+                    : null;
+                const pulse = this.reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(this.elapsedSeconds * 7.5);
+
+                if (telegraphedIntent) {
+                  // Draw pulsing crimson-amber danger diamonds on ground layer (beneath all actors & props)
+                  const threatTiles = getTelegraphThreatTiles(
+                    actor.tileX,
+                    actor.tileY,
+                    telegraphedIntent,
+                    mapW,
+                    mapH
+                  );
+                  for (const tt of threatTiles) {
+                    const tileObj = this.game.map.tiles[tt.y]?.[tt.x];
+                    if (!tileObj || !tileObj.walkable) continue;
+                    const rotT = toRotatedContinuous(
+                      tt.x + 0.5,
+                      tt.y + 0.5,
+                      mapW,
+                      mapH,
+                      this.rotation
+                    );
+                    const centerScr = gridToScreen(rotT.rx, rotT.ry, tileObj.z);
+                    this.cursorAndPathGraphics
+                      .poly([
+                        centerScr.x,
+                        centerScr.y - 16,
+                        centerScr.x + 32,
+                        centerScr.y,
+                        centerScr.x,
+                        centerScr.y + 16,
+                        centerScr.x - 32,
+                        centerScr.y
+                      ])
+                      .fill({ color: 0xdc2626, alpha: 0.14 + pulse * 0.14 })
+                      .stroke({ color: 0xf59e0b, width: 1.5, alpha: 0.45 + pulse * 0.4 });
+                  }
+                  // Double pulsing danger ring beneath the telegraphing enemy
+                  const warnR = 25 + pulse * 3.5;
+                  shadowGfx
+                    .ellipse(actorScrX, actorScrY, warnR, warnR * 0.5)
+                    .stroke({ color: 0xff3b30, width: 2.8, alpha: 0.72 + pulse * 0.25 })
+                    .ellipse(actorScrX, actorScrY, warnR + 4, (warnR + 4) * 0.5)
+                    .stroke({ color: 0xf59e0b, width: 1.4, alpha: 0.45 + pulse * 0.4 });
+                }
+
                 const ringRadius = isActiveTurn ? 24 + Math.sin(this.elapsedSeconds * 8) * 2.2 : 21;
                 const ringColor = isPlayer
                   ? 0xf5c451
@@ -3219,6 +3602,22 @@ export class IsoSceneView {
                     width: isActiveTurn ? 2.6 : 1.4,
                     alpha: isActiveTurn ? 0.96 : 0.65
                   });
+
+                if (isSelectedTarget) {
+                  const retR = 26 + pulse * 2.0;
+                  shadowGfx
+                    .ellipse(actorScrX, actorScrY, retR, retR * 0.5)
+                    .stroke({ color: 0xf5c451, width: 2.2, alpha: 0.92 })
+                    .moveTo(actorScrX - retR - 5, actorScrY)
+                    .lineTo(actorScrX - retR + 3, actorScrY)
+                    .moveTo(actorScrX + retR - 3, actorScrY)
+                    .lineTo(actorScrX + retR + 5, actorScrY)
+                    .moveTo(actorScrX, actorScrY - retR * 0.5 - 4)
+                    .lineTo(actorScrX, actorScrY - retR * 0.5 + 3)
+                    .moveTo(actorScrX, actorScrY + retR * 0.5 - 3)
+                    .lineTo(actorScrX, actorScrY + retR * 0.5 + 4)
+                    .stroke({ color: 0xff5252, width: 2.0, alpha: 0.95 });
+                }
               } else if (actor.id === this.game.player.id) {
                 shadowGfx
                   .ellipse(actorScrX, actorScrY, 22, 11)
@@ -3250,8 +3649,14 @@ export class IsoSceneView {
             sp.tint = ((Math.round(55 + t * 200) << 16) | (220 << 8) | 120);
           } else if (isDead) {
             sp.tint = 0x6e7683;
+          } else if (
+            actor.hitRecoilTimer &&
+            actor.hitRecoilTimer > (actor.hitRecoilMaxTimer || 0.18) * 0.45
+          ) {
+            // Crisp warm-white impact peak flash before crimson damage tint
+            sp.tint = 0xfff2e0;
           } else if (actor.damageFlashTimer && actor.damageFlashTimer > 0) {
-            sp.tint = 0xff2b2b;
+            sp.tint = 0xff3b30;
           } else {
             sp.tint = this.computeRgbTintForScreenPoint(
               actorScrX,
@@ -3297,6 +3702,30 @@ export class IsoSceneView {
               .roundRect(barX, barY, Math.max(2, barW * hpRatio), barH, 2)
               .fill({ color: barFillCol, alpha: 0.95 });
             this.debugOverlayContainer.addChild(hpGfx);
+
+            // Overhead ⚠️ warning badge when this hostile enemy has a telegraphed attack pending
+            if (this.game.combatState.active && !isPlayer && actor.combat.isHostile) {
+              const intent = this.getTelegraphedIntent?.(actor.id) ?? null;
+              if (intent) {
+                const labelText =
+                  intent === 'heavy_cleave'
+                    ? '⚠️ POTĘŻNY ZAMACH'
+                    : intent === 'terror_howl'
+                      ? '⚠️ WYCIE GROZY'
+                      : '⚠️ ATAK SPECJALNY';
+                const bob = this.reducedMotion ? 0 : Math.sin(this.elapsedSeconds * 7) * 2.5;
+                const warnLabel = this.displayPool.text(labelText, 'telegraph_warn', () => ({
+                  fontFamily: 'Inter, system-ui, sans-serif',
+                  fontSize: 10,
+                  fontWeight: '800',
+                  fill: '#fef08a',
+                  stroke: { color: '#7f1d1d', width: 3 }
+                }));
+                warnLabel.anchor.set(0.5, 1);
+                warnLabel.position.set(actorScrX, barY - 6 + bob);
+                this.debugOverlayContainer.addChild(warnLabel);
+              }
+            }
           }
 
           // Floating nameplate for story NPCs, Hostile Enemies, Dead Corpses, and Player
@@ -3544,21 +3973,49 @@ export class IsoSceneView {
       this.debugOverlayContainer.addChild(popText);
     }
 
-    // 4. Render Atmospheric Ember, Spark, and Ethereal Mote Particles in Final PBR Mode
+    // 4. Render Atmospheric Ember, Spark, Leaf, Firefly, Mist, and Dust Particles in Final PBR Mode
     if (this.bufferMode === 'final_pbr') {
       for (const p of this.particles) {
         const rotP = toRotatedContinuous(p.x, p.y, mapW, mapH, this.rotation);
         const scrP = gridToScreen(rotP.rx, rotP.ry, p.z);
         const lifeRatio = p.life / p.maxLife;
-        const alpha = Math.sin(lifeRatio * Math.PI) * 0.82;
-        // Inner bright spark core
-        this.lightingOverlayGraphics
-          .circle(scrP.x, scrP.y, p.size * 0.55)
-          .fill({ color: 0xffffff, alpha: alpha * 0.95 });
-        // Outer colored glow halo
-        this.lightingOverlayGraphics
-          .circle(scrP.x, scrP.y, p.size)
-          .fill({ color: p.color, alpha: alpha * 0.65 });
+        const envelope = Math.sin(lifeRatio * Math.PI);
+
+        if (p.kind === 'leaf') {
+          const flutter = Math.sin((p.phase ?? 0) + p.life * 5.2);
+          const rx = p.size * (0.9 + 0.35 * Math.abs(flutter));
+          const ry = p.size * (0.45 + 0.25 * Math.abs(Math.cos((p.phase ?? 0) + p.life * 4.1)));
+          this.lightingOverlayGraphics
+            .ellipse(scrP.x, scrP.y, rx, ry)
+            .fill({ color: p.color, alpha: envelope * 0.72 });
+        } else if (p.kind === 'firefly') {
+          const pulse = 0.4 + 0.6 * Math.abs(Math.sin((p.phase ?? 0) + p.life * 3.8));
+          const alpha = envelope * pulse * 0.85;
+          this.lightingOverlayGraphics
+            .circle(scrP.x, scrP.y, p.size * 2.1)
+            .fill({ color: p.color, alpha: alpha * 0.24 });
+          this.lightingOverlayGraphics
+            .circle(scrP.x, scrP.y, p.size * 0.7)
+            .fill({ color: 0xfefce8, alpha: alpha * 0.92 });
+        } else if (p.kind === 'mist') {
+          this.lightingOverlayGraphics
+            .ellipse(scrP.x, scrP.y, p.size * 1.8, p.size * 0.55)
+            .fill({ color: p.color, alpha: envelope * 0.07 });
+        } else if (p.kind === 'dust') {
+          this.lightingOverlayGraphics
+            .circle(scrP.x, scrP.y, p.size)
+            .fill({ color: p.color, alpha: envelope * 0.26 });
+        } else {
+          const alpha = envelope * 0.82;
+          // Inner bright spark core
+          this.lightingOverlayGraphics
+            .circle(scrP.x, scrP.y, p.size * 0.55)
+            .fill({ color: 0xffffff, alpha: alpha * 0.95 });
+          // Outer colored glow halo
+          this.lightingOverlayGraphics
+            .circle(scrP.x, scrP.y, p.size)
+            .fill({ color: p.color, alpha: alpha * 0.65 });
+        }
       }
     }
 

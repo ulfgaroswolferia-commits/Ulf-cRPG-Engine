@@ -2775,6 +2775,21 @@ export class HudOverlay {
       `
       : '';
 
+    const preservedScrollSelectors = [
+      '.credits-modal-body',
+      '.character-drawer',
+      '.combat-report-body',
+      '.dialogue-modal',
+      '.inventory-drawer'
+    ];
+    const preservedScrollTops = new Map<string, number>();
+    for (const sel of preservedScrollSelectors) {
+      const el = this.root.querySelector<HTMLElement>(sel);
+      if (el && el.scrollTop > 0) {
+        preservedScrollTops.set(sel, el.scrollTop);
+      }
+    }
+
     this.root.innerHTML = `
       ${this.buildItemDetailsModalHtml()}
       ${combatConfirmModalHtml}
@@ -2804,6 +2819,11 @@ export class HudOverlay {
       ${bottomAreaHtml}
       ${this.renderCreditsModalHtml()}
     `;
+
+    for (const [sel, top] of preservedScrollTops) {
+      const el = this.root.querySelector<HTMLElement>(sel);
+      if (el) el.scrollTop = top;
+    }
 
     this.bindEvents();
   }
@@ -3127,6 +3147,39 @@ export class HudOverlay {
       });
     });
 
+    const modalBackdropConfigs: Array<{ backdrop: string; scrollBody: string }> = [
+      { backdrop: '.credits-modal-backdrop', scrollBody: '.credits-modal-body' },
+      { backdrop: '.character-backdrop', scrollBody: '.character-drawer' },
+      { backdrop: '.combat-report-modal-backdrop', scrollBody: '.combat-report-body' },
+      { backdrop: '.dialogue-backdrop', scrollBody: '.dialogue-modal' },
+      { backdrop: '.combat-confirm-backdrop', scrollBody: '.combat-confirm-modal' },
+      { backdrop: '.item-details-backdrop', scrollBody: '.item-details-modal' }
+    ];
+    for (const cfg of modalBackdropConfigs) {
+      const backdropEl = this.root.querySelector<HTMLElement>(cfg.backdrop);
+      if (!backdropEl) continue;
+      const scrollEl = backdropEl.querySelector<HTMLElement>(cfg.scrollBody);
+      const isolateEvent = (e: Event): void => {
+        e.stopPropagation();
+      };
+      backdropEl.addEventListener('pointerdown', isolateEvent);
+      backdropEl.addEventListener('mousedown', isolateEvent);
+      backdropEl.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      backdropEl.addEventListener(
+        'wheel',
+        (e) => {
+          e.stopPropagation();
+          if (scrollEl && !scrollEl.contains(e.target as Node)) {
+            e.preventDefault();
+            scrollEl.scrollTop += e.deltaY;
+          }
+        },
+        { passive: false }
+      );
+    }
     this.root.querySelector('.credits-modal-window')?.addEventListener('click', (e) => {
       e.stopPropagation();
     });
@@ -3520,35 +3573,85 @@ export class HudOverlay {
     if (!this.isCreditsOpen) return '';
 
     return `
-      <div class="credits-modal-backdrop" data-action="close-credits">
+      <div class="credits-modal-backdrop" data-action="close-credits" role="dialog" aria-modal="true" aria-label="Twórcy i licencje">
         <div class="credits-modal-window">
           <div class="credits-modal-header">
             <div class="credits-modal-title">
               <span class="credits-crest">❖</span>
               <div>
                 <h2>Twórcy, Licencje i Wymogi Formalne</h2>
-                <div class="credits-subtitle">Legal Attribution & Open-Source Asset Notice</div>
+                <div class="credits-subtitle">Voided: na przekór gwiazdom (Ostrze 2.5D) — Credits &amp; Legal Notices</div>
               </div>
             </div>
             <button type="button" class="credits-close-btn" data-action="close-credits" title="Zamknij (Klawisz Esc)">✕ Zamknij [Esc]</button>
           </div>
 
-          <div class="credits-modal-body">
+          <div class="credits-modal-body" tabindex="0">
+            <div class="credits-section-box credits-authors-hero">
+              <div class="credits-section-title">⚔️ Twórcy Gry — „Voided: na przekór gwiazdom” (Ostrze 2.5D)</div>
+              <ul class="credits-list">
+                <li>
+                  <strong>Pomysł świata i gry, fabuła, dialogi, mechanika i pierwowzór terminalowy:</strong>
+                  <strong>Daniel „Twiist” Antonik</strong>
+                </li>
+                <li>
+                  <strong>Realizacja wersji 2.5D, port, oprawa oraz silnik Ulf-cRPG-Engine:</strong>
+                  <strong>Jakub „Ulfgaros” Górski</strong>
+                </li>
+              </ul>
+              <p style="margin-top: 6px; font-size: 12px; opacity: 0.88;">
+                Wersja 2.5D jest autorskim portem terminalowej gry RPG „Voided: na przekór gwiazdom” na izometryczny silnik Ulf-cRPG-Engine z oświetleniem Deferred Normal-Mapped PBR.
+              </p>
+            </div>
+
             <div class="credits-section-box">
-              <div class="credits-section-title">🎮 Projekt i Silnik Gry</div>
-              <p><strong>Ulf-cRPG-Engine</strong> — Autorski izometryczny silnik cRPG 2.5D z oświetleniem 2.5D Deferred Normal-Mapped PBR.</p>
-              <div class="credits-meta-row">
-                <span>Autor: <strong>Jakub Górski</strong></span>
-                <span>Licencja: <strong>MIT License</strong></span>
-              </div>
+              <div class="credits-section-title">📜 Licencje Gry i Silnika (Wymogi Prawne)</div>
+              <ul class="credits-list">
+                <li>
+                  <strong>Treść gry (fabuła, dialogi, świat, opisy, mapy — „Voided: na przekór gwiazdom”):</strong>
+                  Copyright © 2026 Daniel Twiist Antonik — Licencja
+                  <em><a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.pl" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a></em>
+                  (Uznanie autorstwa – Użycie niekomercyjne – Na tych samych warunkach 4.0; zmodyfikowano i zaadaptowano do wersji 2.5D).
+                </li>
+                <li>
+                  <strong>Oryginalny kod CLI („ostrze”):</strong> Copyright © 2026 Daniel Twiist Antonik — Licencja <em>MIT License</em>.
+                </li>
+                <li>
+                  <strong>Silnik Ulf-cRPG-Engine i kod portu 2.5D:</strong> Copyright © 2026 Jakub Górski — Licencja <em>MIT License</em>.
+                </li>
+              </ul>
+            </div>
+
+            <div class="credits-section-box">
+              <div class="credits-section-title">🏰 Izometryczne Modele Postaci, Podziemi i Obiektów Świata</div>
+              <ul class="credits-list">
+                <li>
+                  <strong>Izometryczne Modele Postaci i Bestiariusza 8-Kierunkowe (Flare RPG Fantasycore):</strong>
+                  Clint Bellanger &amp; Flare Team (Justin Jacobs, Stefan Beller, Thane Brimhall, Blarumyrran —
+                  <a href="https://github.com/flareteam/flare-game" target="_blank" rel="noopener noreferrer">flare-game</a> / OpenGameArt.org) — Licencja <em>CC-BY-SA 3.0 / CC-BY 3.0</em>
+                </li>
+                <li>
+                  <strong>Izometryczne Podziemia i Lochy (Isometric Miniature Dungeon):</strong>
+                  Kenney Vleugels (<a href="https://kenney.nl" target="_blank" rel="noopener noreferrer">kenney.nl</a>) — Licencja <em>CC0 1.0 Public Domain</em>
+                </li>
+                <li>
+                  <strong>Izometryczne Chaty z Bali (Log Cabins):</strong> Surt, Clint Bellanger (OpenGameArt.org) — Licencja <em>CC-BY 3.0 / OGA-BY 3.0 / CC0</em>
+                </li>
+                <li>
+                  <strong>Izometryczne Drzewa (Isometric Trees):</strong> Yar, Hyptosis (OpenGameArt.org) — Licencja <em>CC-BY 3.0 / CC0</em>
+                </li>
+                <li>
+                  <strong>Płoty, Latarnie, Studnia, Kafelki Terenu i Klify:</strong> OpenGameArt.org contributors — Licencja <em>CC-BY 3.0 / OGA-BY / CC0</em>
+                </li>
+              </ul>
             </div>
 
             <div class="credits-section-box">
               <div class="credits-section-title">🌲 Grafika Otoczenia i Teren (2D)</div>
-              <p><strong>Forest Biome Environment Set</strong> — Zestaw kafelków i obiektów leśnych (drzewa, pnie, poszycie, dekoracje).</p>
+              <p><strong>Top-down Forest Tileset</strong> — Zestaw kafelków i obiektów leśnych (drzewa, pnie, poszycie, dekoracje).</p>
               <div class="credits-meta-row">
                 <span>Autor: <strong>Glionox</strong> (<a href="https://glionox.itch.io/top-down-forest-tileset" target="_blank" rel="noopener noreferrer">itch.io</a>)</span>
-                <span>Zastosowanie: <strong>Free & Commercial Projects</strong></span>
+                <span>Licencja: <strong>Free &amp; Commercial Projects (z atrybucją)</strong></span>
               </div>
             </div>
 
@@ -3565,30 +3668,11 @@ export class HudOverlay {
             </div>
 
             <div class="credits-section-box">
-              <div class="credits-section-title">🏰 Izometryczne Modele i Obiekty Świata (OpenGameArt.org)</div>
-              <ul class="credits-list">
-                <li>
-                  <strong>Izometryczne Chaty z Bali (Log Cabins):</strong> Surt, Clint Bellanger (OpenGameArt.org) — Licencja <em>CC-BY 3.0 / CC0</em>
-                </li>
-                <li>
-                  <strong>Izometryczne Drzewa (Isometric Trees):</strong> Yar, Hyptosis (OpenGameArt.org) — Licencja <em>CC-BY 3.0 / CC0</em>
-                </li>
-                <li>
-                  <strong>Płoty, Latarnie i Studnia (Graveyard Props & Fences):</strong> OpenGameArt contributors — Licencja <em>CC-BY 3.0 / OGA-BY</em>
-                </li>
-                <li>
-                  <strong>Kafelki Terenu, Klify i Zarośla (Grassland & Cliffs):</strong> OpenGameArt contributors — Licencja <em>CC-BY 3.0 / OGA-BY</em>
-                </li>
-                <li>
-                  <strong>Izometryczne Modele Postaci i Bestiariusza 8-Kierunkowe (Flare RPG Fantasycore):</strong> Clint Bellanger &amp; Flare Team (<a href="https://flarerpg.org" target="_blank" rel="noopener noreferrer">flarerpg.org</a> / OpenGameArt.org) — Licencja <em>CC-BY-SA 3.0 / CC-BY 3.0</em>
-                </li>
-              </ul>
-            </div>
-
-            <div class="credits-section-box">
               <div class="credits-section-title">🔤 Typografia i Fonty (Google Fonts)</div>
               <div class="credits-meta-row">
                 <span><strong>Cinzel</strong> (Natanael Gama) — <em>SIL OFL 1.1</em></span>
+                <span><strong>MedievalSharp</strong> (Wojciech Kalinowski) — <em>SIL OFL 1.1</em></span>
+                <span><strong>Uncial Antiqua</strong> (Astigmatic) — <em>SIL OFL 1.1</em></span>
                 <span><strong>Inter</strong> (Rasmus Andersson) — <em>SIL OFL 1.1</em></span>
                 <span><strong>JetBrains Mono</strong> (JetBrains) — <em>Apache 2.0 / SIL OFL 1.1</em></span>
               </div>
@@ -3597,19 +3681,21 @@ export class HudOverlay {
             <div class="credits-section-box">
               <div class="credits-section-title">⚙️ Biblioteki i Środowisko Uruchomieniowe</div>
               <div class="credits-meta-row">
-                <span><strong>PixiJS v8</strong> — Mathew Groves & Goodboy Digital (<em>MIT License</em>)</span>
-                <span><strong>Vite & TypeScript</strong> (<em>MIT / Apache 2.0</em>)</span>
+                <span><strong>PixiJS v8</strong> — Mathew Groves, Chad Engler &amp; PixiJS Community (<em>MIT License</em>)</span>
+                <span><strong>Vite</strong> — Evan You &amp; contributors (<em>MIT License</em>)</span>
+                <span><strong>TypeScript</strong> — Microsoft (<em>Apache 2.0</em>)</span>
+                <span><strong>Vitest</strong> — Anthony Fu &amp; contributors (<em>MIT License</em>)</span>
               </div>
             </div>
 
             <div class="credits-legal-badge">
-              ✓ Spełniono wymogi licencji Creative Commons (CC-BY), SIL Open Font License oraz MIT (atrybucja i nota praw autorskich).
-              Kompletny dokument prawny jest dostępny w pliku <code>CREDITS.md</code>.
+              ✓ Spełniono wymogi licencji Creative Commons (CC BY-NC-SA 4.0, CC-BY-SA 3.0, CC-BY 3.0, CC0), SIL Open Font License, Apache 2.0 oraz MIT.
+              Pełne teksty licencji znajdują się w plikach <code>CREDITS.md</code> i <code>LICENSE-TRESC.md</code>.
             </div>
           </div>
 
           <div class="credits-modal-footer">
-            <button type="button" class="credits-ack-btn" data-action="close-credits">Rozumiem / Zamknij</button>
+            <button type="button" class="credits-ack-btn" data-action="close-credits">Zamknij</button>
           </div>
         </div>
       </div>
