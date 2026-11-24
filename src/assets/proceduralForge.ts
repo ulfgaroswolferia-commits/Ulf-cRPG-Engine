@@ -2383,17 +2383,17 @@ export function generatePropPbrBuffers(
       );
     } else if (kind === 'exit_path') {
       renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 68, 32);
-      // Stone plinths for both gateposts
+      // Weathered mossy stone plinths for both gateposts
       renderIsoPrism(
         baseAnchorPxX - 24,
         baseAnchorPxY + 2,
         22,
         11,
         14,
-        { r: 126, g: 130, b: 138 },
-        { r: 88, g: 92, b: 98 },
-        0.72,
-        0.12
+        { r: 88, g: 92, b: 92 },
+        { r: 58, g: 62, b: 64 },
+        0.78,
+        0.08
       );
       renderIsoPrism(
         baseAnchorPxX + stepDx + 20,
@@ -2401,22 +2401,22 @@ export function generatePropPbrBuffers(
         22,
         11,
         14,
-        { r: 126, g: 130, b: 138 },
-        { r: 88, g: 92, b: 98 },
-        0.72,
-        0.12
+        { r: 88, g: 92, b: 92 },
+        { r: 58, g: 62, b: 64 },
+        0.78,
+        0.08
       );
-      // Heavy timber gateposts spanning the entire 2-tile exit
+      // Dark weathered Slavic oak gateposts spanning the 2-tile exit
       renderIsoPrism(
         baseAnchorPxX - 24,
         baseAnchorPxY - 10,
         16,
         8,
         74,
-        { r: 148, g: 104, b: 56 },
-        { r: 102, g: 70, b: 38 },
-        0.68,
-        0.15
+        { r: 96, g: 70, b: 46 },
+        { r: 64, g: 45, b: 28 },
+        0.74,
+        0.1
       );
       renderIsoPrism(
         baseAnchorPxX + stepDx + 20,
@@ -2424,22 +2424,22 @@ export function generatePropPbrBuffers(
         16,
         8,
         74,
-        { r: 148, g: 104, b: 56 },
-        { r: 102, g: 70, b: 38 },
-        0.68,
-        0.15
+        { r: 96, g: 70, b: 46 },
+        { r: 64, g: 45, b: 28 },
+        0.74,
+        0.1
       );
-      // Heavy timber arch crossbeam + rooflet cap spanning the gate
+      // Dark oak arch crossbeam spanning the gate
       renderIsoPrism(
         baseAnchorPxX + stepDx * 0.5 - 2,
         baseAnchorPxY + stepDy * 0.5 - 66,
         72,
         18,
         14,
-        { r: 168, g: 120, b: 64 },
-        { r: 118, g: 82, b: 42 },
-        0.62,
-        0.18
+        { r: 108, g: 78, b: 50 },
+        { r: 72, g: 50, b: 32 },
+        0.7,
+        0.12
       );
       // Shingled protective ridge on top of gate crossbeam
       renderIsoPrism(
@@ -2448,22 +2448,22 @@ export function generatePropPbrBuffers(
         76,
         20,
         9,
-        { r: 132, g: 92, b: 52 },
-        { r: 92, g: 64, b: 36 },
-        0.74,
-        0.1
+        { r: 74, g: 56, b: 38 },
+        { r: 48, g: 36, b: 24 },
+        0.8,
+        0.08
       );
-      // Hanging golden-rimmed road emblem plaque under the arch
+      // Hanging antique-bronze road emblem plaque under the arch
       renderIsoPrism(
         baseAnchorPxX + stepDx * 0.5 - 2,
         baseAnchorPxY + stepDy * 0.5 - 52,
         28,
         8,
         12,
-        { r: 214, g: 172, b: 84 },
-        { r: 158, g: 116, b: 48 },
-        0.48,
-        0.35
+        { r: 162, g: 126, b: 64 },
+        { r: 108, g: 82, b: 40 },
+        0.54,
+        0.28
       );
     } else {
       renderSoftGroundAO(baseAnchorPxX + stepDx * 0.5, baseAnchorPxY + stepDy * 0.5, 58, 28);

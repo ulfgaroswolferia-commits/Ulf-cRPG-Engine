@@ -84,6 +84,21 @@ import {
   ScreenSpacePointLight,
   updateAtmosphericFilterUniforms
 } from './deferredPipeline';
+import {
+  classifyCombatImpact,
+  computeArcanePulseScale,
+  computeDeathCollapsePose,
+  computeDodgeGhostOffset,
+  computeFearTrembleOffset,
+  computeIdleBreathingTransform,
+  computePropReactionTransform,
+  computeWindSwaySkew,
+  DEATH_COLLAPSE_DURATION_SEC,
+  DODGE_ANIM_DURATION_SEC,
+  resolveNonOverlappingLabelPosition,
+  type LabelRect,
+  type PropReactionKind
+} from './sceneMotion';
 
 export type InspectorToolMode =
   | 'interact'
@@ -426,6 +441,17 @@ interface SlashArcVfx {
   life: number;
   maxLife: number;
   color: number;
+  widthScale?: number;
+}
+
+interface ShockwaveRingVfx {
+  x: number;
+  y: number;
+  z: number;
+  life: number;
+  maxLife: number;
+  maxRadius: number;
+  color: number;
 }
 
 function rgbaBufferToTexture(
@@ -481,6 +507,7 @@ class FrameDisplayPool {
     sp.alpha = 1;
     sp.tint = 0xffffff;
     sp.scale.set(1, 1);
+    sp.skew.set(0, 0);
     sp.rotation = 0;
     sp.anchor.set(0, 0);
     sp.visible = true;
@@ -624,6 +651,19 @@ export class IsoSceneView {
   private cachedHoverPath: PathStepNode[] = [];
   private readonly particles: FloatingParticle[] = [];
   private readonly slashArcs: SlashArcVfx[] = [];
+  private readonly shockwaves: ShockwaveRingVfx[] = [];
+  private readonly propReactions = new Map<
+    string,
+    { kind: PropReactionKind; life: number; maxLife: number }
+  >();
+  private readonly knownOpenChestIds = new Set<string>();
+  private readonly deathCollapseTimers = new Map<string, number>();
+  private readonly dodgeTimers = new Map<
+    string,
+    { life: number; maxLife: number; dirX: number; dirY: number }
+  >();
+  private readonly lastActorPos = new Map<string, { x: number; y: number; distAccum: number }>();
+  private statusParticleTimer = 0;
   private screenShakeTimer = 0;
   private screenShakeIntensity = 0;
   private postFilter: Filter | null = null;
@@ -649,6 +689,7 @@ export class IsoSceneView {
   private cachedIsOutdoor = true;
   public timeOfDay: AmbientTimeOfDay = 'dzien';
   public getTelegraphedIntent?: (actorId: string) => string | null;
+  public getActorStatuses?: (actorId: string) => readonly string[];
   private readonly reducedMotion: boolean =
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
@@ -661,12 +702,82 @@ export class IsoSceneView {
     this.onUiStateChange = onUiStateChange;
 
     this.game.addCombatAttackListener((evt) => {
-      this.triggerScreenShake(evt.outcome.critical ? 260 : 130, evt.outcome.critical ? 5.5 : 3.0);
+      const impact = classifyCombatImpact(evt.outcome);
+      if (impact === 'dodge') {
+        this.triggerDodgeSidestep(
+          evt.target.id,
+          evt.target.x - evt.attacker.x,
+          evt.target.y - evt.attacker.y
+        );
+        this.spawnSlashArc(
+          evt.attacker.x,
+          evt.attacker.y,
+          evt.target.x,
+          evt.target.y,
+          0x94a3b8,
+          evt.attacker.z,
+          evt.target.z,
+          0.65
+        );
+        return;
+      }
+
+      if (impact === 'parry') {
+        if (!this.reducedMotion) {
+          this.hitStopTimer = Math.max(this.hitStopTimer, 0.05);
+        }
+        this.triggerScreenShake(95, 2.2);
+        this.spawnParrySparks(evt.target.x, evt.target.y, evt.target.z + 0.85);
+        this.spawnShockwaveRing(evt.target.x, evt.target.y, evt.target.z, 24, 0xd4af37);
+        this.spawnSlashArc(
+          evt.attacker.x,
+          evt.attacker.y,
+          evt.target.x,
+          evt.target.y,
+          0xe2c275,
+          evt.attacker.z,
+          evt.target.z,
+          0.95
+        );
+        return;
+      }
+
+      if (impact === 'critical') {
+        if (!this.reducedMotion) {
+          this.hitStopTimer = Math.max(this.hitStopTimer, 0.085);
+        }
+        this.triggerScreenShake(220, 4.8);
+        this.spawnCombatHitVfx(
+          evt.target.x,
+          evt.target.y,
+          evt.target.z + 0.8,
+          true,
+          evt.outcome.mitigatedByArmor > 0
+        );
+        this.spawnShockwaveRing(evt.target.x, evt.target.y, evt.target.z, 34, 0xd97706);
+        this.spawnSlashArc(
+          evt.attacker.x,
+          evt.attacker.y,
+          evt.target.x,
+          evt.target.y,
+          0xf5c451,
+          evt.attacker.z,
+          evt.target.z,
+          1.45
+        );
+        return;
+      }
+
+      // Standard hit — grounded Slavic weight
+      if (!this.reducedMotion) {
+        this.hitStopTimer = Math.max(this.hitStopTimer, 0.045);
+      }
+      this.triggerScreenShake(115, 2.7);
       this.spawnCombatHitVfx(
         evt.target.x,
         evt.target.y,
         evt.target.z + 0.8,
-        evt.outcome.critical,
+        false,
         evt.outcome.mitigatedByArmor > 0
       );
       this.spawnSlashArc(
@@ -674,9 +785,10 @@ export class IsoSceneView {
         evt.attacker.y,
         evt.target.x,
         evt.target.y,
-        evt.outcome.critical ? 0xffca28 : 0xedf2f7,
+        0xdbe4ee,
         evt.attacker.z,
-        evt.target.z
+        evt.target.z,
+        1.0
       );
     });
   }
@@ -2381,9 +2493,218 @@ export class IsoSceneView {
         this.slashArcs.splice(i, 1);
       }
     }
+
+    for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+      const sw = this.shockwaves[i];
+      sw.life += dt;
+      if (sw.life >= sw.maxLife) {
+        this.shockwaves.splice(i, 1);
+      }
+    }
+
+    for (const [propId, reaction] of this.propReactions) {
+      reaction.life += dt;
+      if (reaction.life >= reaction.maxLife) {
+        this.propReactions.delete(propId);
+      }
+    }
+
+    for (const [actorId, dodge] of this.dodgeTimers) {
+      dodge.life += dt;
+      if (dodge.life >= dodge.maxLife) {
+        this.dodgeTimers.delete(actorId);
+      }
+    }
+
+    // Track chest openings for automatic 'pop' reaction & clear stale map caches
+    for (const prop of this.game.map.props) {
+      if (prop.kind === 'chest') {
+        if (prop.isOpen) {
+          if (!this.knownOpenChestIds.has(prop.id)) {
+            this.knownOpenChestIds.add(prop.id);
+            this.triggerPropReaction(prop.id, 'pop', 0.34);
+          }
+        } else {
+          this.knownOpenChestIds.delete(prop.id);
+        }
+      }
+    }
+
+    // Track actor movement for footstep dust puffs, death collapse timers, and status auras
+    const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
+    this.statusParticleTimer += dt;
+    const emitStatusNow = !this.reducedMotion && this.statusParticleTimer >= 0.28;
+    if (emitStatusNow) {
+      this.statusParticleTimer = 0;
+    }
+
+    for (const actor of allActors) {
+      const isDead = actor.combat ? !actor.combat.isAlive : false;
+      if (isDead) {
+        const cur = this.deathCollapseTimers.get(actor.id) ?? 0;
+        if (cur < DEATH_COLLAPSE_DURATION_SEC) {
+          this.deathCollapseTimers.set(
+            actor.id,
+            Math.min(DEATH_COLLAPSE_DURATION_SEC, cur + dt)
+          );
+        }
+        continue;
+      } else if (this.deathCollapseTimers.has(actor.id)) {
+        this.deathCollapseTimers.delete(actor.id);
+      }
+
+      const prev = this.lastActorPos.get(actor.id);
+      if (!prev) {
+        this.lastActorPos.set(actor.id, { x: actor.x, y: actor.y, distAccum: 0 });
+      } else {
+        const moved = Math.hypot(actor.x - prev.x, actor.y - prev.y);
+        prev.x = actor.x;
+        prev.y = actor.y;
+        if (!this.reducedMotion && moved > 0.002 && moved < 2.5) {
+          prev.distAccum += moved;
+          if (prev.distAccum >= 0.65 && this.particles.length < 130) {
+            prev.distAccum = 0;
+            this.particles.push({
+              x: actor.x + (Math.random() - 0.5) * 0.18,
+              y: actor.y + (Math.random() - 0.5) * 0.18,
+              z: actor.z + 0.06,
+              vx: (Math.random() - 0.5) * 0.18,
+              vy: (Math.random() - 0.5) * 0.18,
+              vz: 0.16 + Math.random() * 0.12,
+              life: 0,
+              maxLife: 0.42 + Math.random() * 0.18,
+              color: 0xb8ad9a,
+              size: 2.2 + Math.random() * 1.1,
+              kind: 'dust'
+            });
+          }
+        }
+      }
+
+      if (emitStatusNow && this.getActorStatuses && this.particles.length < 135) {
+        const statuses = this.getActorStatuses(actor.id);
+        for (const st of statuses) {
+          if (st === 'krwawienie') {
+            this.particles.push({
+              x: actor.x + (Math.random() - 0.5) * 0.24,
+              y: actor.y + (Math.random() - 0.5) * 0.24,
+              z: actor.z + 0.75 + Math.random() * 0.35,
+              vx: (Math.random() - 0.5) * 0.08,
+              vy: (Math.random() - 0.5) * 0.08,
+              vz: -0.55 - Math.random() * 0.25,
+              life: 0,
+              maxLife: 0.55 + Math.random() * 0.2,
+              color: 0x991b1b,
+              size: 2.1 + Math.random() * 0.9
+            });
+          } else if (st === 'zatrucie') {
+            this.particles.push({
+              x: actor.x + (Math.random() - 0.5) * 0.32,
+              y: actor.y + (Math.random() - 0.5) * 0.32,
+              z: actor.z + 0.35 + Math.random() * 0.4,
+              vx: (Math.random() - 0.5) * 0.14,
+              vy: (Math.random() - 0.5) * 0.14,
+              vz: 0.32 + Math.random() * 0.18,
+              life: 0,
+              maxLife: 0.85 + Math.random() * 0.3,
+              color: 0x65a30d,
+              size: 2.6 + Math.random() * 1.2,
+              kind: 'dust'
+            });
+          } else if (st === 'strach') {
+            this.particles.push({
+              x: actor.x + (Math.random() - 0.5) * 0.3,
+              y: actor.y + (Math.random() - 0.5) * 0.3,
+              z: actor.z + 0.65 + Math.random() * 0.5,
+              vx: (Math.random() - 0.5) * 0.16,
+              vy: (Math.random() - 0.5) * 0.16,
+              vz: 0.24 + Math.random() * 0.14,
+              life: 0,
+              maxLife: 0.75 + Math.random() * 0.25,
+              color: 0x475569,
+              size: 2.8 + Math.random() * 1.2,
+              kind: 'dust'
+            });
+          } else if (st === 'podpalenie') {
+            this.particles.push({
+              x: actor.x + (Math.random() - 0.5) * 0.26,
+              y: actor.y + (Math.random() - 0.5) * 0.26,
+              z: actor.z + 0.45 + Math.random() * 0.4,
+              vx: (Math.random() - 0.5) * 0.15,
+              vy: (Math.random() - 0.5) * 0.15,
+              vz: 0.55 + Math.random() * 0.3,
+              life: 0,
+              maxLife: 0.5 + Math.random() * 0.25,
+              color: 0xea580c,
+              size: 2.2 + Math.random() * 0.9,
+              kind: 'ember'
+            });
+          }
+        }
+      }
+    }
+  }
+
+  public triggerPropReaction(
+    propId: string,
+    kind: PropReactionKind,
+    durationSec = kind === 'rock' ? 0.55 : 0.34
+  ): void {
+    if (this.reducedMotion) return;
+    this.propReactions.set(propId, { kind, life: 0, maxLife: durationSec });
+  }
+
+  public triggerDodgeSidestep(actorId: string, dirX: number, dirY: number): void {
+    if (this.reducedMotion) return;
+    this.dodgeTimers.set(actorId, {
+      life: 0,
+      maxLife: DODGE_ANIM_DURATION_SEC,
+      dirX,
+      dirY
+    });
+  }
+
+  public spawnShockwaveRing(
+    worldX: number,
+    worldY: number,
+    worldZ: number,
+    maxRadius = 30,
+    color = 0xd97706
+  ): void {
+    if (this.reducedMotion) return;
+    this.shockwaves.push({
+      x: worldX,
+      y: worldY,
+      z: worldZ,
+      life: 0,
+      maxLife: 0.28,
+      maxRadius,
+      color
+    });
+  }
+
+  public spawnParrySparks(worldX: number, worldY: number, worldZ: number): void {
+    const parryColors = [0xfef08a, 0xeab308, 0xd97706, 0xf8fafc];
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.1 + Math.random() * 1.9;
+      this.particles.push({
+        x: worldX + (Math.random() - 0.5) * 0.2,
+        y: worldY + (Math.random() - 0.5) * 0.2,
+        z: worldZ + (Math.random() - 0.5) * 0.25,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        vz: 1.0 + Math.random() * 0.9,
+        life: 0,
+        maxLife: 0.28 + Math.random() * 0.22,
+        color: parryColors[Math.floor(Math.random() * parryColors.length)],
+        size: 1.7 + Math.random() * 1.1
+      });
+    }
   }
 
   public triggerScreenShake(durationMs = 150, intensityPx = 3.2): void {
+    if (this.reducedMotion) return;
     this.screenShakeTimer = durationMs / 1000;
     this.screenShakeIntensity = intensityPx;
   }
@@ -2427,7 +2748,8 @@ export class IsoSceneView {
     toY: number,
     color = 0xedf2f7,
     startZ = 0,
-    targetZ = 0
+    targetZ = 0,
+    widthScale = 1
   ): void {
     this.slashArcs.push({
       startX: fromX,
@@ -2438,7 +2760,8 @@ export class IsoSceneView {
       targetZ,
       life: 0,
       maxLife: 0.18,
-      color
+      color,
+      widthScale
     });
   }
 
@@ -3061,7 +3384,7 @@ export class IsoSceneView {
         const pBottom = gridToScreen(fp.rx + fp.width, fp.ry + fp.height, prop.z);
         const pLeft = gridToScreen(fp.rx, fp.ry + fp.height, prop.z);
 
-        // Luminous amber travel-zone carpet covering the full exit width & depth
+        // Subtle antique-amber travel threshold covering the exit footprint
         this.cursorAndPathGraphics
           .poly([
             pTop.x, pTop.y,
@@ -3069,16 +3392,16 @@ export class IsoSceneView {
             pBottom.x, pBottom.y,
             pLeft.x, pLeft.y
           ])
-          .fill({ color: 0xffb300, alpha: 0.22 + 0.14 * pulse })
-          .stroke({ color: 0xffe082, width: 2.6, alpha: 0.72 + 0.24 * pulse });
+          .fill({ color: 0xd4a34a, alpha: 0.08 + 0.05 * pulse })
+          .stroke({ color: 0xc8a45c, width: 1.5, alpha: 0.38 + 0.16 * pulse });
 
-        // Individual exit tile diamonds + subtle glowing center chevrons
+        // Subtle pulsing waypoint rings on exit tiles
         for (let dy = 0; dy < fp.height; dy++) {
           for (let dx = 0; dx < fp.width; dx++) {
             const c = gridToScreen(fp.rx + dx + 0.5, fp.ry + dy + 0.5, prop.z);
             this.cursorAndPathGraphics
-              .ellipse(c.x, c.y, 18 + pulse * 4, 9 + pulse * 2)
-              .stroke({ color: 0xfff176, width: 1.6, alpha: 0.55 + 0.3 * pulse });
+              .ellipse(c.x, c.y, 16 + pulse * 3.5, 8 + pulse * 1.8)
+              .stroke({ color: 0xe2c275, width: 1.1, alpha: 0.28 + 0.18 * pulse });
           }
         }
       }
@@ -3108,6 +3431,7 @@ export class IsoSceneView {
     };
 
     const renderables: RenderableNode[] = [];
+    const worldLabelBounds: LabelRect[] = [];
 
     for (const prop of this.game.map.props) {
       const vis = this.game.fov.getVisibility(prop.x, prop.y);
@@ -3222,10 +3546,47 @@ export class IsoSceneView {
 
           const sp = this.displayPool.sprite(useNormalTex ? texPair.normalMat : texPair.albedo);
           sp.anchor.set(texPair.anchorX, texPair.anchorY);
-          sp.position.set(scr.x, scr.y + vt.offsetY);
+          const windSkew = computeWindSwaySkew(
+            prop.kind,
+            prop.x,
+            prop.y,
+            this.elapsedSeconds,
+            this.reducedMotion
+          );
+          const arcanePulse = computeArcanePulseScale(
+            prop.kind,
+            prop.x,
+            prop.y,
+            this.elapsedSeconds,
+            this.reducedMotion
+          );
+          const reactionState = this.propReactions.get(prop.id);
+          const reactionTx = reactionState
+            ? computePropReactionTransform(
+                reactionState.kind,
+                reactionState.life / Math.max(0.01, reactionState.maxLife),
+                this.reducedMotion
+              )
+            : null;
           const mirrorSign = texPair.allowMirrorX && ((prop.variant ?? 0) & 1) === 1 ? -1 : 1;
-          if (vt.scaleX !== 1 || vt.scaleY !== 1 || mirrorSign !== 1) {
-            sp.scale.set(vt.scaleX * mirrorSign, vt.scaleY);
+          const finalScaleX =
+            vt.scaleX * mirrorSign * arcanePulse.scale * (reactionTx ? reactionTx.scaleX : 1);
+          const finalScaleY =
+            vt.scaleY * arcanePulse.scale * (reactionTx ? reactionTx.scaleY : 1);
+          sp.position.set(scr.x, scr.y + vt.offsetY + (reactionTx ? reactionTx.offsetY : 0));
+          if (finalScaleX !== 1 || finalScaleY !== 1) {
+            sp.scale.set(finalScaleX, finalScaleY);
+          }
+          const totalSkewX = windSkew + (reactionTx ? reactionTx.skewX : 0);
+          if (totalSkewX !== 0) {
+            sp.skew.x = totalSkewX;
+          }
+          if (arcanePulse.glowAlpha > 0 && this.bufferMode === 'final_pbr') {
+            const glowGfx = this.displayPool.graphics();
+            glowGfx
+              .ellipse(scr.x, scr.y - 8, 22 * arcanePulse.scale, 11 * arcanePulse.scale)
+              .fill({ color: 0x38bdf8, alpha: arcanePulse.glowAlpha * 0.45 });
+            this.sortedObjectLayer.addChild(glowGfx);
           }
 
           // Apply X-Ray Wall Cutaway if wall occludes the player character!
@@ -3254,7 +3615,7 @@ export class IsoSceneView {
             const b = Math.round(245 - t * 200);
             sp.tint = (r << 16) | (g << 8) | b;
           } else {
-            sp.tint = this.computeRgbTintForScreenPoint(
+            let propTint = this.computeRgbTintForScreenPoint(
               scr.x,
               scr.y - 24,
               0.25,
@@ -3264,6 +3625,19 @@ export class IsoSceneView {
               fovFactor,
               screenLights
             );
+            // Harmonize bright Kenney wood props with the dark weathered Slavic painterly palette
+            if (
+              prop.kind === 'dungeon_crate' ||
+              prop.kind === 'dungeon_barrel' ||
+              prop.kind === 'dungeon_table' ||
+              prop.kind === 'dungeon_support'
+            ) {
+              const tr = Math.round(((propTint >> 16) & 0xff) * 0.64);
+              const tg = Math.round(((propTint >> 8) & 0xff) * 0.58);
+              const tb = Math.round((propTint & 0xff) * 0.52);
+              propTint = (tr << 16) | (tg << 8) | tb;
+            }
+            sp.tint = propTint;
           }
 
           this.sortedObjectLayer.addChild(sp);
@@ -3376,16 +3750,47 @@ export class IsoSceneView {
                 stroke: { color: 0x06080c, width: prop.kind === 'exit_path' ? 4.0 : 3.2 }
               }));
               label.anchor.set(0.5, 1);
+              let baseLabelX = scr.x;
+              let baseLabelY = scr.y;
+              let propCandidates: Array<{ x: number; y: number }>;
               if (prop.kind === 'exit_path') {
                 const centerScr = gridToScreen(
                   fp.rx + fp.width * 0.5,
                   fp.ry + fp.height * 0.5,
                   prop.z
                 );
-                label.position.set(centerScr.x, centerScr.y - 84);
+                baseLabelX = centerScr.x;
+                baseLabelY = centerScr.y;
+                propCandidates = [
+                  { x: 0, y: -84 },
+                  { x: 0, y: -106 },
+                  { x: 0, y: -128 }
+                ];
+              } else if (prop.kind === 'campfire') {
+                propCandidates = [
+                  { x: 0, y: -42 },
+                  { x: 0, y: -64 },
+                  { x: 26, y: -42 },
+                  { x: -26, y: -42 },
+                  { x: 0, y: -86 }
+                ];
               } else {
-                label.position.set(scr.x, scr.y - (prop.kind === 'ground_loot' ? 28 : 54));
+                const y0 = prop.kind === 'ground_loot' ? -28 : -54;
+                propCandidates = [
+                  { x: 0, y: y0 },
+                  { x: 0, y: y0 - 22 },
+                  { x: 0, y: y0 - 44 }
+                ];
               }
+              const placedPos = resolveNonOverlappingLabelPosition(
+                baseLabelX,
+                baseLabelY,
+                label.width,
+                label.height,
+                propCandidates,
+                worldLabelBounds
+              );
+              label.position.set(placedPos.x, placedPos.y);
               this.debugOverlayContainer.addChild(label);
             }
           }
@@ -3405,7 +3810,6 @@ export class IsoSceneView {
       });
     }
 
-    const actorNameLabelBounds: Array<{ left: number; top: number; right: number; bottom: number }> = [];
     const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
     for (const actor of allActors) {
       const isDead = Boolean(actor.combat && !actor.combat.isAlive);
@@ -3445,17 +3849,60 @@ export class IsoSceneView {
           let actorScrX = scr.x;
           let actorScrY = scr.y;
           let actorRotation = 0;
+          let actorScaleX = 1.0;
           let actorScaleY = 1.0;
+          let bloodPoolScale = 1.0;
+          let dodgeGhostAlpha = 0;
+          const baseScrX = scr.x;
+          const baseScrY = scr.y;
 
           if (isDead) {
-            actorScrY += 4;
-            actorScaleY = 0.38;
-            actorRotation = 0.42;
+            const collapseElapsed = this.deathCollapseTimers.get(actor.id) ?? DEATH_COLLAPSE_DURATION_SEC;
+            const collapsePose = computeDeathCollapsePose(
+              collapseElapsed / DEATH_COLLAPSE_DURATION_SEC,
+              this.reducedMotion
+            );
+            actorScrY += collapsePose.offsetY;
+            actorScaleY = collapsePose.scaleY;
+            actorRotation = collapsePose.rotation;
+            bloodPoolScale = collapsePose.bloodPoolScale;
           } else {
-            // Combat stance ready bob & breathing
-            if (this.game.combatState.active) {
-              const stanceBob = Math.sin(this.elapsedSeconds * 6 + (actor.id.charCodeAt(0) || 0)) * 1.5;
-              actorScrY += stanceBob;
+            const isMoving = Boolean(actor.path && actor.path.length > 0);
+            const isStealth = actor.id === this.game.player.id && this.game.isStealthActive;
+            const breath = computeIdleBreathingTransform(
+              actor.id,
+              this.elapsedSeconds,
+              this.game.combatState.active,
+              isMoving,
+              isStealth,
+              this.reducedMotion
+            );
+            actorScrY += breath.offsetY;
+            actorScaleX = breath.scaleX;
+            actorScaleY = breath.scaleY;
+
+            // Subtle fear tremble when afflicted by 'strach'
+            const statuses = this.getActorStatuses?.(actor.id);
+            if (statuses && statuses.includes('strach')) {
+              actorScrX += computeFearTrembleOffset(
+                actor.id,
+                this.elapsedSeconds,
+                this.reducedMotion
+              );
+            }
+
+            // Dodge sidestep + afterimage ghost
+            const dodgeState = this.dodgeTimers.get(actor.id);
+            if (dodgeState) {
+              const dodgeOff = computeDodgeGhostOffset(
+                dodgeState.life / Math.max(0.01, dodgeState.maxLife),
+                dodgeState.dirX,
+                dodgeState.dirY,
+                this.reducedMotion
+              );
+              actorScrX += dodgeOff.offsetX;
+              actorScrY += dodgeOff.offsetY;
+              dodgeGhostAlpha = dodgeOff.ghostAlpha;
             }
 
             // Attack Lunge animation
@@ -3497,13 +3944,13 @@ export class IsoSceneView {
           if (this.bufferMode === 'final_pbr') {
             const shadowGfx = this.displayPool.graphics();
             if (isDead) {
-              // Deep blood pool beneath fallen corpse
+              // Expanding deep blood pool beneath fallen corpse
               shadowGfx
-                .ellipse(actorScrX, actorScrY + 1, 22, 11)
-                .fill({ color: 0x3d0808, alpha: 0.85 });
+                .ellipse(actorScrX, actorScrY + 1, 22 * bloodPoolScale, 11 * bloodPoolScale)
+                .fill({ color: 0x3d0808, alpha: 0.85 * bloodPoolScale });
               shadowGfx
-                .ellipse(actorScrX + 2, actorScrY + 2, 12, 6)
-                .fill({ color: 0x1a0303, alpha: 0.95 });
+                .ellipse(actorScrX + 2, actorScrY + 2, 12 * bloodPoolScale, 6 * bloodPoolScale)
+                .fill({ color: 0x1a0303, alpha: 0.95 * bloodPoolScale });
             } else {
               let shadowOffsetX = -8;
               let shadowOffsetY = 4;
@@ -3638,10 +4085,19 @@ export class IsoSceneView {
             ? charTex.normalFrames[rotDir][frameIdx]
             : charTex.albedoFrames[rotDir][frameIdx];
 
+          if (dodgeGhostAlpha > 0.03 && this.bufferMode === 'final_pbr') {
+            const ghostSp = this.displayPool.sprite(tex);
+            ghostSp.anchor.set(0.5, 82 / 96);
+            ghostSp.position.set(baseScrX, baseScrY);
+            ghostSp.alpha = dodgeGhostAlpha;
+            ghostSp.tint = 0xcbd5e1;
+            this.sortedObjectLayer.addChild(ghostSp);
+          }
+
           const sp = this.displayPool.sprite(tex);
           sp.anchor.set(0.5, isDead ? 0.65 : 82 / 96);
           sp.position.set(actorScrX, actorScrY);
-          sp.scale.y = actorScaleY;
+          sp.scale.set(actorScaleX, actorScaleY);
           sp.rotation = actorRotation;
 
           if (this.bufferMode === 'depth_dag') {
@@ -3826,30 +4282,14 @@ export class IsoSceneView {
               { x: 38, y: -106 },
               { x: 0, y: -157 }
             ];
-            const labelPosition = candidateOffsets
-              .map(({ x, y }) => {
-                const left = scr.x + x - nameTag.width * 0.5 - 5;
-                const top = scr.y + y - nameTag.height - 4;
-                const right = scr.x + x + nameTag.width * 0.5 + 5;
-                const bottom = scr.y + y + 4;
-                const overlaps = actorNameLabelBounds.some(
-                  (placed) =>
-                    left < placed.right &&
-                    right > placed.left &&
-                    top < placed.bottom &&
-                    bottom > placed.top
-                );
-                return { x: scr.x + x, y: scr.y + y, left, top, right, bottom, overlaps };
-              })
-              .find((candidate) => !candidate.overlaps) ?? {
-              x: scr.x,
-              y: scr.y - 79,
-              left: scr.x - nameTag.width * 0.5 - 5,
-              top: scr.y - 79 - nameTag.height - 4,
-              right: scr.x + nameTag.width * 0.5 + 5,
-              bottom: scr.y - 79 + 4
-            };
-            actorNameLabelBounds.push(labelPosition);
+            const labelPosition = resolveNonOverlappingLabelPosition(
+              scr.x,
+              scr.y,
+              nameTag.width,
+              nameTag.height,
+              candidateOffsets,
+              worldLabelBounds
+            );
             nameTag.position.set(labelPosition.x, labelPosition.y);
             this.debugOverlayContainer.addChild(nameTag);
 
@@ -3912,10 +4352,15 @@ export class IsoSceneView {
             }
           }
 
-          // Render Floating cRPG Speech Bubble (e.g. "Jeszcze nie czas iść dalej...")
+          // Render Floating cRPG Speech Bubble (e.g. "Jeszcze nie czas iść dalej...") or Quest/Role Badge
           if (actor.speechBubbleText) {
+            const rawBubble = actor.speechBubbleText.trim();
+            const isMarkerBadge =
+              rawBubble.length <= 3 ||
+              /^[❗❓⚔️🛡️🌿⚒️🍺💰🗣️💬⚖️📜🔥🪧⭐💀]/u.test(rawBubble);
+            const displayBubbleText = isMarkerBadge ? rawBubble : `„${rawBubble}”`;
             const bubbleText = this.displayPool.text(
-              `„${actor.speechBubbleText}”`,
+              displayBubbleText,
               'speech_bubble',
               () => ({
                 fontFamily: 'Inter, sans-serif',
@@ -3998,9 +4443,14 @@ export class IsoSceneView {
             .circle(scrP.x, scrP.y, p.size * 0.7)
             .fill({ color: 0xfefce8, alpha: alpha * 0.92 });
         } else if (p.kind === 'mist') {
+          const drift = Math.sin((p.phase ?? 0) + p.life * 0.9) * 8;
           this.lightingOverlayGraphics
-            .ellipse(scrP.x, scrP.y, p.size * 1.8, p.size * 0.55)
-            .fill({ color: p.color, alpha: envelope * 0.07 });
+            .ellipse(scrP.x, scrP.y, p.size * 2.4, p.size * 0.72)
+            .fill({ color: p.color, alpha: envelope * 0.014 })
+            .ellipse(scrP.x + drift * 0.5, scrP.y - 1, p.size * 1.75, p.size * 0.52)
+            .fill({ color: p.color, alpha: envelope * 0.018 })
+            .ellipse(scrP.x - drift * 0.4, scrP.y + 1, p.size * 1.15, p.size * 0.34)
+            .fill({ color: p.color, alpha: envelope * 0.02 });
         } else if (p.kind === 'dust') {
           this.lightingOverlayGraphics
             .circle(scrP.x, scrP.y, p.size)
@@ -4019,7 +4469,22 @@ export class IsoSceneView {
       }
     }
 
-    // 5. Render Slash Arc Trails (Dynamic weapon blade trails)
+    // 5. Render Ground Shockwave Rings (Critical hits & Parries)
+    for (const sw of this.shockwaves) {
+      const rotSw = toRotatedContinuous(sw.x, sw.y, mapW, mapH, this.rotation);
+      const scrSw = gridToScreen(rotSw.rx, rotSw.ry, sw.z);
+      const progress = Math.max(0, Math.min(1, sw.life / sw.maxLife));
+      const eased = 1 - Math.pow(1 - progress, 2);
+      const radius = 8 + eased * sw.maxRadius;
+      const alpha = (1 - progress) * 0.72;
+      const swGfx = this.displayPool.graphics();
+      swGfx
+        .ellipse(scrSw.x, scrSw.y, radius, radius * 0.5)
+        .stroke({ color: sw.color, width: 2.6 * (1 - progress * 0.5), alpha });
+      this.sortedObjectLayer.addChild(swGfx);
+    }
+
+    // 6. Render Slash Arc Trails (Dynamic weapon blade trails)
     for (const arc of this.slashArcs) {
       const rotStart = toRotatedContinuous(arc.startX, arc.startY, mapW, mapH, this.rotation);
       const rotEnd = toRotatedContinuous(arc.targetX, arc.targetY, mapW, mapH, this.rotation);
@@ -4029,18 +4494,19 @@ export class IsoSceneView {
       const alpha = Math.sin(progress * Math.PI) * 0.95;
       const midX = (scrStart.x + scrEnd.x) * 0.5;
       const midY = (scrStart.y + scrEnd.y) * 0.5 - 24;
+      const wScale = arc.widthScale ?? 1;
 
       const slashGfx = this.displayPool.graphics();
       // Outer colored swing blade
       slashGfx
         .moveTo(scrStart.x, scrStart.y - 18)
         .quadraticCurveTo(midX, midY - 12, scrEnd.x, scrEnd.y - 18)
-        .stroke({ color: arc.color, width: 4.8 * (1 - progress * 0.4), alpha });
+        .stroke({ color: arc.color, width: 4.8 * wScale * (1 - progress * 0.4), alpha });
       // Inner glowing white core
       slashGfx
         .moveTo(scrStart.x, scrStart.y - 18)
         .quadraticCurveTo(midX, midY - 12, scrEnd.x, scrEnd.y - 18)
-        .stroke({ color: 0xffffff, width: 2.2 * (1 - progress * 0.4), alpha: alpha * 0.95 });
+        .stroke({ color: 0xffffff, width: 2.2 * wScale * (1 - progress * 0.4), alpha: alpha * 0.95 });
       this.sortedObjectLayer.addChild(slashGfx);
     }
 
