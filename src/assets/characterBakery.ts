@@ -1616,8 +1616,8 @@ function bakeQuadrupedWolfSheet(
       const cx = ox + 32;
       const groundY = oy + 82;
       const phase = (frame / 4) * Math.PI * 2;
-      const stride = frame === 0 ? 0 : Math.sin(phase) * 4.5;
-      const bob = frame === 0 ? 0 : Math.abs(Math.cos(phase)) * 1.8;
+      const stride = frame === 0 || frame === 2 ? 0 : Math.sin(phase) * 4.8;
+      const bob = frame === 0 ? 0 : frame === 2 ? 0.4 : 1.8;
 
       const bodyY = groundY - 22 - bob;
       const chestX = cx + fx * 8.5;
@@ -2099,8 +2099,8 @@ function tryBakeFromLoadedCharacterSheets(
       const cx = ox + 32;
       const groundY = oy + 82;
       const stridePhase = (frame / 4) * Math.PI * 2;
-      const legSwing = frame === 0 ? 0 : Math.sin(stridePhase) * 4.0;
-      const bobY = frame === 0 ? 0 : Math.abs(Math.cos(stridePhase)) * 1.8;
+      const legSwing = frame === 0 || frame === 2 ? 0 : Math.sin(stridePhase) * 4.4;
+      const bobY = frame === 0 ? 0 : frame === 2 ? 0.4 : 1.8;
 
       const drawArmor = (): void => {
         blitCharacterSheetCell(
@@ -2391,19 +2391,19 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
       const groundY = oy + 84;
 
       const stridePhase = (frame / framesPerDirection) * Math.PI * 2;
-      const legSwing = frame === 0 ? 0 : Math.sin(stridePhase) * 5.0;
-      const bobY = frame === 0 ? 0 : Math.abs(Math.cos(stridePhase)) * 2.2;
+      const legSwing = frame === 0 || frame === 2 ? 0 : Math.sin(stridePhase) * 6.2;
+      const bobY = frame === 0 ? 0 : frame === 2 ? 0.5 : 1.8;
 
-      // Hand & Arm Coordinates
+      // Hand & Arm Coordinates (expressive counter-swing opposite to legs)
       const shoulderLeftX = cx - 11.5;
       const shoulderRightX = cx + 11.5;
       const shoulderY = groundY - 47 - bobY;
 
-      const mainHandX = cx + 12 + facingX * 2.5;
-      const mainHandY = groundY - 35 - bobY + legSwing * 0.25;
+      const mainHandX = cx + 12 + facingX * 2.5 - legSwing * 0.22;
+      const mainHandY = groundY - 35 - bobY + legSwing * 0.42;
 
-      const offHandX = cx - 12 - facingX * 1.5;
-      const offHandY = groundY - 35 - bobY - legSwing * 0.25;
+      const offHandX = cx - 12 - facingX * 1.5 + legSwing * 0.22;
+      const offHandY = groundY - 35 - bobY - legSwing * 0.42;
 
       const drawCloakFirst = facingY >= -0.15;
 

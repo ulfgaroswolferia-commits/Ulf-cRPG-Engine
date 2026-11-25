@@ -4493,8 +4493,10 @@ export class CrpgGameState {
     const dist = Math.hypot(dx, dy);
 
     actor.direction = nextNode.direction;
-    actor.animTimer += dt * speedTilesPerSec * 2.6;
-    actor.animFrame = (Math.floor(actor.animTimer) % 3) + 1;
+    // Symmetric 4-beat walk cycle (left stride -> passing -> right stride -> passing)
+    actor.animTimer += dt * speedTilesPerSec * 2.35;
+    const walkBeat = Math.floor(actor.animTimer) % 4;
+    actor.animFrame = walkBeat === 0 ? 1 : walkBeat === 1 ? 0 : walkBeat === 2 ? 3 : 2;
 
     const step = speedTilesPerSec * dt;
     if (dist <= step) {

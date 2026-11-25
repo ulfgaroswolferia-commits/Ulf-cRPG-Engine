@@ -182,6 +182,7 @@ export class HudOverlay {
   private draggedSlotIndex: number | null = null;
   private activeCombatReportModalId: string | null = null;
   private inspectedItemInstanceId: string | null = null;
+  private lastRenderedHtml = '';
 
   constructor(
     root: HTMLElement,
@@ -2792,7 +2793,7 @@ export class HudOverlay {
       }
     }
 
-    this.root.innerHTML = `
+    const nextHtml = `
       ${this.buildItemDetailsModalHtml()}
       ${combatConfirmModalHtml}
       ${combatReportModalHtml}
@@ -2821,6 +2822,13 @@ export class HudOverlay {
       ${bottomAreaHtml}
       ${this.renderCreditsModalHtml()}
     `;
+
+    // Skip DOM teardown completely if HUD markup is byte-for-byte unchanged (prevents backdrop-filter flicker)
+    if (nextHtml === this.lastRenderedHtml && this.root.firstElementChild) {
+      return;
+    }
+    this.lastRenderedHtml = nextHtml;
+    this.root.innerHTML = nextHtml;
 
     for (const [sel, top] of preservedScrollTops) {
       const el = this.root.querySelector<HTMLElement>(sel);

@@ -187,11 +187,11 @@ float mistNoise(vec2 p) {
 
 float fbmMist(vec2 p) {
     float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 3; i++) {
+    float a = 0.56;
+    for (int i = 0; i < 2; i++) {
         v += a * mistNoise(p);
         p *= 2.03;
-        a *= 0.5;
+        a *= 0.44;
     }
     return v;
 }
@@ -237,21 +237,15 @@ void main(void) {
     // Stable upward normal to avoid spatial pixel aliasing and shimmering on high-contrast edges
     vec3 N = vec3(0.0, 0.0, 1.0);
 
-    // Multi-tap Bloom with smooth knee for flames, torches, magic crystals and lights
-    vec2 bStep1 = uInputSize.zw * 2.8;
-    vec2 bStep2 = uInputSize.zw * 5.8;
+    // Fast 4-tap diagonal Bloom with smooth knee for flames, torches, magic crystals and lights
+    vec2 bStep = uInputSize.zw * 3.4;
 
-    vec3 s1 = texture(uTexture, vTextureCoord + vec2(-bStep1.x, -bStep1.y)).rgb;
-    vec3 s2 = texture(uTexture, vTextureCoord + vec2( bStep1.x, -bStep1.y)).rgb;
-    vec3 s3 = texture(uTexture, vTextureCoord + vec2(-bStep1.x,  bStep1.y)).rgb;
-    vec3 s4 = texture(uTexture, vTextureCoord + vec2( bStep1.x,  bStep1.y)).rgb;
+    vec3 s1 = texture(uTexture, vTextureCoord + vec2(-bStep.x, -bStep.y)).rgb;
+    vec3 s2 = texture(uTexture, vTextureCoord + vec2( bStep.x, -bStep.y)).rgb;
+    vec3 s3 = texture(uTexture, vTextureCoord + vec2(-bStep.x,  bStep.y)).rgb;
+    vec3 s4 = texture(uTexture, vTextureCoord + vec2( bStep.x,  bStep.y)).rgb;
 
-    vec3 s5 = texture(uTexture, vTextureCoord + vec2(-bStep2.x, 0.0)).rgb;
-    vec3 s6 = texture(uTexture, vTextureCoord + vec2( bStep2.x, 0.0)).rgb;
-    vec3 s7 = texture(uTexture, vTextureCoord + vec2(0.0, -bStep2.y)).rgb;
-    vec3 s8 = texture(uTexture, vTextureCoord + vec2(0.0,  bStep2.y)).rgb;
-
-    vec3 bloomSample = (s1 + s2 + s3 + s4) * 0.15 + (s5 + s6 + s7 + s8) * 0.10;
+    vec3 bloomSample = (s1 + s2 + s3 + s4) * 0.25;
     vec3 bloomThreshold = clamp((bloomSample - vec3(0.55)) * 2.0, 0.0, 1.0);
     vec3 bloomGlow = bloomThreshold * bloomThreshold * vec3(1.35, 1.08, 0.85) * 0.35;
 
