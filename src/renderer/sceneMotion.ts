@@ -306,3 +306,66 @@ export function resolveNonOverlappingLabelPosition(
   });
   return { x: fx, y: fy };
 }
+
+export interface FloatingTextMotion {
+  scale: number;
+  alpha: number;
+  offsetY: number;
+}
+
+/**
+ * Computes snappy pop-in scale, upward drift, and late fade-out for floating combat numbers
+ * so damage & critical hits feel punchy and readable without harsh instant disappearance.
+ */
+export function computeFloatingTextMotion(
+  elapsedSec: number,
+  durationSec: number,
+  isCritical: boolean,
+  reducedMotion: boolean
+): FloatingTextMotion {
+  const dur = Math.max(0.05, durationSec);
+  const progress = clamp01(elapsedSec / dur);
+  // Hold full opacity for the first 62% of lifetime, then fade out cleanly
+  const alpha = progress < 0.62 ? 1 : clamp01(1 - (progress - 0.62) / 0.38);
+
+  if (reducedMotion) {
+    return { scale: isCritical ? 1.12 : 1.0, alpha, offsetY: 0 };
+  }
+
+  const peakScale = isCritical ? 1.42 : 1.22;
+  let scale = 1.0;
+  if (elapsedSec < 0.11) {
+    const t = clamp01(elapsedSec / 0.11);
+    const eased = 1 - Math.pow(1 - t, 3);
+    scale = 0.68 + (peakScale - 0.68) * eased;
+  } else if (elapsedSec < 0.28) {
+    const t = clamp01((elapsedSec - 0.11) / 0.17);
+    const eased = t * t * (3 - 2 * t);
+    scale = peakScale - (peakScale - (isCritical ? 1.08 : 1.0)) * eased;
+  } else {
+    scale = isCritical ? 1.08 : 1.0;
+  }
+
+  const driftEased = 1 - Math.pow(1 - progress, 2);
+  const offsetY = -driftEased * (isCritical ? 18 : 13);
+  return { scale, alpha, offsetY };
+}
+
+/**
+ * Returns true when an NPC's persistent marker bubble (e.g. "💬 Czcibor", "🌿 Zielarka")
+ * already displays the core identity of `actorName` (e.g. "Wartownik Czcibor", "Bagienna Zielarka"),
+ * avoiding redundant stacked duplicate labels above the same character.
+ */
+export function isNpcNameCoveredBySpeechMarker(
+  speechBubbleText: string | null | undefined,
+  actorName: string
+): boolean {
+  if (!speechBubbleText || !actorName) return false;
+  const stripped = speechBubbleText
+    .replace(/^[\p{Extended_Pictographic}\uFE0F\u200D\s❗❓⚔️🛡️🌿⚒️🍺💰🗣️💬⚖️📜🔥🪧⭐💀]+/gu, '')
+    .trim()
+    .toLowerCase();
+  if (stripped.length < 3) return false;
+  const normName = actorName.trim().toLowerCase();
+  return normName.includes(stripped) || stripped.includes(normName);
+}

@@ -90,11 +90,13 @@ import {
   computeDeathCollapsePose,
   computeDodgeGhostOffset,
   computeFearTrembleOffset,
+  computeFloatingTextMotion,
   computeIdleBreathingTransform,
   computePropReactionTransform,
   computeWindSwaySkew,
   DEATH_COLLAPSE_DURATION_SEC,
   DODGE_ANIM_DURATION_SEC,
+  isNpcNameCoveredBySpeechMarker,
   resolveNonOverlappingLabelPosition,
   type LabelRect,
   type PropReactionKind
@@ -554,6 +556,7 @@ class FrameDisplayPool {
     }
     entry.lastUsedFrame = this.frame;
     entry.text.alpha = 1;
+    entry.text.scale.set(1, 1);
     entry.text.zIndex = 0;
     return entry.text;
   }
@@ -665,6 +668,7 @@ export class IsoSceneView {
   private readonly lastActorPos = new Map<string, { x: number; y: number; distAccum: number }>();
   private statusParticleTimer = 0;
   private screenShakeTimer = 0;
+  private screenShakeMaxTimer = 0.15;
   private screenShakeIntensity = 0;
   private postFilter: Filter | null = null;
 
@@ -844,6 +848,11 @@ export class IsoSceneView {
         this.fps = Math.round(ticker.FPS);
         if (this.hitStopTimer > 0) {
           this.hitStopTimer = Math.max(0, this.hitStopTimer - dt);
+          if (!this.reducedMotion && this.screenShakeIntensity > 0) {
+            const vibX = (Math.random() - 0.5) * 1.4 * this.screenShakeIntensity;
+            const vibY = (Math.random() - 0.5) * 1.4 * this.screenShakeIntensity;
+            this.worldContainer.position.set(this.cameraOffsetX + vibX, this.cameraOffsetY + vibY);
+          }
           return;
         }
         this.elapsedSeconds += dt;
@@ -853,10 +862,11 @@ export class IsoSceneView {
         const viewportW = this.app.screen?.width || window.innerWidth || 1280;
         const viewportH = this.app.screen?.height || window.innerHeight || 720;
 
-        // Smooth zoom transition centered on screen
+        // Smooth frame-rate independent zoom transition centered on screen
         if (Math.abs(this.targetZoom - this.zoom) > 0.001) {
           const prevZoom = this.zoom;
-          this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 10.0);
+          const zoomLerp = 1.0 - Math.exp(-12.0 * dt);
+          this.zoom += (this.targetZoom - this.zoom) * zoomLerp;
           const zoomRatio = this.zoom / prevZoom;
           const cx = viewportW * 0.5;
           const cy = viewportH * 0.53;
@@ -1786,6 +1796,13 @@ export class IsoSceneView {
       pair.normalMat.destroy(true);
     }
     this.propTextureCache.clear();
+
+    for (const pair of this.customPropImageCache.values()) {
+      pair.albedo.destroy(true);
+      pair.normalMat.destroy(true);
+    }
+    this.customPropImageCache.clear();
+    this.customPropLoadingUrls.clear();
   }
 
   public destroy(): void {
@@ -2223,8 +2240,9 @@ export class IsoSceneView {
     }
 
     const accel = 16.0;
-    this.cameraVelX += (targetVx - this.cameraVelX) * Math.min(1.0, dt * accel);
-    this.cameraVelY += (targetVy - this.cameraVelY) * Math.min(1.0, dt * accel);
+    const panLerp = 1.0 - Math.exp(-accel * dt);
+    this.cameraVelX += (targetVx - this.cameraVelX) * panLerp;
+    this.cameraVelY += (targetVy - this.cameraVelY) * panLerp;
 
     if (Math.abs(this.cameraVelX) > 0.05 || Math.abs(this.cameraVelY) > 0.05) {
       this.cameraOffsetX += this.cameraVelX * dt;
@@ -2705,8 +2723,15 @@ export class IsoSceneView {
 
   public triggerScreenShake(durationMs = 150, intensityPx = 3.2): void {
     if (this.reducedMotion) return;
-    this.screenShakeTimer = durationMs / 1000;
-    this.screenShakeIntensity = intensityPx;
+    const durSec = Math.max(0.02, durationMs / 1000);
+    if (intensityPx >= this.screenShakeIntensity || this.screenShakeTimer <= 0) {
+      this.screenShakeIntensity = intensityPx;
+      this.screenShakeMaxTimer = durSec;
+      this.screenShakeTimer = durSec;
+    } else {
+      this.screenShakeTimer = Math.max(this.screenShakeTimer, durSec);
+      this.screenShakeMaxTimer = Math.max(this.screenShakeMaxTimer, this.screenShakeTimer);
+    }
   }
 
   public spawnCombatHitVfx(
@@ -2878,8 +2903,13 @@ export class IsoSceneView {
     let shakeX = 0;
     let shakeY = 0;
     if (this.screenShakeTimer > 0) {
-      shakeX = (Math.random() - 0.5) * 2 * this.screenShakeIntensity;
-      shakeY = (Math.random() - 0.5) * 2 * this.screenShakeIntensity;
+      const decay = Math.pow(
+        Math.max(0, Math.min(1, this.screenShakeTimer / Math.max(0.01, this.screenShakeMaxTimer))),
+        1.4
+      );
+      const amp = this.screenShakeIntensity * decay;
+      shakeX = (Math.random() - 0.5) * 2 * amp;
+      shakeY = (Math.random() - 0.5) * 2 * amp;
     }
     this.worldContainer.position.set(this.cameraOffsetX + shakeX, this.cameraOffsetY + shakeY);
     this.worldContainer.scale.set(this.zoom);
@@ -3007,6 +3037,9 @@ export class IsoSceneView {
         this.cachedTransitionsByTile = cache;
       }
     }
+
+    const waterCausticsGfx = this.bufferMode === 'final_pbr' ? this.displayPool.graphics() : null;
+    let hasWaterCaustics = false;
 
     for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
       for (let rx = 0; rx < rotW; rx++) {
@@ -3136,22 +3169,21 @@ export class IsoSceneView {
           }
         }
 
-        if (cell.terrain === 'abyss_water' && this.bufferMode === 'final_pbr') {
-          // Dynamic specular caustics rippling across dark water surface
+        if (cell.terrain === 'abyss_water' && waterCausticsGfx) {
+          // Dynamic specular caustics rippling across dark water surface (batched in one Graphics)
           const wavePhase = this.elapsedSeconds * 2.2 + rx * 1.5 + ry * 2.1;
           const shimmerAlpha = 0.16 + Math.sin(wavePhase) * 0.12;
           if (shimmerAlpha > 0.06) {
-            const causticGfx = this.displayPool.graphics();
             const caustW = TILE_WIDTH * 0.32;
             const caustH = TILE_HEIGHT * 0.2;
             const caustOffX = Math.sin(wavePhase * 0.8) * 6;
             const caustOffY = Math.cos(wavePhase * 0.9) * 3;
-            causticGfx
+            waterCausticsGfx
               .ellipse(scr.x + caustOffX, scr.y + caustOffY, caustW, caustH)
               .stroke({ color: 0x90e0ef, width: 1.2, alpha: shimmerAlpha })
               .ellipse(scr.x - caustOffX * 0.5, scr.y - caustOffY * 0.5, caustW * 0.55, caustH * 0.45)
               .fill({ color: 0x00b4d8, alpha: shimmerAlpha * 0.35 });
-            this.floorLayer.addChild(causticGfx);
+            hasWaterCaustics = true;
           }
         }
 
@@ -3220,6 +3252,10 @@ export class IsoSceneView {
             .stroke({ color, width: 1.2, alpha: 0.75 });
         }
       }
+    }
+
+    if (waterCausticsGfx && hasWaterCaustics) {
+      this.floorLayer.addChild(waterCausticsGfx);
     }
 
     // 1D. Stealth Mode: Enemy Vision Cones & Player Shadow Ring (BG3/DOS2 style)
@@ -3379,29 +3415,30 @@ export class IsoSceneView {
       for (const prop of this.game.map.props) {
         if (prop.kind !== 'exit_path') continue;
         const fp = rotateFootprint(prop.x, prop.y, prop.sizeX, prop.sizeY, mapW, mapH, this.rotation);
-        const pTop = gridToScreen(fp.rx, fp.ry, prop.z);
-        const pRight = gridToScreen(fp.rx + fp.width, fp.ry, prop.z);
-        const pBottom = gridToScreen(fp.rx + fp.width, fp.ry + fp.height, prop.z);
-        const pLeft = gridToScreen(fp.rx, fp.ry + fp.height, prop.z);
 
-        // Subtle antique-amber travel threshold covering the exit footprint
+        // Soft antique-amber travel threshold beneath the painterly gateway (no harsh wireframe box)
+        const gateCenter = gridToScreen(
+          fp.rx + fp.width * 0.5,
+          fp.ry + fp.height * 0.5,
+          prop.z
+        );
         this.cursorAndPathGraphics
-          .poly([
-            pTop.x, pTop.y,
-            pRight.x, pRight.y,
-            pBottom.x, pBottom.y,
-            pLeft.x, pLeft.y
-          ])
-          .fill({ color: 0xd4a34a, alpha: 0.08 + 0.05 * pulse })
-          .stroke({ color: 0xc8a45c, width: 1.5, alpha: 0.38 + 0.16 * pulse });
+          .ellipse(
+            gateCenter.x,
+            gateCenter.y,
+            Math.max(38, fp.width * 28),
+            Math.max(19, fp.height * 16)
+          )
+          .fill({ color: 0xc89a45, alpha: 0.07 + 0.04 * pulse })
+          .stroke({ color: 0xd4a957, width: 1.2, alpha: 0.24 + 0.14 * pulse });
 
-        // Subtle pulsing waypoint rings on exit tiles
+        // Subtle pulsing waypoint stepping rings on exit tiles
         for (let dy = 0; dy < fp.height; dy++) {
           for (let dx = 0; dx < fp.width; dx++) {
             const c = gridToScreen(fp.rx + dx + 0.5, fp.ry + dy + 0.5, prop.z);
             this.cursorAndPathGraphics
-              .ellipse(c.x, c.y, 16 + pulse * 3.5, 8 + pulse * 1.8)
-              .stroke({ color: 0xe2c275, width: 1.1, alpha: 0.28 + 0.18 * pulse });
+              .ellipse(c.x, c.y, 14 + pulse * 3.0, 7 + pulse * 1.5)
+              .stroke({ color: 0xe2c275, width: 1.0, alpha: 0.2 + 0.14 * pulse });
           }
         }
       }
@@ -3625,12 +3662,20 @@ export class IsoSceneView {
               fovFactor,
               screenLights
             );
-            // Harmonize bright Kenney wood props with the dark weathered Slavic painterly palette
+            // Harmonize bright Kenney wood props ONLY when they do not use a custom painterly sprite
+            const hasPainterlySprite = Boolean(
+              resolveCustomPropSprite({
+                id: prop.id,
+                kind: prop.kind,
+                isOpen: Boolean(prop.isOpen)
+              })
+            );
             if (
-              prop.kind === 'dungeon_crate' ||
-              prop.kind === 'dungeon_barrel' ||
-              prop.kind === 'dungeon_table' ||
-              prop.kind === 'dungeon_support'
+              !hasPainterlySprite &&
+              (prop.kind === 'dungeon_crate' ||
+                prop.kind === 'dungeon_barrel' ||
+                prop.kind === 'dungeon_table' ||
+                prop.kind === 'dungeon_support')
             ) {
               const tr = Math.round(((propTint >> 16) & 0xff) * 0.64);
               const tg = Math.round(((propTint >> 8) & 0xff) * 0.58);
@@ -3642,38 +3687,72 @@ export class IsoSceneView {
 
           this.sortedObjectLayer.addChild(sp);
 
-          // Live animated roaring flame tongues on active campfire & torches
+          // Live animated painterly flame & warm ember glow on active campfire & torches
           if (
             this.bufferMode === 'final_pbr' &&
-            prop.isOpen &&
+            (prop.isOpen || prop.kind === 'campfire') &&
             (prop.kind === 'campfire' || prop.kind === 'torch_sconce')
           ) {
             const isCampfire = prop.kind === 'campfire';
-            const flameBaseY = isCampfire ? scr.y - 12 : scr.y - 52;
-            const flameRadius = isCampfire ? 13 : 6.5;
-            const flicker1 = Math.sin(this.elapsedSeconds * 11 + prop.x) * 3.5;
-            const flicker2 = Math.cos(this.elapsedSeconds * 15 + prop.y) * 2.5;
+            const flameBaseY = isCampfire ? scr.y - 6 : scr.y - 52;
+            const flameRadius = isCampfire ? 10.5 : 6.0;
+            const phase = prop.x * 1.7 + prop.y * 2.3;
+            const t = this.reducedMotion ? 0 : this.elapsedSeconds;
+            const flicker1 = Math.sin(t * 9.5 + phase) * 2.6;
+            const flicker2 = Math.cos(t * 13.0 + phase * 1.4) * 2.1;
+            const pulse = 0.88 + 0.12 * Math.sin(t * 7.2 + phase);
 
             const flameGfx = this.displayPool.graphics();
+            // Soft warm radial ember halo grounded over the logs
             flameGfx
-              .poly([
-                scr.x - flameRadius,
-                flameBaseY,
-                scr.x + flicker1,
-                flameBaseY - flameRadius * 2.3,
-                scr.x + flameRadius,
-                flameBaseY
-              ])
-              .fill({ color: 0xff6d00, alpha: 0.78 })
-              .poly([
-                scr.x - flameRadius * 0.6,
-                flameBaseY,
-                scr.x - flicker2,
-                flameBaseY - flameRadius * 1.7,
-                scr.x + flameRadius * 0.6,
-                flameBaseY
-              ])
-              .fill({ color: 0xfff176, alpha: 0.92 });
+              .ellipse(
+                scr.x,
+                flameBaseY + (isCampfire ? 2 : 0),
+                flameRadius * 2.1 * pulse,
+                flameRadius * (isCampfire ? 1.05 : 0.9) * pulse
+              )
+              .fill({ color: 0xff6d00, alpha: 0.16 * pulse });
+
+            if (prop.isOpen || !isCampfire) {
+              // Outer organic flame tongue (quadratic curves instead of sharp triangles)
+              flameGfx
+                .moveTo(scr.x - flameRadius * 0.95, flameBaseY)
+                .quadraticCurveTo(
+                  scr.x - flameRadius * 0.65,
+                  flameBaseY - flameRadius * 1.35,
+                  scr.x + flicker1,
+                  flameBaseY - flameRadius * 2.15 * pulse
+                )
+                .quadraticCurveTo(
+                  scr.x + flameRadius * 0.65,
+                  flameBaseY - flameRadius * 1.35,
+                  scr.x + flameRadius * 0.95,
+                  flameBaseY
+                )
+                .closePath()
+                .fill({ color: 0xea580c, alpha: 0.68 })
+                // Warm golden inner flame
+                .moveTo(scr.x - flameRadius * 0.55, flameBaseY)
+                .quadraticCurveTo(
+                  scr.x - flameRadius * 0.35,
+                  flameBaseY - flameRadius * 0.95,
+                  scr.x - flicker2 * 0.8,
+                  flameBaseY - flameRadius * 1.55 * pulse
+                )
+                .quadraticCurveTo(
+                  scr.x + flameRadius * 0.35,
+                  flameBaseY - flameRadius * 0.95,
+                  scr.x + flameRadius * 0.55,
+                  flameBaseY
+                )
+                .closePath()
+                .fill({ color: 0xfef08a, alpha: 0.84 });
+            } else {
+              // Subtle smoldering ember flicker on idle painted campfire
+              flameGfx
+                .ellipse(scr.x + flicker2 * 0.25, flameBaseY - 1, flameRadius * 0.72 * pulse, flameRadius * 0.36 * pulse)
+                .fill({ color: 0xff9800, alpha: 0.26 * pulse });
+            }
             this.sortedObjectLayer.addChild(flameGfx);
           }
 
@@ -4067,12 +4146,14 @@ export class IsoSceneView {
                 }
               } else if (actor.id === this.game.player.id) {
                 shadowGfx
-                  .ellipse(actorScrX, actorScrY, 22, 11)
-                  .stroke({ color: 0x38ef7d, width: 2, alpha: 0.78 });
+                  .ellipse(actorScrX, actorScrY, 21, 10.5)
+                  .fill({ color: 0x2d6a4f, alpha: 0.1 })
+                  .stroke({ color: 0x67b987, width: 1.6, alpha: 0.62 });
               } else if (actor.combat?.isHostile) {
                 shadowGfx
-                  .ellipse(actorScrX, actorScrY, 22, 11)
-                  .stroke({ color: 0xff453a, width: 1.8, alpha: 0.75 });
+                  .ellipse(actorScrX, actorScrY, 21, 10.5)
+                  .fill({ color: 0x7f1d1d, alpha: 0.1 })
+                  .stroke({ color: 0xc94a42, width: 1.6, alpha: 0.68 });
               }
             }
             this.sortedObjectLayer.addChild(shadowGfx);
@@ -4187,10 +4268,9 @@ export class IsoSceneView {
           // Floating nameplate for story NPCs, Hostile Enemies, Dead Corpses, and Player
           const isHovered =
             this.hoveredWorldTile?.x === actor.tileX && this.hoveredWorldTile?.y === actor.tileY;
-          const nameAlreadyShownInMarker = Boolean(
-            actor.speechBubbleText &&
-              (actor.speechBubbleTimer ?? 0) > 0 &&
-              actor.speechBubbleText.includes(actor.recipe.name)
+          const nameAlreadyShownInMarker = isNpcNameCoveredBySpeechMarker(
+            actor.speechBubbleText,
+            actor.recipe.name
           );
 
           if (isDead) {
@@ -4371,12 +4451,19 @@ export class IsoSceneView {
               })
             );
             bubbleText.anchor.set(0.5, 1);
-            const bx = scr.x;
-            const by = scr.y - 104;
             const padX = 12;
             const padY = 7;
             const bw = bubbleText.width + padX * 2;
             const bh = bubbleText.height + padY * 2;
+            const safeZoom = Math.max(0.25, this.zoom);
+            const viewLeft = -this.cameraOffsetX / safeZoom + 12;
+            const viewRight = (viewW - this.cameraOffsetX) / safeZoom - 12;
+            const viewTop = -this.cameraOffsetY / safeZoom + 60;
+            const bx = Math.max(
+              viewLeft + bw * 0.5,
+              Math.min(viewRight - bw * 0.5, scr.x)
+            );
+            const by = Math.max(viewTop + bh, scr.y - 104);
 
             const bubbleBg = this.displayPool.graphics();
             bubbleBg
@@ -4396,11 +4483,17 @@ export class IsoSceneView {
       sortedNodes[i].render(i, sortedNodes.length, playerDepthBox);
     }
 
-    // Render Floating Combat Popups (Criticals, Damage, Misses, Statuses)
+    // Render Floating Combat Popups (Criticals, Damage, Misses, Statuses) with pop-in scale punch
     for (const ft of this.game.combatState.floatingTexts) {
       const rotFt = toRotatedContinuous(ft.x, ft.y, mapW, mapH, this.rotation);
       const scrFt = gridToScreen(rotFt.rx, rotFt.ry, ft.z);
-      const alpha = Math.max(0, Math.min(1, 1 - (ft.elapsed / ft.duration) * 0.75));
+      const isCritText = /KRYT|!|💥/i.test(ft.text);
+      const motion = computeFloatingTextMotion(
+        ft.elapsed,
+        ft.duration,
+        isCritText,
+        this.reducedMotion
+      );
       const popText = this.displayPool.text(
         ft.text,
         `pop_${ft.colorHex.toString(16)}`,
@@ -4413,8 +4506,9 @@ export class IsoSceneView {
         })
       );
       popText.anchor.set(0.5, 1);
-      popText.position.set(scrFt.x, scrFt.y - 68);
-      popText.alpha = alpha;
+      popText.position.set(scrFt.x, scrFt.y - 68 + motion.offsetY);
+      popText.scale.set(motion.scale, motion.scale);
+      popText.alpha = motion.alpha;
       this.debugOverlayContainer.addChild(popText);
     }
 

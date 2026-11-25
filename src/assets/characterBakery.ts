@@ -2301,15 +2301,15 @@ function applyCharacterSilhouettePolish(
       const bottomVoid = alphaAt(lx, ly + 1) < 40;
 
       if (bottomVoid || rightVoid) {
-        // Crisp dark outer silhouette contour
-        albedo[idx] = Math.round(albedo[idx] * 0.56);
-        albedo[idx + 1] = Math.round(albedo[idx + 1] * 0.56);
-        albedo[idx + 2] = Math.round(albedo[idx + 2] * 0.58);
+        // Crisp dark painterly ink contour matching weathered Slavic props
+        albedo[idx] = Math.round(albedo[idx] * 0.42);
+        albedo[idx + 1] = Math.round(albedo[idx + 1] * 0.42);
+        albedo[idx + 2] = Math.round(albedo[idx + 2] * 0.45);
       } else if (topVoid || leftVoid) {
-        // Subtle top-left rim light & clean edge definition
-        albedo[idx] = Math.min(255, Math.round(albedo[idx] * 0.88 + 14));
-        albedo[idx + 1] = Math.min(255, Math.round(albedo[idx + 1] * 0.88 + 13));
-        albedo[idx + 2] = Math.min(255, Math.round(albedo[idx + 2] * 0.88 + 11));
+        // Soft inked upper-left rim separating character silhouette cleanly from painterly backgrounds
+        albedo[idx] = Math.min(255, Math.round(albedo[idx] * 0.76 + 10));
+        albedo[idx + 1] = Math.min(255, Math.round(albedo[idx + 1] * 0.76 + 9));
+        albedo[idx + 2] = Math.min(255, Math.round(albedo[idx + 2] * 0.78 + 8));
       }
     }
   }
