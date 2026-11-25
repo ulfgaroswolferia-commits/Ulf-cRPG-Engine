@@ -92,6 +92,8 @@ export interface HudHeroMeta {
 
 export interface HudOverlayOptions {
   devMode?: boolean;
+  /** Shows the top-bar DEV teleport button even in normal playable cRPG mode. */
+  showDevSelector?: boolean;
   devScenes?: ReadonlyArray<HudDevSceneOption>;
   getActiveDevSceneId?: () => string;
   onSelectDevScene?: (id: string) => void;
@@ -2810,7 +2812,7 @@ export class HudOverlay {
             ${(['N', 'E', 'S', 'W'] as const)[this.scene.rotation] ?? 'N'}
           </button>
           <button type="button" class="compass-btn" data-action="rot-cw" title="Obróć kamerę o +90° [E]">E ⟳</button>
-          ${this.devMode ? devSelectorHtml : ''}
+          ${this.devMode || this.options.showDevSelector ? devSelectorHtml : ''}
         </div>
 
         ${telemetryOrControlsHtml}
