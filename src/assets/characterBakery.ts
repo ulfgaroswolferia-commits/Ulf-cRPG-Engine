@@ -1425,6 +1425,79 @@ export function hasLoadedCharacterSpriteSheets(): boolean {
  * Blits a 64x96 frame from a registered 256x768 character layer sheet onto the target buffers
  * with optional color-grading tint and PBR roughness/metallic assignment.
  */
+function measureCellTopAnchor(
+  sheet: CharacterSpriteSheetBuffer,
+  dir: number,
+  frame: number
+): { x: number; y: number } | null {
+  const cellW = 64;
+  const cellH = 96;
+  const ox = frame * cellW;
+  const oy = dir * cellH;
+  if (sheet.width < ox + cellW || sheet.height < oy + cellH) return null;
+  const src = sheet.rgba;
+  let topY = -1;
+  let sumX = 0;
+  let count = 0;
+  for (let y = 0; y < cellH; y++) {
+    const rowOff = (oy + y) * sheet.width;
+    for (let x = 0; x < cellW; x++) {
+      const a = src[(rowOff + ox + x) * 4 + 3];
+      if (a >= 90) {
+        if (topY < 0) topY = y;
+        if (y <= topY + 3) {
+          sumX += x;
+          count++;
+        }
+      }
+    }
+    if (topY >= 0 && y > topY + 3) break;
+  }
+  if (topY < 0 || count === 0) return null;
+  return { x: Math.round(sumX / count), y: topY };
+}
+
+function applyHeroDetailSharpen(
+  albedo: Uint8ClampedArray,
+  sheetW: number,
+  sheetH: number
+): void {
+  const copy = new Uint8ClampedArray(albedo);
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+  const strength = 0.42;
+  for (let y = 1; y < sheetH - 1; y++) {
+    const row = y * sheetW;
+    for (let x = 1; x < sheetW - 1; x++) {
+      const idx = (row + x) * 4;
+      const a = copy[idx + 3];
+      if (a < 64) continue;
+      const idxL = idx - 4;
+      const idxR = idx + 4;
+      const idxU = idx - sheetW * 4;
+      const idxD = idx + sheetW * 4;
+      const hasOpaqueNeighbors =
+        copy[idxL + 3] >= 64 &&
+        copy[idxR + 3] >= 64 &&
+        copy[idxU + 3] >= 64 &&
+        copy[idxD + 3] >= 64;
+      if (hasOpaqueNeighbors) {
+        for (let c = 0; c < 3; c++) {
+          const center = copy[idx + c];
+          const avg = (copy[idxL + c] + copy[idxR + c] + copy[idxU + c] + copy[idxD + c]) * 0.25;
+          // Crisp micro-contrast + slight warm clarity boost for the hero
+          const sharpened = center + (center - avg) * strength;
+          albedo[idx + c] = clamp(sharpened * 1.05 + (c === 0 ? 4 : c === 1 ? 2 : 0));
+        }
+      } else if (copy[idxU + 3] < 40 || copy[idxL + 3] < 40) {
+        // Subtle warm upper-left rim highlight separating hero silhouette from terrain
+        albedo[idx] = clamp(copy[idx] * 1.14 + 10);
+        albedo[idx + 1] = clamp(copy[idx + 1] * 1.1 + 7);
+        albedo[idx + 2] = clamp(copy[idx + 2] * 1.04 + 4);
+      }
+    }
+  }
+}
+
 function blitCharacterSheetCell(
   sheet: CharacterSpriteSheetBuffer,
   albedoRGBA: Uint8ClampedArray,
@@ -1435,24 +1508,34 @@ function blitCharacterSheetCell(
   tintColor: RGBAColor | null,
   tintStrength: number,
   roughness: number,
-  metallic: number
+  metallic: number,
+  srcFrameOverride?: number,
+  dstOffsetY = 0,
+  dstOffsetX = 0
 ): void {
   const cellW = 64;
   const cellH = 96;
   const ox = frame * cellW;
+  const srcOx = (srcFrameOverride ?? frame) * cellW;
   const oy = dir * cellH;
-  if (sheet.width < ox + cellW || sheet.height < oy + cellH) return;
+  if (sheet.width < srcOx + cellW || sheet.height < oy + cellH) return;
 
   const roughByte = Math.min(255, Math.max(0, Math.round(roughness * 255)));
   const metalByte = Math.min(255, Math.max(0, Math.round(metallic * 255)));
   const src = sheet.rgba;
 
   for (let y = 0; y < cellH; y++) {
+    const dy = y + dstOffsetY;
+    if (dy < 0 || dy >= cellH) continue;
     const sy = oy + y;
-    const rowOff = sy * sheetW;
+    const dstY = oy + dy;
+    const rowOff = dstY * sheetW;
     const srcRowOff = sy * sheet.width;
     for (let x = 0; x < cellW; x++) {
-      const sx = ox + x;
+      const localDx = x + dstOffsetX;
+      if (localDx < 0 || localDx >= cellW) continue;
+      const sx = srcOx + x;
+      const dx = ox + localDx;
       const sIdx = (srcRowOff + sx) * 4;
       const sa = src[sIdx + 3];
       if (sa < 12) continue;
@@ -1472,7 +1555,7 @@ function blitCharacterSheetCell(
         sb = Math.round(sb * (1 - tintStrength) + tb * tintStrength);
       }
 
-      const dIdx = (rowOff + sx) * 4;
+      const dIdx = (rowOff + dx) * 4;
       const alpha = sa / 255;
       const invA = 1 - alpha;
       const dstA = albedoRGBA[dIdx + 3] / 255;
@@ -2092,6 +2175,7 @@ function tryBakeFromLoadedCharacterSheets(
     const angle = (dir / 8) * Math.PI * 2;
     const facingX = Math.sin(angle);
     const facingY = -Math.cos(angle);
+    const idleNeck = measureCellTopAnchor(armorSheet, dir, 0);
 
     for (let frame = 0; frame < 4; frame++) {
       const ox = frame * 64;
@@ -2101,6 +2185,12 @@ function tryBakeFromLoadedCharacterSheets(
       const stridePhase = (frame / 4) * Math.PI * 2;
       const legSwing = frame === 0 || frame === 2 ? 0 : Math.sin(stridePhase) * 4.4;
       const bobY = frame === 0 ? 0 : frame === 2 ? 0.4 : 1.8;
+
+      // Shift modular Flare body slightly down (+4px) so the full head has clear headroom above y=0
+      const baseShiftY = 4;
+      const curNeck = frame === 0 ? idleNeck : measureCellTopAnchor(armorSheet, dir, frame);
+      const neckDx = idleNeck && curNeck ? Math.max(-4, Math.min(4, curNeck.x - idleNeck.x)) : 0;
+      const neckDy = idleNeck && curNeck ? Math.max(-4, Math.min(4, curNeck.y - idleNeck.y)) : 0;
 
       const drawArmor = (): void => {
         blitCharacterSheetCell(
@@ -2113,12 +2203,16 @@ function tryBakeFromLoadedCharacterSheets(
           armorTint,
           armorTintStrength,
           layers.torsoItem.roughness,
-          layers.torsoItem.metallic
+          layers.torsoItem.metallic,
+          undefined,
+          baseShiftY
         );
       };
 
       const drawHead = (): void => {
         if (headSheet) {
+          // Always sample the unclipped full head from column 0 of Flare head sheets
+          // and align it cleanly to the neck anchor of the current walk frame.
           blitCharacterSheetCell(
             headSheet,
             albedoRGBA,
@@ -2129,7 +2223,10 @@ function tryBakeFromLoadedCharacterSheets(
             headTint,
             headTintStrength,
             headRoughness,
-            headMetallic
+            headMetallic,
+            0,
+            baseShiftY + neckDy,
+            neckDx
           );
         }
         // Procedural Slavic / Mythic headgear overlays (antlers, ram horns, elder beard)
@@ -2194,7 +2291,9 @@ function tryBakeFromLoadedCharacterSheets(
             weaponTint,
             weaponTintStrength,
             weaponRoughness,
-            weaponMetallic
+            weaponMetallic,
+            undefined,
+            baseShiftY
           );
         }
       };
@@ -2211,7 +2310,9 @@ function tryBakeFromLoadedCharacterSheets(
             offhandTint,
             offhandTintStrength,
             offhandRoughness,
-            offhandMetallic
+            offhandMetallic,
+            undefined,
+            baseShiftY
           );
         } else if (layers.offHandItem?.visualStyle === 'torch') {
           const offHandX = cx - 10 - facingX * 1.5;
@@ -2267,6 +2368,9 @@ function tryBakeFromLoadedCharacterSheets(
     }
   }
 
+  if ((recipe.id || '').toLowerCase() === 'player_hero') {
+    applyHeroDetailSharpen(albedoRGBA, sheetWidth, sheetHeight);
+  }
   synthesizeSheetNormalVectors(albedoRGBA, normalMaterialRGBA, sheetWidth, sheetHeight);
   return true;
 }

@@ -109,6 +109,8 @@ export interface ActorEntity {
   damageFlashTimer?: number;
   deathAnimTimer?: number;
   isLooted?: boolean;
+  /** Story NPC already lying dead on the ground (e.g. fallen companions after an ambush). */
+  isFallenCorpse?: boolean;
   aggroCooldownTimer?: number;
   aggroReactionTimer?: number;
 }

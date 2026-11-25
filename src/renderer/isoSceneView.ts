@@ -354,6 +354,8 @@ interface CharacterDualFrameTextures {
   normalFrames: Texture[][];
   portraitDataUrl: string;
   bakeDurationMs: number;
+  /** Render scale normalization relative to canonical 64px frame width (0.5 for 128px HD sprites). */
+  baseScale: number;
 }
 
 export type AmbientTimeOfDay = 'swit' | 'dzien' | 'zmierzch' | 'noc';
@@ -1508,7 +1510,8 @@ export class IsoSceneView {
         albedoFrames: [],
         normalFrames: [],
         portraitDataUrl: 'data:image/png;base64,',
-        bakeDurationMs: 0.5
+        bakeDurationMs: 0.5,
+        baseScale: 64 / Math.max(1, baked.frameWidth)
       };
       this.characterTextureCache.set(fastHash, headlessEntry);
       return headlessEntry;
@@ -1593,7 +1596,8 @@ export class IsoSceneView {
       albedoFrames,
       normalFrames,
       portraitDataUrl: portraitCanvas.toDataURL(),
-      bakeDurationMs
+      bakeDurationMs,
+      baseScale: 64 / Math.max(1, baked.frameWidth)
     };
 
     this.characterTextureCache.set(fastHash, entry);
@@ -2579,14 +2583,18 @@ export class IsoSceneView {
     }
 
     for (const actor of allActors) {
-      const isDead = actor.combat ? !actor.combat.isAlive : false;
+      const isDead = Boolean((actor.combat && !actor.combat.isAlive) || actor.isFallenCorpse);
       if (isDead) {
-        const cur = this.deathCollapseTimers.get(actor.id) ?? 0;
-        if (cur < DEATH_COLLAPSE_DURATION_SEC) {
-          this.deathCollapseTimers.set(
-            actor.id,
-            Math.min(DEATH_COLLAPSE_DURATION_SEC, cur + dt)
-          );
+        if (actor.isFallenCorpse) {
+          this.deathCollapseTimers.set(actor.id, DEATH_COLLAPSE_DURATION_SEC);
+        } else {
+          const cur = this.deathCollapseTimers.get(actor.id) ?? 0;
+          if (cur < DEATH_COLLAPSE_DURATION_SEC) {
+            this.deathCollapseTimers.set(
+              actor.id,
+              Math.min(DEATH_COLLAPSE_DURATION_SEC, cur + dt)
+            );
+          }
         }
         continue;
       } else if (this.deathCollapseTimers.has(actor.id)) {
@@ -3972,7 +3980,7 @@ export class IsoSceneView {
 
     const allActors: ActorEntity[] = [this.game.player, ...this.game.npcs];
     for (const actor of allActors) {
-      const isDead = Boolean(actor.combat && !actor.combat.isAlive);
+      const isDead = Boolean((actor.combat && !actor.combat.isAlive) || actor.isFallenCorpse);
       const isPlayer = actor.id === this.game.player.id;
       const vis = this.game.fov.getVisibility(actor.tileX, actor.tileY);
       if (
@@ -4345,7 +4353,8 @@ export class IsoSceneView {
           const sp = this.displayPool.sprite(tex);
           sp.anchor.set(0.5, isDead ? 0.65 : 82 / 96);
           sp.position.set(actorScrX, actorScrY);
-          sp.scale.set(actorScaleX, actorScaleY);
+          const texScale = charTex.baseScale || 1;
+          sp.scale.set(actorScaleX * texScale, actorScaleY * texScale);
           sp.rotation = actorRotation;
 
           if (this.bufferMode === 'depth_dag') {
@@ -4441,11 +4450,14 @@ export class IsoSceneView {
 
           if (isDead) {
             if (isHovered && this.bufferMode !== 'depth_dag') {
-              const corpseTag = this.displayPool.text(
-                actor.isLooted
+              const corpseLabel = actor.isFallenCorpse
+                ? `🕯️ ${actor.recipe.name} (${actor.recipe.title || 'Zbadaj ciało'})`
+                : actor.isLooted
                   ? `💀 ${actor.recipe.name} (Przeszukano)`
-                  : `💰 ${actor.recipe.name} (Kliknij, aby przeszukać)`,
-                `corpse_${actor.id}_${actor.isLooted ? 'looted' : 'loot'}`,
+                  : `💰 ${actor.recipe.name} (Kliknij, aby przeszukać)`;
+              const corpseTag = this.displayPool.text(
+                corpseLabel,
+                `corpse_${actor.id}_${actor.isFallenCorpse ? 'story' : actor.isLooted ? 'looted' : 'loot'}`,
                 () => ({
                   fontFamily: 'Cinzel, serif',
                   fontSize: 11,
