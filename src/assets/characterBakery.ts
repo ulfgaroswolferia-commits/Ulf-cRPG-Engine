@@ -27,6 +27,8 @@ export interface BakedCharacterBuffers {
   framesPerDirection: number;
   sheetWidth: number;
   sheetHeight: number;
+  /** Normalized vertical foot anchor (defaults to 82/96 when omitted). */
+  anchorY?: number;
   albedoRGBA: Uint8ClampedArray;
   normalMaterialRGBA: Uint8ClampedArray;
 }
@@ -1498,6 +1500,79 @@ function applyHeroDetailSharpen(
   }
 }
 
+/**
+ * All 6 Flare modular head_*.png sheets were cropped flat at y=0 (cutting off the top 4-5px of the crown).
+ * When blitted into a 64x108 cell with +12px headroom, this seamlessly reconstructs the rounded 3D-shaded
+ * crown/hair/helmet dome right above the flat cut line using the exact sampled edge colors.
+ */
+function reconstructClippedHeadCrown(
+  albedo: Uint8ClampedArray,
+  normalMat: Uint8ClampedArray,
+  sheetW: number,
+  ox: number,
+  oy: number,
+  cellH: number,
+  cutLocalY: number,
+  roughness: number,
+  metallic: number
+): void {
+  if (cutLocalY < 5 || cutLocalY >= cellH - 2) return;
+  const rowY = oy + cutLocalY;
+  let minX = 64;
+  let maxX = -1;
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+  for (let lx = 8; lx < 56; lx++) {
+    const idx = (rowY * sheetW + (ox + lx)) * 4;
+    if (albedo[idx + 3] >= 80) {
+      if (lx < minX) minX = lx;
+      if (lx > maxX) maxX = lx;
+      sumR += albedo[idx];
+      sumG += albedo[idx + 1];
+      sumB += albedo[idx + 2];
+      count++;
+    }
+  }
+  if (count < 4 || maxX - minX < 3) return;
+
+  const avgR = sumR / count;
+  const avgG = sumG / count;
+  const avgB = sumB / count;
+  const centerX = (minX + maxX) * 0.5;
+  const halfW = Math.max(2.5, (maxX - minX) * 0.52);
+  const domeH = Math.min(5.2, Math.max(3.2, halfW * 0.62));
+  const roughByte = Math.min(255, Math.max(0, Math.round(roughness * 255)));
+  const metalByte = Math.min(255, Math.max(0, Math.round(metallic * 255)));
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+
+  for (let dy = 1; dy <= Math.ceil(domeH); dy++) {
+    const ly = cutLocalY - dy;
+    if (ly < 1) break;
+    const t = dy / domeH;
+    const span = halfW * Math.sqrt(Math.max(0, 1 - t * t));
+    if (span < 0.8) continue;
+    for (let lx = Math.floor(centerX - span); lx <= Math.ceil(centerX + span); lx++) {
+      if (lx < 0 || lx >= 64) continue;
+      const nx = (lx - centerX) / Math.max(1, halfW);
+      if (nx * nx + t * t > 1.04) continue;
+      const idx = ((oy + ly) * sheetW + (ox + lx)) * 4;
+      // Top-left key highlight + subtle crown shading matching Flare 3D renders
+      const light = 0.86 + (1 - nx) * 0.14 + t * 0.12;
+      const spec = metallic > 0.4 ? Math.max(0, 1 - Math.abs(nx + 0.25)) * metallic * 38 : 0;
+      albedo[idx] = clamp(avgR * light + spec);
+      albedo[idx + 1] = clamp(avgG * light + spec);
+      albedo[idx + 2] = clamp(avgB * light + spec);
+      albedo[idx + 3] = 255;
+      normalMat[idx] = clamp(128 + nx * 90);
+      normalMat[idx + 1] = clamp(128 - t * 90);
+      normalMat[idx + 2] = roughByte;
+      normalMat[idx + 3] = metalByte;
+    }
+  }
+}
+
 function blitCharacterSheetCell(
   sheet: CharacterSpriteSheetBuffer,
   albedoRGBA: Uint8ClampedArray,
@@ -1511,24 +1586,26 @@ function blitCharacterSheetCell(
   metallic: number,
   srcFrameOverride?: number,
   dstOffsetY = 0,
-  dstOffsetX = 0
+  dstOffsetX = 0,
+  dstCellH = 96
 ): void {
   const cellW = 64;
-  const cellH = 96;
+  const srcCellH = 96;
   const ox = frame * cellW;
   const srcOx = (srcFrameOverride ?? frame) * cellW;
-  const oy = dir * cellH;
-  if (sheet.width < srcOx + cellW || sheet.height < oy + cellH) return;
+  const srcOy = dir * srcCellH;
+  const dstOy = dir * dstCellH;
+  if (sheet.width < srcOx + cellW || sheet.height < srcOy + srcCellH) return;
 
   const roughByte = Math.min(255, Math.max(0, Math.round(roughness * 255)));
   const metalByte = Math.min(255, Math.max(0, Math.round(metallic * 255)));
   const src = sheet.rgba;
 
-  for (let y = 0; y < cellH; y++) {
+  for (let y = 0; y < srcCellH; y++) {
     const dy = y + dstOffsetY;
-    if (dy < 0 || dy >= cellH) continue;
-    const sy = oy + y;
-    const dstY = oy + dy;
+    if (dy < 0 || dy >= dstCellH) continue;
+    const sy = srcOy + y;
+    const dstY = dstOy + dy;
     const rowOff = dstY * sheetW;
     const srcRowOff = sy * sheet.width;
     for (let x = 0; x < cellW; x++) {
@@ -1944,7 +2021,8 @@ function tryBakeFromLoadedCharacterSheets(
   albedoRGBA: Uint8ClampedArray,
   normalMaterialRGBA: Uint8ClampedArray,
   sheetWidth: number,
-  sheetHeight: number
+  sheetHeight: number,
+  dstCellH = 96
 ): boolean {
   if (characterSheetMap.size === 0) return false;
 
@@ -2022,6 +2100,7 @@ function tryBakeFromLoadedCharacterSheets(
   }
 
   if (singleArchetypeSheet) {
+    const padY = Math.max(0, dstCellH - 96);
     for (let dir = 0; dir < 8; dir++) {
       for (let frame = 0; frame < 4; frame++) {
         blitCharacterSheetCell(
@@ -2034,7 +2113,11 @@ function tryBakeFromLoadedCharacterSheets(
           singleTint,
           singleTintStrength,
           singleRoughness,
-          singleMetallic
+          singleMetallic,
+          undefined,
+          padY,
+          0,
+          dstCellH
         );
       }
     }
@@ -2170,6 +2253,12 @@ function tryBakeFromLoadedCharacterSheets(
     }
   }
 
+  // Map engine slots [0=idle/pass, 1=stepA, 2=passB, 3=stepB] to Flare sequential run columns [1, 0, 3, 2]
+  // so gameLoop's walk cycle (1->0->3->2) plays Flare's natural forward run (0->1->2->3)
+  // and standing idle (slot 0) uses Flare's upright passing stance (column 1) instead of a wide sprint lunge.
+  const FLARE_FRAME_FOR_SLOT = [1, 0, 3, 2] as const;
+  const headroomPadY = Math.max(0, dstCellH - 96);
+
   for (let dir = 0; dir < 8; dir++) {
     const flareDir = (dir + 3) % 8;
     const angle = (dir / 8) * Math.PI * 2;
@@ -2178,19 +2267,18 @@ function tryBakeFromLoadedCharacterSheets(
     const idleNeck = measureCellTopAnchor(armorSheet, dir, 0);
 
     for (let frame = 0; frame < 4; frame++) {
+      const flareSrcFrame = FLARE_FRAME_FOR_SLOT[frame];
       const ox = frame * 64;
-      const oy = dir * 96;
+      const oy = dir * dstCellH;
       const cx = ox + 32;
-      const groundY = oy + 82;
+      const groundY = oy + 82 + headroomPadY;
       const stridePhase = (frame / 4) * Math.PI * 2;
       const legSwing = frame === 0 || frame === 2 ? 0 : Math.sin(stridePhase) * 4.4;
       const bobY = frame === 0 ? 0 : frame === 2 ? 0.4 : 1.8;
 
-      // Shift modular Flare body slightly down (+4px) so the full head has clear headroom above y=0
-      const baseShiftY = 4;
-      const curNeck = frame === 0 ? idleNeck : measureCellTopAnchor(armorSheet, dir, frame);
+      const curNeck = flareSrcFrame === 0 ? idleNeck : measureCellTopAnchor(armorSheet, dir, flareSrcFrame);
       const neckDx = idleNeck && curNeck ? Math.max(-4, Math.min(4, curNeck.x - idleNeck.x)) : 0;
-      const neckDy = idleNeck && curNeck ? Math.max(-4, Math.min(4, curNeck.y - idleNeck.y)) : 0;
+      const neckDy = idleNeck && curNeck ? Math.max(-5, Math.min(4, curNeck.y - idleNeck.y)) : 0;
 
       const drawArmor = (): void => {
         blitCharacterSheetCell(
@@ -2204,15 +2292,18 @@ function tryBakeFromLoadedCharacterSheets(
           armorTintStrength,
           layers.torsoItem.roughness,
           layers.torsoItem.metallic,
-          undefined,
-          baseShiftY
+          flareSrcFrame,
+          headroomPadY,
+          0,
+          dstCellH
         );
       };
 
       const drawHead = (): void => {
         if (headSheet) {
-          // Always sample the unclipped full head from column 0 of Flare head sheets
-          // and align it cleanly to the neck anchor of the current walk frame.
+          // Sample full head from column 0, align to current frame's neck anchor,
+          // and reconstruct the rounded crown dome above Flare's y=0 flat crop line.
+          const headDstY = headroomPadY + neckDy;
           blitCharacterSheetCell(
             headSheet,
             albedoRGBA,
@@ -2225,9 +2316,23 @@ function tryBakeFromLoadedCharacterSheets(
             headRoughness,
             headMetallic,
             0,
-            baseShiftY + neckDy,
-            neckDx
+            headDstY,
+            neckDx,
+            dstCellH
           );
+          if (headroomPadY >= 6) {
+            reconstructClippedHeadCrown(
+              albedoRGBA,
+              normalMaterialRGBA,
+              sheetWidth,
+              ox,
+              oy,
+              dstCellH,
+              headDstY,
+              headRoughness,
+              headMetallic
+            );
+          }
         }
         // Procedural Slavic / Mythic headgear overlays (antlers, ram horns, elder beard)
         const headY = groundY - 56 - bobY;
@@ -2292,8 +2397,10 @@ function tryBakeFromLoadedCharacterSheets(
             weaponTintStrength,
             weaponRoughness,
             weaponMetallic,
-            undefined,
-            baseShiftY
+            flareSrcFrame,
+            headroomPadY,
+            0,
+            dstCellH
           );
         }
       };
@@ -2311,8 +2418,10 @@ function tryBakeFromLoadedCharacterSheets(
             offhandTintStrength,
             offhandRoughness,
             offhandMetallic,
-            undefined,
-            baseShiftY
+            flareSrcFrame,
+            headroomPadY,
+            0,
+            dstCellH
           );
         } else if (layers.offHandItem?.visualStyle === 'torch') {
           const offHandX = cx - 10 - facingX * 1.5;
@@ -2458,29 +2567,37 @@ export function bakeCharacterBuffers(recipe: CharacterVisualRecipe): BakedCharac
     return wolfResult;
   }
 
-  if (
-    tryBakeFromLoadedCharacterSheets(
-      recipe,
-      layers,
-      albedoRGBA,
-      normalMaterialRGBA,
-      sheetWidth,
-      sheetHeight
-    )
-  ) {
-    const spriteResult: BakedCharacterBuffers = {
-      recipeHash: hash,
-      frameWidth,
-      frameHeight,
-      directions,
-      framesPerDirection,
-      sheetWidth,
-      sheetHeight,
-      albedoRGBA,
-      normalMaterialRGBA
-    };
-    bufferCache.set(hash, spriteResult);
-    return spriteResult;
+  if (characterSheetMap.size > 0) {
+    const flareFrameH = 108;
+    const flareSheetH = flareFrameH * directions;
+    const flareAlbedo = new Uint8ClampedArray(sheetWidth * flareSheetH * 4);
+    const flareNormal = new Uint8ClampedArray(sheetWidth * flareSheetH * 4);
+    if (
+      tryBakeFromLoadedCharacterSheets(
+        recipe,
+        layers,
+        flareAlbedo,
+        flareNormal,
+        sheetWidth,
+        flareSheetH,
+        flareFrameH
+      )
+    ) {
+      const spriteResult: BakedCharacterBuffers = {
+        recipeHash: hash,
+        frameWidth,
+        frameHeight: flareFrameH,
+        directions,
+        framesPerDirection,
+        sheetWidth,
+        sheetHeight: flareSheetH,
+        anchorY: (82 + (flareFrameH - 96)) / flareFrameH,
+        albedoRGBA: flareAlbedo,
+        normalMaterialRGBA: flareNormal
+      };
+      bufferCache.set(hash, spriteResult);
+      return spriteResult;
+    }
   }
 
   for (let dir = 0; dir < directions; dir++) {

@@ -356,6 +356,8 @@ interface CharacterDualFrameTextures {
   bakeDurationMs: number;
   /** Render scale normalization relative to canonical 64px frame width (0.5 for 128px HD sprites). */
   baseScale: number;
+  /** Normalized vertical foot anchor matching baked sprite headroom. */
+  anchorY: number;
 }
 
 export type AmbientTimeOfDay = 'swit' | 'dzien' | 'zmierzch' | 'noc';
@@ -1511,7 +1513,8 @@ export class IsoSceneView {
         normalFrames: [],
         portraitDataUrl: 'data:image/png;base64,',
         bakeDurationMs: 0.5,
-        baseScale: 64 / Math.max(1, baked.frameWidth)
+        baseScale: 64 / Math.max(1, baked.frameWidth),
+        anchorY: baked.anchorY ?? 82 / 96
       };
       this.characterTextureCache.set(fastHash, headlessEntry);
       return headlessEntry;
@@ -1597,7 +1600,8 @@ export class IsoSceneView {
       normalFrames,
       portraitDataUrl: portraitCanvas.toDataURL(),
       bakeDurationMs,
-      baseScale: 64 / Math.max(1, baked.frameWidth)
+      baseScale: 64 / Math.max(1, baked.frameWidth),
+      anchorY: baked.anchorY ?? 82 / 96
     };
 
     this.characterTextureCache.set(fastHash, entry);
@@ -4351,7 +4355,7 @@ export class IsoSceneView {
           }
 
           const sp = this.displayPool.sprite(tex);
-          sp.anchor.set(0.5, isDead ? 0.65 : 82 / 96);
+          sp.anchor.set(0.5, isDead ? 0.65 : charTex.anchorY);
           sp.position.set(actorScrX, actorScrY);
           const texScale = charTex.baseScale || 1;
           sp.scale.set(actorScaleX * texScale, actorScaleY * texScale);
