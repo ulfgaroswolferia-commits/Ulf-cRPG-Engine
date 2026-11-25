@@ -3617,11 +3617,11 @@ export class IsoSceneView {
               // Dense inner contact AO anchoring prop to ground
               aoGfx
                 .ellipse(scr.x, scr.y, baseRx * 0.72, baseRy * 0.72)
-                .fill({ color: 0x010204, alpha: 0.13 });
+                .fill({ color: 0x010204, alpha: 0.16 });
               // Soft feathered outer ambient occlusion
               aoGfx
                 .ellipse(scr.x, scr.y, baseRx, baseRy)
-                .fill({ color: 0x030508, alpha: 0.05 });
+                .fill({ color: 0x030508, alpha: 0.06 });
 
               // Directional penumbra cast shadow for tall structures
               const isTall =
@@ -4217,7 +4217,7 @@ export class IsoSceneView {
               // Layer 1: Dense tight contact shadow directly beneath feet (scales subtly with jump/hover height)
               shadowGfx
                 .ellipse(groundScrX, groundScrY + 1, 13 * shadowAirScale, 6.5 * shadowAirScale)
-                .fill({ color: 0x010204, alpha: 0.38 * shadowAirScale });
+                .fill({ color: 0x010204, alpha: 0.44 * shadowAirScale });
               // Layer 2: Directional penumbra cast shadow away from light
               shadowGfx
                 .ellipse(
@@ -4226,7 +4226,7 @@ export class IsoSceneView {
                   20 * shadowAirScale,
                   10 * shadowAirScale
                 )
-                .fill({ color: 0x030509, alpha: 0.18 * shadowAirScale });
+                .fill({ color: 0x030509, alpha: 0.20 * shadowAirScale });
 
               // Tactical Combat Stance indicator ring, Selected Target Reticle & Boss Telegraph Danger Zone
               if (this.game.combatState.active) {

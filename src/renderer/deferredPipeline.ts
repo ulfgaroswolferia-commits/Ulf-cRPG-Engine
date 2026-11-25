@@ -254,9 +254,12 @@ void main(void) {
     float dappleNoise = fbmMist(worldCoord * 0.0055);
     float dappleMod = 0.94 + dappleNoise * 0.12;
 
-    // Natural ambient illumination preserving dark fantasy contrast & texture details
-    float ambFactor = mix(0.58, 1.02, clamp(uAmbient, 0.1, 1.0));
-    vec3 ambientCol = base.rgb * vec3(0.96, 0.98, 1.02) * ambFactor * dappleMod;
+    // Natural ambient illumination with time-of-day atmospheric color grading
+    // Cool crisp moonlight at low ambient; subtle warm golden daylight at high ambient
+    float ambFactor = mix(0.58, 1.03, clamp(uAmbient, 0.1, 1.0));
+    float dayFactor = smoothstep(0.32, 0.85, uAmbient);
+    vec3 ambientTint = mix(vec3(0.88, 0.94, 1.08), vec3(1.03, 0.99, 0.94), dayFactor);
+    vec3 ambientCol = base.rgb * ambientTint * ambFactor * dappleMod;
 
     vec3 dynamicLights = vec3(0.0);
     dynamicLights += evalPointLight(uLight0PosRad, uLight0ColInt, vScreenPx, N, base.rgb);
@@ -284,6 +287,9 @@ void main(void) {
 
     // ACES Filmic tonemapping for lush, rich dark-fantasy contrast & deep velvet blacks
     vec3 graded = acesFilmic(rawColor * 1.08);
+    // Subtle painterly vibrancy lift without oversaturating
+    float luma = dot(graded, vec3(0.299, 0.587, 0.114));
+    graded = mix(vec3(luma), graded, 1.06);
 
     // Gentle vignette
     vec2 centered = vTextureCoord * 2.0 - 1.0;
