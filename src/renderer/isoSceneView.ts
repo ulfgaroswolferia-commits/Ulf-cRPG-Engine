@@ -1526,7 +1526,12 @@ export class IsoSceneView {
   public getCharacterTextures(actor: ActorEntity): CharacterDualFrameTextures {
     const fastHash = computeCharacterRecipeHash(actor.recipe);
     const cached = this.characterTextureCache.get(fastHash);
-    if (cached) return cached;
+    if (cached) {
+      // Refresh insertion order for true LRU eviction
+      this.characterTextureCache.delete(fastHash);
+      this.characterTextureCache.set(fastHash, cached);
+      return cached;
+    }
 
     const t0 = performance.now();
     const baked: BakedCharacterBuffers = bakeCharacterBuffers(actor.recipe);

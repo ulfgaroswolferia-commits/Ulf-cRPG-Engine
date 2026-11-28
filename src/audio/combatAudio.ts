@@ -81,6 +81,13 @@ export class CombatAudioEngine {
         this.isMuted = true;
       }
     } catch {}
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      const unlockOnGesture = (): void => {
+        this.ensureContextRunning();
+      };
+      window.addEventListener('pointerdown', unlockOnGesture, { once: true, passive: true });
+      window.addEventListener('keydown', unlockOnGesture, { once: true, passive: true });
+    }
   }
 
   private initContext(): void {
@@ -151,8 +158,8 @@ export class CombatAudioEngine {
       return;
     }
     this.currentAmbienceMood = mood;
-    if (!this.ctx || !this.masterGain) return;
     this.ensureContextRunning();
+    if (!this.ctx || !this.masterGain) return;
 
     const candidates = AMBIENCE_SAMPLE_MAP[mood];
     const url = candidates[0];
@@ -250,8 +257,9 @@ export class CombatAudioEngine {
   }
 
   public playSound(kind: CombatSoundKind, pitchMod = 1.0): void {
-    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    if (this.isMuted) return;
     this.ensureContextRunning();
+    if (!this.ctx || !this.masterGain) return;
 
     const candidates = COMBAT_SAMPLE_MAP[kind] ?? [];
     const loaded = candidates.filter((u) => this.sampleBuffers.has(u));
