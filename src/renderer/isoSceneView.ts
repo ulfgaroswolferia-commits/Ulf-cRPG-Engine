@@ -589,6 +589,25 @@ class FrameDisplayPool {
       this.graphicsList.pop()?.destroy();
     }
   }
+
+  public destroy(): void {
+    for (const sp of this.sprites) {
+      if (!sp.destroyed) sp.destroy();
+    }
+    this.sprites.length = 0;
+    for (const g of this.graphicsList) {
+      if (!g.destroyed) g.destroy();
+    }
+    this.graphicsList.length = 0;
+    for (const entry of this.texts.values()) {
+      if (!entry.text.destroyed) {
+        entry.text.destroy({ texture: true, textureSource: true });
+      }
+    }
+    this.texts.clear();
+    this.textOccurrences.clear();
+    this.styles.clear();
+  }
 }
 
 export class IsoSceneView {
@@ -699,6 +718,11 @@ export class IsoSceneView {
   private isPointerOverUi = false;
   private readonly keysDown = new Set<string>();
   private inputAbortController: AbortController | null = null;
+  private unsubscribeCombatAttack: (() => void) | null = null;
+  private isDestroyed = false;
+  private lastRenderedMapId = '';
+  private cachedFloorTintKey = '';
+  private cachedFloorStaticTintEntries: Array<{ sprite: Sprite; worldX: number; worldY: number }> = [];
   private lastCursorKey = '';
   private cachedParticleMapRef: unknown = null;
   private cachedParticlePropsLen = -1;
@@ -720,7 +744,7 @@ export class IsoSceneView {
     this.game = game;
     this.onUiStateChange = onUiStateChange;
 
-    this.game.addCombatAttackListener((evt) => {
+    this.unsubscribeCombatAttack = this.game.addCombatAttackListener((evt) => {
       const impact = classifyCombatImpact(evt.outcome);
       if (impact === 'dodge') {
         this.triggerDodgeSidestep(
@@ -908,6 +932,7 @@ export class IsoSceneView {
         this.game.update(dt);
 
         if (this.game.map.id !== prevMapId) {
+          this.clearTransientSceneVfx();
           this.centerCameraOnPlayer();
           this.onUiStateChange?.();
         } else if (
@@ -1594,16 +1619,28 @@ export class IsoSceneView {
     const bakeDurationMs = Math.max(0.4, Number((performance.now() - t0).toFixed(2)));
     this.lastBakeDurationMs = bakeDurationMs;
 
+    const portraitDataUrl = portraitCanvas.toDataURL();
+    portraitCanvas.width = 0;
+    portraitCanvas.height = 0;
+
     const entry: CharacterDualFrameTextures = {
       recipeHash: baked.recipeHash,
       albedoFrames,
       normalFrames,
-      portraitDataUrl: portraitCanvas.toDataURL(),
+      portraitDataUrl,
       bakeDurationMs,
       baseScale: 64 / Math.max(1, baked.frameWidth),
       anchorY: baked.anchorY ?? 82 / 96
     };
 
+    if (this.characterTextureCache.size >= 64) {
+      const oldestKey = this.characterTextureCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldest = this.characterTextureCache.get(oldestKey);
+        if (oldest) this.disposeCharacterTextureEntry(oldest);
+        this.characterTextureCache.delete(oldestKey);
+      }
+    }
     this.characterTextureCache.set(fastHash, entry);
     return entry;
   }
@@ -1679,6 +1716,10 @@ export class IsoSceneView {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      if (this.isDestroyed) {
+        this.customPropLoadingUrls.delete(cacheKey);
+        return;
+      }
       try {
         const targetW = Math.max(
           48,
@@ -1831,24 +1872,59 @@ export class IsoSceneView {
     const prevStatic = this.floorStaticLayer.removeChildren();
     for (const ch of prevStatic) ch.destroy();
     this.cachedFloorStaticKey = '';
+    this.cachedFloorTintKey = '';
+    this.cachedFloorStaticTintEntries = [];
     this.cachedWaterTiles = [];
   }
 
+  private clearTransientSceneVfx(): void {
+    this.particles.length = 0;
+    this.slashArcs.length = 0;
+    this.shockwaves.length = 0;
+    this.propReactions.clear();
+    this.knownOpenChestIds.clear();
+    this.deathCollapseTimers.clear();
+    this.dodgeTimers.clear();
+    this.lastActorPos.clear();
+    this.cachedCombatReachKey = '';
+    this.cachedHoverPathKey = '';
+    this.cachedHoverPath = [];
+  }
+
+  private disposeCharacterTextureEntry(charTex: CharacterDualFrameTextures): void {
+    const destroyedSources = new Set<unknown>();
+    const disposeGrid = (grid: Texture[][]): void => {
+      for (const row of grid) {
+        for (const t of row) {
+          if (t === Texture.EMPTY) continue;
+          const src = t.source;
+          t.destroy(false);
+          if (src && !destroyedSources.has(src)) {
+            destroyedSources.add(src);
+            src.destroy();
+          }
+        }
+      }
+    };
+    disposeGrid(charTex.albedoFrames);
+    disposeGrid(charTex.normalFrames);
+  }
+
   public destroy(): void {
+    this.isDestroyed = true;
+    this.unsubscribeCombatAttack?.();
+    this.unsubscribeCombatAttack = null;
     this.inputAbortController?.abort();
     this.inputAbortController = null;
 
+    this.clearTransientSceneVfx();
     this.clearCachedTextures();
 
     for (const charTex of this.characterTextureCache.values()) {
-      for (const row of charTex.albedoFrames) {
-        for (const t of row) t.destroy(true);
-      }
-      for (const row of charTex.normalFrames) {
-        for (const t of row) t.destroy(true);
-      }
+      this.disposeCharacterTextureEntry(charTex);
     }
     this.characterTextureCache.clear();
+    this.displayPool.destroy();
 
     if (this.postFilter) {
       this.postFilter.destroy();
@@ -3078,14 +3154,24 @@ export class IsoSceneView {
     const waterCausticsGfx = this.bufferMode === 'final_pbr' ? this.displayPool.graphics() : null;
     let hasWaterCaustics = false;
 
-    // Cache static floor tiles/transitions/micro-foliage across frames in WebGL per-pixel PBR mode
+    // Detect map switches initiated outside game.update(dt) (e.g. loadCustomScene)
+    if (this.game.map.id !== this.lastRenderedMapId) {
+      if (this.lastRenderedMapId !== '') {
+        this.clearTransientSceneVfx();
+      }
+      this.lastRenderedMapId = this.game.map.id;
+    }
+
+    // Cache static floor tiles/transitions/micro-foliage across frames in WebGL per-pixel PBR mode.
+    // Geometry key is decoupled from per-step FOV/ambient tint so stepping never tears down sprites.
     const canCacheStaticFloor = usePerPixelFloorLighting && this.bufferMode === 'final_pbr';
     const fovSig = this.game.fogOfWarEnabled
       ? `${this.game.player.tileX},${this.game.player.tileY}`
       : 'nofov';
     const floorStaticKey = canCacheStaticFloor
-      ? `${this.game.map.id}:${this.game.mapRevision}:${this.game.map.props.length}:${this.rotation}:${this.organicTerrainBlending ? 1 : 0}:${uniformFloorAmbientTint}:${fovSig}`
+      ? `${this.game.map.id}:${this.game.mapRevision}:${this.game.map.props.length}:${this.rotation}:${this.organicTerrainBlending ? 1 : 0}`
       : '';
+    const floorTintKey = canCacheStaticFloor ? `${uniformFloorAmbientTint}:${fovSig}` : '';
 
     const needsStaticRebuild = !canCacheStaticFloor || floorStaticKey !== this.cachedFloorStaticKey;
     if (needsStaticRebuild) {
@@ -3094,6 +3180,8 @@ export class IsoSceneView {
         child.destroy();
       }
       this.cachedFloorStaticKey = floorStaticKey;
+      this.cachedFloorTintKey = floorTintKey;
+      this.cachedFloorStaticTintEntries = [];
       this.cachedWaterTiles = [];
 
       for (let sum = 0; sum <= rotW + rotH - 2; sum++) {
@@ -3175,6 +3263,7 @@ export class IsoSceneView {
           sprite.tint = tileTint;
           if (canCacheStaticFloor) {
             this.floorStaticLayer.addChild(sprite);
+            this.cachedFloorStaticTintEntries.push({ sprite, worldX: cell.x, worldY: cell.y });
           } else {
             this.floorDynamicLayer.addChild(sprite);
           }
@@ -3202,6 +3291,11 @@ export class IsoSceneView {
                 trSprite.tint = tileTint;
                 if (canCacheStaticFloor) {
                   this.floorStaticLayer.addChild(trSprite);
+                  this.cachedFloorStaticTintEntries.push({
+                    sprite: trSprite,
+                    worldX: cell.x,
+                    worldY: cell.y
+                  });
                 } else {
                   this.floorDynamicLayer.addChild(trSprite);
                 }
@@ -3235,6 +3329,11 @@ export class IsoSceneView {
                 mfSprite.tint = tileTint;
                 if (canCacheStaticFloor) {
                   this.floorStaticLayer.addChild(mfSprite);
+                  this.cachedFloorStaticTintEntries.push({
+                    sprite: mfSprite,
+                    worldX: cell.x,
+                    worldY: cell.y
+                  });
                 } else {
                   this.floorDynamicLayer.addChild(mfSprite);
                 }
@@ -3242,6 +3341,28 @@ export class IsoSceneView {
             }
           }
         }
+      }
+    } else if (canCacheStaticFloor && floorTintKey !== this.cachedFloorTintKey) {
+      // Fast in-place tint update on FOV / ambient change without rebuilding sprites
+      this.cachedFloorTintKey = floorTintKey;
+      for (let i = 0; i < this.cachedFloorStaticTintEntries.length; i++) {
+        const entry = this.cachedFloorStaticTintEntries[i];
+        const fovFactor = this.game.fogOfWarEnabled
+          ? this.game.fov.getLightFactor(entry.worldX, entry.worldY)
+          : 1.0;
+        entry.sprite.tint =
+          fovFactor >= 0.999
+            ? uniformFloorAmbientTint
+            : this.computeRgbTintForScreenPoint(
+                0,
+                0,
+                0,
+                -0.25,
+                0.6,
+                0.15,
+                fovFactor,
+                emptyLights
+              );
       }
     }
 
@@ -4345,10 +4466,13 @@ export class IsoSceneView {
             ? charTex.normalFrames[rotDir][frameIdx]
             : charTex.albedoFrames[rotDir][frameIdx];
 
+          const texScale = charTex.baseScale || 1;
           if (dodgeGhostAlpha > 0.03 && this.bufferMode === 'final_pbr') {
             const ghostSp = this.displayPool.sprite(tex);
-            ghostSp.anchor.set(0.5, 82 / 96);
+            ghostSp.anchor.set(0.5, isDead ? 0.65 : charTex.anchorY);
             ghostSp.position.set(baseScrX, baseScrY);
+            ghostSp.scale.set(actorScaleX * texScale, actorScaleY * texScale);
+            ghostSp.rotation = actorRotation;
             ghostSp.alpha = dodgeGhostAlpha;
             ghostSp.tint = 0xcbd5e1;
             this.sortedObjectLayer.addChild(ghostSp);
@@ -4357,7 +4481,6 @@ export class IsoSceneView {
           const sp = this.displayPool.sprite(tex);
           sp.anchor.set(0.5, isDead ? 0.65 : charTex.anchorY);
           sp.position.set(actorScrX, actorScrY);
-          const texScale = charTex.baseScale || 1;
           sp.scale.set(actorScaleX * texScale, actorScaleY * texScale);
           sp.rotation = actorRotation;
 

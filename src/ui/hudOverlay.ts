@@ -108,6 +108,12 @@ export interface HudOverlayOptions {
   onNewGame?: () => void;
   onToggleAudio?: (muted: boolean) => void;
   onEscapeNoModal?: () => void;
+  /** Returns true when a host-app modal overlay is open and engine hotkeys must yield. */
+  isExternalModalOpen?: () => boolean;
+  /** Disables the engine's built-in [M] audio mute hotkey when the host app binds [M] (e.g. World Map). */
+  disableMuteHotkey?: boolean;
+  /** Disables the engine's [I]/[K] shortcuts when the host app manages those keys directly. */
+  disableCharacterSheetHotkeys?: boolean;
 }
 
 const LEFT_PAPERDOLL_SLOTS: ReadonlyArray<EquipSlot> = ['head', 'cloak', 'torso', 'legs'];
@@ -238,6 +244,9 @@ export class HudOverlay {
     ) {
       return;
     }
+    if (this.options.isExternalModalOpen?.()) {
+      return;
+    }
     if (e.key === 'Escape' && this.inspectedItemInstanceId) {
       this.inspectedItemInstanceId = null;
       this.render();
@@ -248,13 +257,25 @@ export class HudOverlay {
       this.render();
       return;
     }
-    if (e.key?.toLowerCase() === 'i' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (
+      !this.options.disableCharacterSheetHotkeys &&
+      e.key?.toLowerCase() === 'i' &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey
+    ) {
       if (this.options.unifiedCharacterSheet && this.options.onOpenCharacterSheet) {
         this.options.onOpenCharacterSheet('gear');
       } else {
         this.toggleInventory();
       }
-    } else if (e.key?.toLowerCase() === 'k' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    } else if (
+      !this.options.disableCharacterSheetHotkeys &&
+      e.key?.toLowerCase() === 'k' &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey
+    ) {
       if (this.options.onOpenCharacterSheet) {
         this.options.onOpenCharacterSheet('stats');
       } else {
@@ -364,7 +385,12 @@ export class HudOverlay {
     ) {
       this.game.toggleStealth();
       this.render();
-    } else if (e.key?.toLowerCase() === 'm' && !e.ctrlKey && !e.altKey) {
+    } else if (
+      !this.options.disableMuteHotkey &&
+      e.key?.toLowerCase() === 'm' &&
+      !e.ctrlKey &&
+      !e.altKey
+    ) {
       const audio = CombatAudioEngine.getInstance();
       const nextMuted = !audio.getMuted();
       audio.setMuted(nextMuted);

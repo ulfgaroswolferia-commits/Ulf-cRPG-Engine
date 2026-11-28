@@ -1,6 +1,6 @@
 import { ELEVATION_STEP_PX, TILE_HEIGHT, TILE_WIDTH } from '../core/isoMath';
 import { registerCharacterSpriteSheets } from './characterBakery';
-import { SynthesizedPbrBufferPair } from './proceduralForge';
+import type { SynthesizedPbrBufferPair } from './proceduralForge';
 
 export interface LoadedImageBuffer {
   width: number;

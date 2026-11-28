@@ -33,26 +33,26 @@ export type AmbienceMood =
   | 'tavern';
 
 export const COMBAT_SAMPLE_MAP: Record<CombatSoundKind, readonly string[]> = {
-  slash_blade: ['/audio/sfx/swing1.wav', '/audio/sfx/swing2.wav', '/audio/sfx/blade1.wav', '/audio/sfx/blade2.wav'],
-  blunt_hit: ['/audio/sfx/blunt1.flac', '/audio/sfx/blunt2.flac'],
-  flesh_impact: ['/audio/sfx/flesh1.flac', '/audio/sfx/flesh2.flac'],
-  armor_clang: ['/audio/sfx/metal1.wav', '/audio/sfx/metal2.wav'],
-  critical_boom: ['/audio/sfx/crit1.flac', '/audio/sfx/crit2.flac'],
-  miss_whoosh: ['/audio/sfx/swing1.wav', '/audio/sfx/swing2.wav', '/audio/sfx/swing3.wav'],
-  death_gasp: ['/audio/sfx/death1.wav', '/audio/sfx/death2.wav'],
-  shield_block: ['/audio/sfx/shield1.wav', '/audio/sfx/shield2.wav'],
-  witch_cackle: ['/audio/sfx/witch_cackle.ogg'],
-  wraith_moan: ['/audio/sfx/wraith_moan.mp3'],
-  ghost_breath: ['/audio/sfx/ghost_breath.flac']
+  slash_blade: ['./audio/sfx/swing1.wav', './audio/sfx/swing2.wav', './audio/sfx/blade1.wav', './audio/sfx/blade2.wav'],
+  blunt_hit: ['./audio/sfx/blunt1.flac', './audio/sfx/blunt2.flac'],
+  flesh_impact: ['./audio/sfx/flesh1.flac', './audio/sfx/flesh2.flac'],
+  armor_clang: ['./audio/sfx/metal1.wav', './audio/sfx/metal2.wav'],
+  critical_boom: ['./audio/sfx/crit1.flac', './audio/sfx/crit2.flac'],
+  miss_whoosh: ['./audio/sfx/swing1.wav', './audio/sfx/swing2.wav', './audio/sfx/swing3.wav'],
+  death_gasp: ['./audio/sfx/death1.wav', './audio/sfx/death2.wav'],
+  shield_block: ['./audio/sfx/shield1.wav', './audio/sfx/shield2.wav'],
+  witch_cackle: ['./audio/sfx/witch_cackle.ogg'],
+  wraith_moan: ['./audio/sfx/wraith_moan.mp3'],
+  ghost_breath: ['./audio/sfx/ghost_breath.flac']
 };
 
 export const AMBIENCE_SAMPLE_MAP: Record<Exclude<AmbienceMood, 'none'>, readonly string[]> = {
-  dawn: ['/audio/ambience/dawn_wind.ogg'],
-  forest: ['/audio/ambience/forest_ambience.mp3'],
-  creepy_forest: ['/audio/ambience/creepy_forest.ogg'],
-  night_storm: ['/audio/ambience/night_storm.ogg'],
-  town: ['/audio/ambience/village_crowd.ogg'],
-  tavern: ['/audio/ambience/tavern_ambience.ogg']
+  dawn: ['./audio/ambience/dawn_wind.ogg'],
+  forest: ['./audio/ambience/forest_ambience.mp3'],
+  creepy_forest: ['./audio/ambience/creepy_forest.ogg'],
+  night_storm: ['./audio/ambience/night_storm.ogg'],
+  town: ['./audio/ambience/village_crowd.ogg'],
+  tavern: ['./audio/ambience/tavern_ambience.ogg']
 };
 
 export class CombatAudioEngine {
@@ -76,11 +76,15 @@ export class CombatAudioEngine {
   }
 
   constructor() {
-    this.initContext();
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('ulf_crpg_audio_muted') === 'true') {
+        this.isMuted = true;
+      }
+    } catch {}
   }
 
   private initContext(): void {
-    if (typeof window === 'undefined') return;
+    if (this.ctx || typeof window === 'undefined') return;
     try {
       const AudioCtx =
         window.AudioContext ||
@@ -89,11 +93,6 @@ export class CombatAudioEngine {
 
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      try {
-        if (typeof localStorage !== 'undefined' && localStorage.getItem('ulf_crpg_audio_muted') === 'true') {
-          this.isMuted = true;
-        }
-      } catch {}
       this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.34, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
       this.preloadSamples();
@@ -121,6 +120,9 @@ export class CombatAudioEngine {
   }
 
   public ensureContextRunning(): void {
+    if (!this.ctx) {
+      this.initContext();
+    }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
     }
